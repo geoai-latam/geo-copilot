@@ -1,4 +1,6 @@
-# F7 (S7.4): evaluaciones agénticas con LLM REAL — cada noche y como puerta de cada versión.
+# F7 (S7.4): evaluaciones agénticas con LLM REAL — a mano (Actions → Run workflow) o, si la variable
+# del repo EVALS_LLM es 'true', en los PR que tocan el juicio y como puerta de cada versión.
+# Sin ejecución nocturna: cuesta tokens todos los días (decisión del dueño, 2026-10-06).
 #
 # La batería `-m llm` mide el JUICIO del agente (qué herramienta elige, qué afirma, si es honesto)
 # con el modelo de producción. Sus tests son TASAS; por debajo del umbral la versión NO se publica
@@ -6,7 +8,8 @@
 #
 # Credenciales (Settings → Secrets and variables → Actions):
 #   secrets:   AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT   (o OPENAI_API_KEY / ANTHROPIC_API_KEY)
-#   variables: LLM_PROVIDER (azure), LLM_MODEL (gpt-5.4), OPENAI_API_VERSION, UMBRAL_EVALS (0.95)
+#   variables: EVALS_LLM ('true' para activarlas en ci.yml), LLM_PROVIDER (azure),
+#              LLM_MODEL (por defecto gpt-5.4-mini), OPENAI_API_VERSION, UMBRAL_EVALS (0.95)
 #
 # El bench de punta a punta (con PostGIS del catastro y sandbox) corre en el despliegue: ver
 # scripts/evals_nocturnas.sh y el runbook.
@@ -14,8 +17,6 @@
 name: Evaluaciones LLM
 
 on:
-  schedule:
-    - cron: "0 7 * * *"   # 02:00 en Bogotá
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -35,7 +36,7 @@ jobs:
     timeout-minutes: 60
     env:
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'azure' }}
-      LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-5.4' }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-5.4-mini' }}
       OPENAI_API_VERSION: ${{ vars.OPENAI_API_VERSION || '2024-12-01-preview' }}
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}

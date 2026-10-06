@@ -124,10 +124,10 @@ jobs:
         run: docker compose -f docker-compose.test.yml logs
 
   # F7 (S7.4): una VERSIÓN (etiqueta v*) solo se publica si el juicio del agente con el LLM real
-  # está sobre el umbral. En main y en los PR no corre (cuesta tokens y minutos): va cada noche.
+  # está sobre el umbral. Cuesta tokens: solo con la variable del repo EVALS_LLM='true'.
   evals:
     name: Evaluaciones LLM (puerta de versión)
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && vars.EVALS_LLM == 'true'
     uses: ./.github/workflows/evals.yml
     secrets: inherit
 
@@ -160,7 +160,8 @@ jobs:
   evals-pr:
     name: Evaluaciones LLM (juicio tocado)
     needs: juicio-tocado
-    if: needs.juicio-tocado.outputs.tocado == 'true'
+    # cuesta tokens y un PR de un fork no recibe los secretos: solo con EVALS_LLM='true'
+    if: needs.juicio-tocado.outputs.tocado == 'true' && vars.EVALS_LLM == 'true'
     uses: ./.github/workflows/evals.yml
     secrets: inherit
     with:
