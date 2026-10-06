@@ -9,7 +9,7 @@
 # Credenciales (Settings → Secrets and variables → Actions):
 #   secrets:   AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT   (o OPENAI_API_KEY / ANTHROPIC_API_KEY)
 #   variables: EVALS_LLM ('true' para activarlas en ci.yml), LLM_PROVIDER (azure),
-#              LLM_MODEL (por defecto gpt-4.1-mini), OPENAI_API_VERSION, UMBRAL_EVALS (0.95)
+#              LLM_MODEL (por defecto gpt-5.4-mini), OPENAI_API_VERSION, UMBRAL_EVALS (0.95)
 #
 # El bench de punta a punta (con PostGIS del catastro y sandbox) corre en el despliegue: ver
 # scripts/evals_nocturnas.sh y el runbook.
@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 60
     env:
       LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'azure' }}
-      LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-4.1-mini' }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'gpt-5.4-mini' }}
       OPENAI_API_VERSION: ${{ vars.OPENAI_API_VERSION || '2024-12-01-preview' }}
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
