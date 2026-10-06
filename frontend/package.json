@@ -37,7 +37,7 @@
     "terra-draw": "^1.35.0",
     "terra-draw-maplibre-gl-adapter": "^1.4.1",
     "zod": "^4.6.5",
-    "zustand": "^4.4.7"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
