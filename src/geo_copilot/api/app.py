@@ -123,7 +123,7 @@ def plantilla_de_ruta(scope: MutableMapping[str, Any]) -> str:
     return plantilla
 
 
-def create_app() -> FastAPI:  # noqa: PLR0915
+def create_app() -> FastAPI:
     """
     Crear y configurar la aplicación FastAPI.
 
@@ -131,7 +131,29 @@ def create_app() -> FastAPI:  # noqa: PLR0915
         Aplicación FastAPI configurada
     """
     config = get_settings()
+    app = _crear(config)
+    _cors_y_limite(app, config)
+    _rutas(app)
+    _endpoints_basicos(app, config)
+    _registro_de_peticiones(app)
 
+    # F7 (S7.3): métricas para Prometheus. Solo por la red interna: nginx no la expone y en
+    # producción la app no publica puerto.
+    @app.get("/metrics", include_in_schema=False)
+    async def metricas() -> Response:
+        from geo_copilot.platform import observabilidad
+
+        cuerpo, tipo = observabilidad.exponer_metricas()
+        return Response(content=cuerpo, media_type=tipo)
+
+    from geo_copilot.platform import observabilidad
+
+    observabilidad.iniciar(app)
+    return app
+
+
+def _crear(config: Any) -> FastAPI:
+    """La app con su documentación (solo fuera de producción) y sin la telemetría propia de FastAPI."""
     # R0.12 (AUD-110): mismo predicado que usan los guards de arranque.
     from geo_copilot.api.auth import is_production_environment
 
@@ -173,7 +195,11 @@ def create_app() -> FastAPI:  # noqa: PLR0915
         # La telemetría la lleva platform/observabilidad; las versiones viejas ignoran el argumento.
         telemetry=TELEMETRIA_FASTAPI_APAGADA,
     )
+    return app
 
+
+def _cors_y_limite(app: FastAPI, config: Any) -> None:
+    """CORS (sin credenciales con comodín) y el límite de peticiones."""
     # Configurar CORS de forma segura
     # IMPORTANTE: credentials=True NO es compatible con allow_origins=["*"]
     # Esto es una vulnerabilidad de seguridad documentada en OWASP
@@ -204,6 +230,9 @@ def create_app() -> FastAPI:  # noqa: PLR0915
     app.add_middleware(SlowAPIMiddleware)
     logger.info(f"Rate limiting configurado: {config.rate_limit_requests} requests/minuto")
 
+
+def _rutas(app: FastAPI) -> None:
+    """Los routers de la API v1 y el WebSocket."""
     # Registrar rutas
     app.include_router(query_router, prefix="/api/v1")
     app.include_router(approval_router, prefix="/api/v1")
@@ -240,6 +269,9 @@ def create_app() -> FastAPI:  # noqa: PLR0915
     # WebSocket
     app.websocket("/ws/{session_id}")(websocket_endpoint)
 
+
+def _endpoints_basicos(app: FastAPI, config: Any) -> None:
+    """Salud (503 si falta algo crítico), raíz y el manejador global de errores."""
     # Health check. API-4: devuelve 503 si componentes críticos faltan.
     @app.get(
         "/health",
@@ -297,6 +329,9 @@ def create_app() -> FastAPI:  # noqa: PLR0915
             ).model_dump(mode="json")
         )
 
+
+def _registro_de_peticiones(app: FastAPI) -> None:
+    """El middleware de registro: request-id, duración y la métrica HTTP por plantilla de ruta."""
     # Middleware de logging + correlation-id (API-3 / API-8).
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -351,20 +386,6 @@ def create_app() -> FastAPI:  # noqa: PLR0915
             return response
         finally:
             observabilidad._correlacion.reset(ficha)
-
-    # F7 (S7.3): métricas para Prometheus. Solo por la red interna: nginx no la expone y en
-    # producción la app no publica puerto.
-    @app.get("/metrics", include_in_schema=False)
-    async def metricas() -> Response:
-        from geo_copilot.platform import observabilidad
-
-        cuerpo, tipo = observabilidad.exponer_metricas()
-        return Response(content=cuerpo, media_type=tipo)
-
-    from geo_copilot.platform import observabilidad
-
-    observabilidad.iniciar(app)
-    return app
 
 
 # Instancia de la aplicación para ASGI
