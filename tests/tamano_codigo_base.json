@@ -24,7 +24,6 @@
   "src/geo_copilot/agents/data_agent/tools/validation.py::validate_data_quality": 74,
   "src/geo_copilot/agents/gis_agent/sandbox.py::PythonSandbox.execute": 83,
   "src/geo_copilot/agents/gis_agent/sandbox_procesos.py::SandboxProcesosMixin._communicate": 69,
-  "src/geo_copilot/agents/gis_agent/sandbox_seguridad.py::SandboxSeguridadMixin.analyze_security": 131,
   "src/geo_copilot/agents/gis_agent/sql_analisis.py::SQLAnalisisMixin.estimate_complexity": 62,
   "src/geo_copilot/agents/gis_agent/sql_corrector.py::SQLCorrector.analyze_error": 73,
   "src/geo_copilot/agents/gis_agent/sql_corrector.py::SQLCorrector.correct_sql": 88,

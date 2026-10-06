@@ -121,7 +121,7 @@ class SandboxSeguridadMixin:
         "attrgetter", "methodcaller", "mro",
     }
 
-    def analyze_security(self, code: str) -> dict[str, Any]:  # noqa: C901
+    def analyze_security(self, code: str) -> dict[str, Any]:
         result: dict[str, Any] = {
             "is_safe": True,
             "violations": [],
@@ -136,114 +136,6 @@ class SandboxSeguridadMixin:
             result["violations"].append(f"Syntax error: {exc}")
             return result
 
-        class _Visitor(ast.NodeVisitor):
-            def __init__(self) -> None:
-                self.violations: list[str] = []
-                self.warnings: list[str] = []
-                self.modules: set[str] = set()
-                self.functions: set[str] = set()
-
-            def visit_Import(self, node: ast.Import) -> None:
-                for alias in node.names:
-                    self.modules.add(alias.name)
-                    segments = alias.name.split(".")
-                    base = segments[0]
-                    if alias.name not in _sandbox().PythonSandbox.ALLOWED_MODULES and base not in _sandbox().PythonSandbox.ALLOWED_MODULES:
-                        self.violations.append(f"Módulo no permitido: {alias.name}")
-                    elif any(s in _sandbox().PythonSandbox.FORBIDDEN_SUBMODULES for s in segments):
-                        self.violations.append(f"Submódulo prohibido: {alias.name}")
-                self.generic_visit(node)
-
-            def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-                if node.module:
-                    self.modules.add(node.module)
-                    segments = node.module.split(".")
-                    base = segments[0]
-                    if node.module not in _sandbox().PythonSandbox.ALLOWED_MODULES and base not in _sandbox().PythonSandbox.ALLOWED_MODULES:
-                        self.violations.append(f"Módulo no permitido: {node.module}")
-                    elif any(s in _sandbox().PythonSandbox.FORBIDDEN_SUBMODULES for s in segments):
-                        self.violations.append(f"Submódulo prohibido: {node.module}")
-                    else:
-                        # `from numpy import ctypeslib`: el submódulo peligroso
-                        # es el NOMBRE importado, no un segmento del módulo.
-                        for alias in node.names:
-                            if alias.name in _sandbox().PythonSandbox.FORBIDDEN_SUBMODULES:
-                                self.violations.append(
-                                    f"Submódulo prohibido: {node.module}.{alias.name}"
-                                )
-                self.generic_visit(node)
-
-            def visit_Name(self, node: ast.Name) -> None:
-                if node.id in _sandbox().PythonSandbox.FORBIDDEN_NAMES:
-                    self.violations.append(f"Nombre prohibido: {node.id}")
-                self.generic_visit(node)
-
-            def visit_Call(self, node: ast.Call) -> None:
-                if isinstance(node.func, ast.Name):
-                    self.functions.add(node.func.id)
-                    if node.func.id in _sandbox().PythonSandbox.FORBIDDEN_NAMES:
-                        self.violations.append(f"Función prohibida: {node.func.id}")
-                    elif node.func.id in _sandbox().PythonSandbox.FORBIDDEN_METHODS:
-                        self.violations.append(f"Llamada prohibida: {node.func.id}")
-                elif isinstance(node.func, ast.Attribute):
-                    self.functions.add(node.func.attr)
-                    if node.func.attr in {"system", "popen", "spawn", "call"}:
-                        self.violations.append(f"Función de sistema prohibida: {node.func.attr}")
-                    elif node.func.attr in _sandbox().PythonSandbox.FORBIDDEN_METHODS:
-                        self.violations.append(f"Llamada prohibida: {node.func.attr}")
-                self.generic_visit(node)
-
-            def visit_Attribute(self, node: ast.Attribute) -> None:
-                # ``__mro__`` and friends are useful escape vectors. Block at
-                # the AST layer; the subprocess is still the real barrier.
-                if node.attr in {
-                    "__class__", "__bases__", "__subclasses__", "__globals__",
-                    "__mro__", "__reduce__", "__getattribute__", "__dict__",
-                    "__code__", "__closure__",
-                    # SBX-04: vías equivalentes de traversal de tipos que el
-                    # denylist original omitía. `__base__` (singular) alcanza
-                    # `object` igual que `__bases__`; `mro()` idem; los
-                    # `__*_subclass__`/`__class_getitem__`/`__reduce_ex__`
-                    # exponen el árbol de clases o la reconstrucción; los
-                    # `__getattr__`/`__setattr__`/`__delattr__` son getattr
-                    # indirecto a nivel de dunder.
-                    "__base__", "mro", "__subclasshook__", "__init_subclass__",
-                    "__class_getitem__", "__reduce_ex__",
-                    "__getattr__", "__setattr__", "__delattr__",
-                    # SEC-SANDBOX-RCE: numpy.ctypeslib reexpone el módulo ctypes
-                    # (→ CDLL('libc.so.6')['system']). Bloquear el acceso al
-                    # atributo cierra ese vector en el filtro estático.
-                    "ctypes", "ctypeslib",
-                    # R0.5 (auditoría 2026-07-26, AUD-03): `__builtins__` sólo
-                    # se comprobaba en `visit_Name`, es decir a secas — no como
-                    # ATRIBUTO de un módulo. `import json; json.__builtins__`
-                    # devolvía el diccionario COMPLETO de builtins reales
-                    # (eval, exec, open, getattr, __import__...), verificado
-                    # ejecutando el runner. Eso anulaba de una sola línea
-                    # ALLOWED_MODULES, FORBIDDEN_NAMES, FORBIDDEN_SUBMODULES y
-                    # FORBIDDEN_METHODS enteros.
-                    "__builtins__", "__loader__", "__spec__", "__module__",
-                    "__init__",
-                }:
-                    self.violations.append(f"Acceso a atributo prohibido: {node.attr}")
-                self.generic_visit(node)
-
-            def visit_Subscript(self, node: ast.Subscript) -> None:
-                # R0.5 (AUD-03): el escape usaba `b['__import__']`, un Subscript
-                # con literal de cadena — que ni `visit_Name` ni `visit_Call`
-                # inspeccionan. Cualquier indexación por un nombre prohibido o
-                # por un dunder es un intento de alcanzar la tabla de builtins
-                # por la puerta de atrás; ningún análisis geoespacial legítimo
-                # necesita `algo["__import__"]`.
-                sl = node.slice
-                if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
-                    key = sl.value
-                    if key in _sandbox().PythonSandbox.FORBIDDEN_NAMES or (
-                        key.startswith("__") and key.endswith("__")
-                    ):
-                        self.violations.append(f"Indexación prohibida: [{key!r}]")
-                self.generic_visit(node)
-
         visitor = _Visitor()
         visitor.visit(tree)
         result["violations"] = visitor.violations
@@ -252,3 +144,114 @@ class SandboxSeguridadMixin:
         result["functions_called"] = sorted(visitor.functions)
         result["is_safe"] = not visitor.violations
         return result
+
+
+class _Visitor(ast.NodeVisitor):
+    """El análisis estático: recorre el AST y anota módulos, llamadas y violaciones."""
+
+    def __init__(self) -> None:
+        self.violations: list[str] = []
+        self.warnings: list[str] = []
+        self.modules: set[str] = set()
+        self.functions: set[str] = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self.modules.add(alias.name)
+            segments = alias.name.split(".")
+            base = segments[0]
+            if alias.name not in _sandbox().PythonSandbox.ALLOWED_MODULES and base not in _sandbox().PythonSandbox.ALLOWED_MODULES:
+                self.violations.append(f"Módulo no permitido: {alias.name}")
+            elif any(s in _sandbox().PythonSandbox.FORBIDDEN_SUBMODULES for s in segments):
+                self.violations.append(f"Submódulo prohibido: {alias.name}")
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.module:
+            self.modules.add(node.module)
+            segments = node.module.split(".")
+            base = segments[0]
+            if node.module not in _sandbox().PythonSandbox.ALLOWED_MODULES and base not in _sandbox().PythonSandbox.ALLOWED_MODULES:
+                self.violations.append(f"Módulo no permitido: {node.module}")
+            elif any(s in _sandbox().PythonSandbox.FORBIDDEN_SUBMODULES for s in segments):
+                self.violations.append(f"Submódulo prohibido: {node.module}")
+            else:
+                # `from numpy import ctypeslib`: el submódulo peligroso
+                # es el NOMBRE importado, no un segmento del módulo.
+                for alias in node.names:
+                    if alias.name in _sandbox().PythonSandbox.FORBIDDEN_SUBMODULES:
+                        self.violations.append(
+                            f"Submódulo prohibido: {node.module}.{alias.name}"
+                        )
+        self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if node.id in _sandbox().PythonSandbox.FORBIDDEN_NAMES:
+            self.violations.append(f"Nombre prohibido: {node.id}")
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Name):
+            self.functions.add(node.func.id)
+            if node.func.id in _sandbox().PythonSandbox.FORBIDDEN_NAMES:
+                self.violations.append(f"Función prohibida: {node.func.id}")
+            elif node.func.id in _sandbox().PythonSandbox.FORBIDDEN_METHODS:
+                self.violations.append(f"Llamada prohibida: {node.func.id}")
+        elif isinstance(node.func, ast.Attribute):
+            self.functions.add(node.func.attr)
+            if node.func.attr in {"system", "popen", "spawn", "call"}:
+                self.violations.append(f"Función de sistema prohibida: {node.func.attr}")
+            elif node.func.attr in _sandbox().PythonSandbox.FORBIDDEN_METHODS:
+                self.violations.append(f"Llamada prohibida: {node.func.attr}")
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        # ``__mro__`` and friends are useful escape vectors. Block at
+        # the AST layer; the subprocess is still the real barrier.
+        if node.attr in {
+            "__class__", "__bases__", "__subclasses__", "__globals__",
+            "__mro__", "__reduce__", "__getattribute__", "__dict__",
+            "__code__", "__closure__",
+            # SBX-04: vías equivalentes de traversal de tipos que el
+            # denylist original omitía. `__base__` (singular) alcanza
+            # `object` igual que `__bases__`; `mro()` idem; los
+            # `__*_subclass__`/`__class_getitem__`/`__reduce_ex__`
+            # exponen el árbol de clases o la reconstrucción; los
+            # `__getattr__`/`__setattr__`/`__delattr__` son getattr
+            # indirecto a nivel de dunder.
+            "__base__", "mro", "__subclasshook__", "__init_subclass__",
+            "__class_getitem__", "__reduce_ex__",
+            "__getattr__", "__setattr__", "__delattr__",
+            # SEC-SANDBOX-RCE: numpy.ctypeslib reexpone el módulo ctypes
+            # (→ CDLL('libc.so.6')['system']). Bloquear el acceso al
+            # atributo cierra ese vector en el filtro estático.
+            "ctypes", "ctypeslib",
+            # R0.5 (auditoría 2026-07-26, AUD-03): `__builtins__` sólo
+            # se comprobaba en `visit_Name`, es decir a secas — no como
+            # ATRIBUTO de un módulo. `import json; json.__builtins__`
+            # devolvía el diccionario COMPLETO de builtins reales
+            # (eval, exec, open, getattr, __import__...), verificado
+            # ejecutando el runner. Eso anulaba de una sola línea
+            # ALLOWED_MODULES, FORBIDDEN_NAMES, FORBIDDEN_SUBMODULES y
+            # FORBIDDEN_METHODS enteros.
+            "__builtins__", "__loader__", "__spec__", "__module__",
+            "__init__",
+        }:
+            self.violations.append(f"Acceso a atributo prohibido: {node.attr}")
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        # R0.5 (AUD-03): el escape usaba `b['__import__']`, un Subscript
+        # con literal de cadena — que ni `visit_Name` ni `visit_Call`
+        # inspeccionan. Cualquier indexación por un nombre prohibido o
+        # por un dunder es un intento de alcanzar la tabla de builtins
+        # por la puerta de atrás; ningún análisis geoespacial legítimo
+        # necesita `algo["__import__"]`.
+        sl = node.slice
+        if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
+            key = sl.value
+            if key in _sandbox().PythonSandbox.FORBIDDEN_NAMES or (
+                key.startswith("__") and key.endswith("__")
+            ):
+                self.violations.append(f"Indexación prohibida: [{key!r}]")
+        self.generic_visit(node)
