@@ -57,7 +57,7 @@ def test_nodo_y_arista_usan_la_misma_regla(monkeypatch):
     from geo_copilot.orchestrator import graph
     from geo_copilot.orchestrator.nodes import router
 
-    assert "hay_capa_vectorial(state)" in inspect.getsource(router.run)
+    assert "hay_capa_vectorial(state)" in inspect.getsource(router._decision)  # la decisión del nodo
     assert "hay_capa_vectorial(state)" in inspect.getsource(graph.GeoAgentGraph._route_from_router)
 
 
