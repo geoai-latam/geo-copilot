@@ -135,7 +135,7 @@ async def _session_rejection(session_id: str) -> tuple[int, str] | None:
     return None
 
 
-async def websocket_endpoint(websocket: WebSocket, session_id: str):  # noqa: C901, PLR0912, PLR0915
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """
     Endpoint principal de WebSocket.
 
@@ -153,7 +153,29 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):  # noqa: C9
     - Sanitización de errores
     """
     settings = get_settings()
+    if not await _admitir(websocket, settings, session_id):
+        return
 
+    await connection_manager.connect(websocket, session_id)
+
+    try:
+        app_state = await _saludar(session_id)
+        await _bucle(websocket, settings, session_id, app_state)
+
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client disconnected: {session_id}")
+    except Exception as e:
+        # Captura amplia a propósito: frontera del endpoint WS: informar al cliente (saneado) y
+        # cerrar limpio.
+        logger.exception(f"WebSocket error for {session_id}: {e}")
+        # Sanitizar error antes de enviar al cliente
+        await _enviar(session_id, WSMessageType.ERROR, {"error": sanitize_error_for_client(e)})
+    finally:
+        await connection_manager.disconnect(session_id, websocket)
+
+
+async def _admitir(websocket: WebSocket, settings: Any, session_id: str) -> bool:
+    """Autenticar y validar la sesión ANTES de aceptar el socket; False si se cerró."""
     # SEC-4 + F6: Origin y credenciales ANTES de aceptar el socket (4403 = no autenticado, para
     # distinguirlo de un error del servidor). El navegador trae un ticket de un solo uso de ESTA
     # sesión (POST /session/{id}/ws-ticket); un cliente de servicio, la API key.
@@ -165,14 +187,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):  # noqa: C9
     principal = await autenticar_websocket(websocket, settings, session_id)
     if principal is None or principal.rol is None:
         await websocket.close(code=4403, reason="Forbidden")
-        return
+        return False
     # F6: la sesión de otro se rechaza igual que una inexistente (no se confirma que exista)
     if _SESSION_ID_RE.match(session_id or ""):
         try:
             await identidad_actual().propiedad.asegurar(principal, session_id)
         except SesionAjena:
             await websocket.close(code=WS_CLOSE_UNKNOWN_SESSION, reason="sesión inexistente")
-            return
+            return False
     # Todo lo que corra en esta conexión (consultas, aprobaciones) es de este principal
     fijar_principal(principal)
     from geo_copilot.api.auth import cargar_conexiones_de
@@ -192,82 +214,76 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):  # noqa: C9
         code, text = reason
         logger.warning(f"WebSocket rechazado ({code}): {text}")
         await websocket.close(code=code, reason=text)
-        return
+        return False
+    return True
 
-    await connection_manager.connect(websocket, session_id)
 
+async def _saludar(session_id: str) -> Any:
+    """El «connected» (con los turnos en curso) y las aprobaciones pendientes; el estado de la app."""
+    # F7 (auditoría): con el «connected» van los turnos de la sesión que siguen en curso — el
+    # cliente que esperaba el resultado de uno que terminó mientras estaba desconectado lo sabe
+    # (y no espera para siempre). Sin el dato (Redis caído), no se manda y el cliente no concluye.
+    from geo_copilot.platform.estado.aprobaciones import almacen
+
+    conectado: dict[str, Any] = {"status": "connected", "session_id": session_id}
     try:
-        # F7 (auditoría): con el «connected» van los turnos de la sesión que siguen en curso — el
-        # cliente que esperaba el resultado de uno que terminó mientras estaba desconectado lo sabe
-        # (y no espera para siempre). Sin el dato (Redis caído), no se manda y el cliente no concluye.
-        from geo_copilot.platform.estado.aprobaciones import almacen
+        conectado["turnos_en_curso"] = await almacen().turnos_en_curso(session_id)
+    except Exception:  # se registra; el socket sirve igual
+        logger.warning(f"[ws] no se pudieron leer los turnos en curso de {session_id}", exc_info=True)
+    # Enviar mensaje de conexión exitosa
+    await _enviar(session_id, WSMessageType.STATUS, conectado)
 
-        conectado: dict[str, Any] = {"status": "connected", "session_id": session_id}
+    # Obtener estado de la aplicación
+    app_state = get_app_state()
+    if not app_state.is_initialized:
+        await app_state.initialize()
+
+    # F7 (E7.1): las aprobaciones que la sesión tenía pendientes vuelven a mostrarse al
+    # reconectar (tras recargar o tras un reinicio del servidor, cuando quedaron huérfanas)
+    if app_state.hitl_manager is not None:
+        for aviso in await app_state.hitl_manager.pendientes_de(session_id):
+            await _enviar(session_id, WSMessageType.APPROVAL_REQUEST, aviso)
+    return app_state
+
+
+async def _bucle(websocket: WebSocket, settings: Any, session_id: str, app_state: Any) -> None:
+    """Recibir, validar y despachar los mensajes del cliente (en orden) hasta que se desconecte."""
+    en_orden = asyncio.Lock()
+    while True:
+        # Recibir mensaje del cliente con timeout para evitar DoS
         try:
-            conectado["turnos_en_curso"] = await almacen().turnos_en_curso(session_id)
-        except Exception:  # se registra; el socket sirve igual
-            logger.warning(f"[ws] no se pudieron leer los turnos en curso de {session_id}", exc_info=True)
-        # Enviar mensaje de conexión exitosa
-        await _enviar(session_id, WSMessageType.STATUS, conectado)
+            raw_data = await asyncio.wait_for(
+                websocket.receive_text(),
+                timeout=settings.websocket_receive_timeout
+            )
+        except TimeoutError:
+            # Enviar ping para verificar conexión activa
+            await _enviar(session_id, WSMessageType.PONG, {"ping": "keep-alive"})
+            continue
 
-        # Obtener estado de la aplicación
-        app_state = get_app_state()
-        if not app_state.is_initialized:
-            await app_state.initialize()
+        # Validar tamaño del mensaje
+        if len(raw_data) > settings.websocket_max_message_size:
+            await _enviar(session_id, WSMessageType.ERROR,
+                          {"error": "Mensaje demasiado grande"})
+            continue
 
-        # F7 (E7.1): las aprobaciones que la sesión tenía pendientes vuelven a mostrarse al
-        # reconectar (tras recargar o tras un reinicio del servidor, cuando quedaron huérfanas)
-        if app_state.hitl_manager is not None:
-            for aviso in await app_state.hitl_manager.pendientes_de(session_id):
-                await _enviar(session_id, WSMessageType.APPROVAL_REQUEST, aviso)
+        try:
+            data = json.loads(raw_data)
 
-        en_orden = asyncio.Lock()
-        while True:
-            # Recibir mensaje del cliente con timeout para evitar DoS
+            # Validar estructura del mensaje
             try:
-                raw_data = await asyncio.wait_for(
-                    websocket.receive_text(),
-                    timeout=settings.websocket_receive_timeout
-                )
-            except TimeoutError:
-                # Enviar ping para verificar conexión activa
-                await _enviar(session_id, WSMessageType.PONG, {"ping": "keep-alive"})
+                validated_data = validate_ws_message(data)
+                message_type = validated_data.get("type")
+                message_data = validated_data.get("data", {})
+            except (ValueError, ValidationError) as ve:
+                logger.warning(f"Invalid WS message from {session_id}: {ve}")
+                await _enviar(session_id, WSMessageType.ERROR, {"error": "Mensaje inválido"})
                 continue
 
-            # Validar tamaño del mensaje
-            if len(raw_data) > settings.websocket_max_message_size:
-                await _enviar(session_id, WSMessageType.ERROR,
-                              {"error": "Mensaje demasiado grande"})
-                continue
+            await _despachar(session_id, message_type, message_data, app_state, en_orden)
 
-            try:
-                data = json.loads(raw_data)
-
-                # Validar estructura del mensaje
-                try:
-                    validated_data = validate_ws_message(data)
-                    message_type = validated_data.get("type")
-                    message_data = validated_data.get("data", {})
-                except (ValueError, ValidationError) as ve:
-                    logger.warning(f"Invalid WS message from {session_id}: {ve}")
-                    await _enviar(session_id, WSMessageType.ERROR, {"error": "Mensaje inválido"})
-                    continue
-
-                await _despachar(session_id, message_type, message_data, app_state, en_orden)
-
-            except json.JSONDecodeError:
-                await _enviar(session_id, WSMessageType.ERROR, {"error": "JSON inválido"})
-
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket client disconnected: {session_id}")
-    except Exception as e:
-        # Captura amplia a propósito: frontera del endpoint WS: informar al cliente (saneado) y
-        # cerrar limpio.
-        logger.exception(f"WebSocket error for {session_id}: {e}")
-        # Sanitizar error antes de enviar al cliente
-        await _enviar(session_id, WSMessageType.ERROR, {"error": sanitize_error_for_client(e)})
-    finally:
-        await connection_manager.disconnect(session_id, websocket)
+        except json.JSONDecodeError:
+            await _enviar(session_id, WSMessageType.ERROR, {"error": "JSON inválido"})
 
 
 async def handle_message(
