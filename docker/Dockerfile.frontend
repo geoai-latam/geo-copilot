@@ -1,0 +1,107 @@
+# Frontend container — multi-stage build.
+#
+# Stage 1: compila el bundle de Vite.
+# Stage 2: nginx liviano sirve el ``dist/`` y proxiea ``/api/*`` y
+#          ``/ws/*`` al servicio ``app``.
+#
+# Añadido en Fase 6 (post-roadmap) — permite ``docker compose up --build``
+# levantar la app entera sin necesidad de ``npm install`` en el host.
+#
+# -----------------------------------------------------------------------------
+# TLS corporativo (opcional, 2026-05-30)
+# -----------------------------------------------------------------------------
+# Si tu red intercepta TLS (Zscaler / Bluecoat / pfSense corp), ``npm ci``
+# falla con ``unable to get local issuer certificate``. Para que el build
+# funcione en esa red, copia tu bundle CA en ``docker/corporate-ca.pem``
+# (gitignored) y el Dockerfile lo inyectará como ``NODE_EXTRA_CA_CERTS``
+# antes de correr ``npm ci``.
+#
+#   1. Exporta el CA corporativo: navegador → certificados → guarda como
+#      PEM en ``docker/corporate-ca.pem``.
+#   2. ``docker compose -f docker/docker-compose.yml build frontend``
+#   3. Si NO estás en una red con TLS corporativo, no hagas nada: el
+#      archivo es opcional y el build funciona igual con el bundle CA
+#      por default de Node.
+#
+# Nota: el ``COPY ... *`` con glob requiere DOCKER_BUILDKIT=1 (default en
+# Docker 20.10+ y en compose v2) — si usas Docker engine antiguo, crea un
+# ``docker/corporate-ca.pem`` vacío para que el build no rompa.
+
+# -----------------------------------------------------------------------------
+# Stage 1 — build con Node
+# -----------------------------------------------------------------------------
+# F7 (auditoría): Node 22 LTS (fin de vida 2027-04-30). Node 20 llegó al suyo el 2026-04-30, y
+# maplibre trae @mapbox/jsonlint-lines-primitives, que pide Node >= 22 (package.json `engines`).
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Copiar opcionalmente la CA corporativa. El glob ``*`` matchea 0 o 1
+# archivos sin fallar (requiere BuildKit). Si está, lo activamos para
+# Node *y* npm; si no, el RUN siguiente es no-op.
+COPY docker/corporate-ca.pem* /tmp/cacerts/
+RUN if [ -f /tmp/cacerts/corporate-ca.pem ]; then \
+      echo ">>> Usando CA corporativa para npm ci"; \
+      mkdir -p /usr/local/share/ca-certificates && \
+      cp /tmp/cacerts/corporate-ca.pem /usr/local/share/ca-certificates/corporate.crt && \
+      apk add --no-cache ca-certificates && update-ca-certificates && \
+      echo "NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/corporate.crt" >> /etc/environment; \
+    else \
+      echo ">>> Sin CA corporativa — usando bundle por default"; \
+    fi
+
+# Variable persistente en el entorno del build. Si el archivo no existe
+# Node simplemente loggea un warning y sigue.
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/corporate.crt
+
+# Copiar manifests primero para aprovechar la cache de capas.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Ahora el resto del código y build.
+COPY frontend/ ./
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2 — servir con nginx
+# -----------------------------------------------------------------------------
+FROM nginx:1.31-alpine
+
+# F7 (S7.2): parches de seguridad del sistema base (Trivy marcaba paquetes de Alpine con arreglo).
+# F7: invalida la caché del build una vez al día para que los parches del SO lleguen: sin esto, la
+# caché de buildx reutilizaba la capa de upgrade de antes del parche (pcre2, CVE-2026-103111).
+ARG PARCHES_SO=
+RUN echo "parches del SO: ${PARCHES_SO:-sin fecha}" && apk upgrade --no-cache
+
+# Quitar el sitio por defecto. Nuestra conf va como TEMPLATE: la imagen nginx
+# corre envsubst sobre /etc/nginx/templates/*.template al arrancar (sustituye
+# ${PUERTO_TLS_PUBLICO} y ${OIDC_ORIGEN}, deja $host/$http_upgrade/... intactos) y escribe
+# el resultado en /etc/nginx/conf.d/app.conf. F6: nginx ya no inyecta ninguna clave.
+RUN rm /etc/nginx/conf.d/default.conf
+COPY docker/nginx.frontend.conf /etc/nginx/templates/app.conf.template
+# Normalizar line endings: en checkouts Windows (autocrlf) el .conf llega con
+# CRLF, y el `\r` corrompe el valor de directivas como `proxy_set_header
+# X-API-Key` tras el envsubst → la key no se inyecta. Forzamos LF.
+RUN tr -d '\r' < /etc/nginx/templates/app.conf.template > /tmp/app.conf \
+    && mv /tmp/app.conf /etc/nginx/templates/app.conf.template
+
+# F6 (T6.2): HTTPS. Sin certificado montado en /etc/nginx/certs, el arranque genera uno
+# autofirmado de desarrollo (el entrypoint oficial corre /docker-entrypoint.d/*.sh en orden).
+RUN apk add --no-cache openssl
+COPY docker/nginx-cert-desarrollo.sh /docker-entrypoint.d/15-cert-desarrollo.sh
+RUN tr -d '\r' < /docker-entrypoint.d/15-cert-desarrollo.sh > /tmp/c.sh \
+    && mv /tmp/c.sh /docker-entrypoint.d/15-cert-desarrollo.sh \
+    && chmod +x /docker-entrypoint.d/15-cert-desarrollo.sh
+
+# Estáticos.
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80 443
+
+# F7 (auditoría): sin HEALTHCHECK `ps` solo decía «Up». Se pide el bundle por HTTPS al propio
+# nginx: prueba que arrancó con el certificado y sirve los estáticos, sin depender de la app
+# (/health la atraviesa). Sin verificar el certificado: dentro se llama 127.0.0.1, no el dominio.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -q -O /dev/null --no-check-certificate https://127.0.0.1/ || exit 1
+
+# Nginx default CMD ya hace ``daemon off``.

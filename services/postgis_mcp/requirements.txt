@@ -1,0 +1,4 @@
+# postgis-mcp — servidor GeoMCP de SQL multi-BD (el kit y geo_sql_guard se instalan aparte en el Dockerfile)
+mcp>=1.28,<2
+uvicorn>=0.30
+psycopg[binary]>=3.2,<4

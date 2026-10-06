@@ -1,0 +1,20 @@
+# Cassettes VCR (grabaciones HTTP)
+#
+# Este directorio guarda las respuestas reales de ArcGIS Hub para los
+# tests de descubrimiento. Cada archivo .yaml es una grabación
+# determinista de un request/response (incluye headers y body).
+#
+# Cómo grabar/regrabar una cassette:
+#
+#     # Modo "new_episodes": graba SOLO interacciones que no existan ya
+#     # en la cassette. Útil para añadir tests nuevos sin tocar los viejos.
+#     pytest tests/test_discovery_with_cassettes.py --record-mode=new_episodes
+#
+#     # Modo "all": regrabar todo desde cero (cuando la API cambió).
+#     pytest tests/test_discovery_with_cassettes.py --record-mode=all
+#
+# En CI las cassettes existen y los tests reproducen sin red.
+#
+# Las cassettes están commiteadas al repo: son la fuente de verdad de
+# qué responde Hub para cada query. Si Hub cambia el shape de su API,
+# las cassettes seguirán sirviendo hasta que se regraben.

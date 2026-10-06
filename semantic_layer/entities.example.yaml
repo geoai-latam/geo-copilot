@@ -1,0 +1,445 @@
+# =============================================================================
+# PLANTILLA DE EJEMPLO — ESTE ARCHIVO NO SE CARGA
+# =============================================================================
+# NINGUNA de las seis entidades de abajo existe en este repositorio. Son un
+# EJEMPLO de cómo se escribe una capa semántica más rica que la real (varios
+# esquemas, enums, campos marcados `sensitive:`, métricas por entidad), para
+# quien conecte GEO_COPILOT a SU base de datos y tenga que redactar la suya.
+#
+# POR QUÉ ESTÁ APARTE
+#
+# Hasta 2026-09-08 esto ERA `entities.yaml`, el archivo activo: se instancia en
+# `api/dependencies.py:102` y su contexto entra al prompt del LLM
+# (`agents/data_agent/agent.py:269-270`). O sea que el modelo recibía como
+# contexto seis tablas —`catastro.cat_parcelas_2024`, `admin.div_politica_mun`,
+# `hidrografia.hidro_rios_prin`, `infraestructura.infra_vias_nac`,
+# `riesgos.amenaza_inund_2023`, `equipamientos.equip_publico`— que no están en
+# la base ni en el dump real, y escribía SQL contra ellas. Verificado con
+# `pg_restore --list` sobre `docker/init-db/02_catastro_real.dump`: el dump
+# trae DOS tablas, `catastro.construcciones` y `catastro.lotes`, y nada más.
+#
+# El archivo activo es `entities.yaml`, al lado de este, y describe esas dos.
+#
+# CÓMO SE USA ESTO
+#
+# Como referencia al escribir tu propio `entities.yaml`. Si lo copias tal cual
+# vuelves a crear el mismo problema: el YAML es un OVERRIDE del esquema real,
+# no un catálogo de deseos. Lo que declares aquí y no exista en la BD, el
+# modelo se lo cree.
+#
+# (`SemanticLayer.hydrate_from_database` descarta las entidades del YAML que no
+# existan en la BD… pero sólo cuando hay conexión. Sin BD, o si `list_tables()`
+# falla, el YAML es lo único que ve el modelo.)
+# =============================================================================
+
+version: "1.0"
+description: "EJEMPLO — plantilla de capa semántica. No es la configuración activa."
+
+# =============================================================================
+# ENTIDADES PRINCIPALES
+# =============================================================================
+entities:
+
+  # ---------------------------------------------------------------------------
+  # PARCELAS / PREDIOS
+  # ---------------------------------------------------------------------------
+  parcela:
+    description: "Unidad catastral de terreno con información de propiedad"
+    aliases:
+      - predio
+      - lote
+      - terreno
+      - propiedad
+    table: "cat_parcelas_2024"
+    schema: "catastro"
+    geometry_column: "geom"
+    geometry_type: "POLYGON"
+    srid: 4326
+
+    fields:
+      id:
+        column: "id_parcela"
+        type: "string"
+        description: "Identificador único de la parcela"
+        primary_key: true
+
+      codigo_catastral:
+        column: "codigo_cat"
+        type: "string"
+        description: "Código catastral oficial"
+
+      area:
+        column: "area_m2"
+        type: "float"
+        unit: "m2"
+        description: "Área de la parcela en metros cuadrados"
+
+      uso_suelo:
+        column: "uso_suelo"
+        type: "string"
+        description: "Uso del suelo (residencial, comercial, agrícola, etc.)"
+        enum: ["residencial", "comercial", "industrial", "agrícola", "mixto", "institucional"]
+
+      valor_catastral:
+        column: "valor_cat"
+        type: "float"
+        unit: "COP"
+        description: "Valor catastral en pesos colombianos"
+
+      propietario:
+        column: "nombre_prop"
+        type: "string"
+        description: "Nombre del propietario"
+        sensitive: true
+
+      fecha_registro:
+        column: "fecha_reg"
+        type: "date"
+        description: "Fecha de registro catastral"
+
+    metrics:
+      - name: "area_total"
+        expression: "SUM(area_m2)"
+        description: "Área total de parcelas"
+
+      - name: "valor_total"
+        expression: "SUM(valor_cat)"
+        description: "Valor catastral total"
+
+      - name: "cantidad"
+        expression: "COUNT(*)"
+        description: "Número de parcelas"
+
+      - name: "area_promedio"
+        expression: "AVG(area_m2)"
+        description: "Área promedio por parcela"
+
+  # ---------------------------------------------------------------------------
+  # MUNICIPIOS
+  # ---------------------------------------------------------------------------
+  municipio:
+    description: "División administrativa municipal"
+    aliases:
+      - municipalidad
+      - localidad
+      - ciudad
+    table: "div_politica_mun"
+    schema: "admin"
+    geometry_column: "geom"
+    geometry_type: "MULTIPOLYGON"
+    srid: 4326
+
+    fields:
+      id:
+        column: "cod_mun"
+        type: "string"
+        description: "Código DANE del municipio"
+        primary_key: true
+
+      nombre:
+        column: "nom_mun"
+        type: "string"
+        description: "Nombre del municipio"
+
+      departamento:
+        column: "nom_dep"
+        type: "string"
+        description: "Nombre del departamento"
+
+      codigo_departamento:
+        column: "cod_dep"
+        type: "string"
+        description: "Código del departamento"
+
+      poblacion:
+        column: "poblacion"
+        type: "integer"
+        description: "Población total"
+
+      area:
+        column: "area_km2"
+        type: "float"
+        unit: "km2"
+        description: "Área en kilómetros cuadrados"
+
+    metrics:
+      - name: "poblacion_total"
+        expression: "SUM(poblacion)"
+        description: "Población total"
+
+      - name: "densidad"
+        expression: "SUM(poblacion) / SUM(area_km2)"
+        description: "Densidad poblacional"
+
+  # ---------------------------------------------------------------------------
+  # RÍOS / CUERPOS DE AGUA
+  # ---------------------------------------------------------------------------
+  rio:
+    description: "Cuerpos de agua y ríos principales"
+    aliases:
+      - cuerpo_agua
+      - hidrografia
+      - cauce
+      - quebrada
+    table: "hidro_rios_prin"
+    schema: "hidrografia"
+    geometry_column: "geom"
+    geometry_type: "LINESTRING"
+    srid: 4326
+
+    fields:
+      id:
+        column: "id_rio"
+        type: "string"
+        primary_key: true
+
+      nombre:
+        column: "nombre"
+        type: "string"
+        description: "Nombre del río"
+
+      tipo:
+        column: "tipo"
+        type: "string"
+        description: "Tipo de cuerpo de agua"
+        enum: ["río", "quebrada", "arroyo", "canal"]
+
+      longitud:
+        column: "longitud_km"
+        type: "float"
+        unit: "km"
+        description: "Longitud en kilómetros"
+
+      cuenca:
+        column: "cuenca"
+        type: "string"
+        description: "Cuenca hidrográfica"
+
+  # ---------------------------------------------------------------------------
+  # VÍAS
+  # ---------------------------------------------------------------------------
+  via:
+    description: "Red vial y carreteras"
+    aliases:
+      - carretera
+      - camino
+      - calle
+      - autopista
+    table: "infra_vias_nac"
+    schema: "infraestructura"
+    geometry_column: "geom"
+    geometry_type: "LINESTRING"
+    srid: 4326
+
+    fields:
+      id:
+        column: "id_via"
+        type: "string"
+        primary_key: true
+
+      nombre:
+        column: "nombre"
+        type: "string"
+        description: "Nombre o número de la vía"
+
+      tipo:
+        column: "tipo_via"
+        type: "string"
+        description: "Tipo de vía"
+        enum: ["autopista", "nacional", "departamental", "municipal", "urbana"]
+
+      estado:
+        column: "estado"
+        type: "string"
+        description: "Estado de la vía"
+        enum: ["bueno", "regular", "malo"]
+
+      longitud:
+        column: "longitud_km"
+        type: "float"
+        unit: "km"
+
+  # ---------------------------------------------------------------------------
+  # ZONAS DE RIESGO
+  # ---------------------------------------------------------------------------
+  zona_riesgo:
+    description: "Áreas con amenazas naturales identificadas"
+    aliases:
+      - amenaza
+      - riesgo
+      - zona_inundacion
+      - zona_deslizamiento
+    table: "amenaza_inund_2023"
+    schema: "riesgos"
+    geometry_column: "geom"
+    geometry_type: "POLYGON"
+    srid: 4326
+
+    fields:
+      id:
+        column: "id_zona"
+        type: "string"
+        primary_key: true
+
+      tipo_amenaza:
+        column: "tipo_amenaza"
+        type: "string"
+        description: "Tipo de amenaza"
+        enum: ["inundación", "deslizamiento", "sísmica", "volcánica", "incendio"]
+
+      nivel:
+        column: "nivel_riesgo"
+        type: "string"
+        description: "Nivel de riesgo"
+        enum: ["bajo", "medio", "alto", "muy_alto"]
+
+      area:
+        column: "area_ha"
+        type: "float"
+        unit: "ha"
+        description: "Área afectada en hectáreas"
+
+      poblacion_expuesta:
+        column: "pob_expuesta"
+        type: "integer"
+        description: "Población expuesta al riesgo"
+
+  # ---------------------------------------------------------------------------
+  # EQUIPAMIENTOS
+  # ---------------------------------------------------------------------------
+  equipamiento:
+    description: "Infraestructura pública y servicios"
+    aliases:
+      - servicio
+      - infraestructura_publica
+      - equipamiento_publico
+    table: "equip_publico"
+    schema: "equipamientos"
+    geometry_column: "geom"
+    geometry_type: "POINT"
+    srid: 4326
+
+    fields:
+      id:
+        column: "id_equip"
+        type: "string"
+        primary_key: true
+
+      nombre:
+        column: "nombre"
+        type: "string"
+        description: "Nombre del equipamiento"
+
+      tipo:
+        column: "tipo"
+        type: "string"
+        description: "Tipo de equipamiento"
+        enum: ["educación", "salud", "recreación", "gobierno", "seguridad", "cultural"]
+
+      subtipo:
+        column: "subtipo"
+        type: "string"
+        description: "Subtipo específico"
+
+      direccion:
+        column: "direccion"
+        type: "string"
+        description: "Dirección del equipamiento"
+
+      capacidad:
+        column: "capacidad"
+        type: "integer"
+        description: "Capacidad de atención"
+
+# =============================================================================
+# RELACIONES ENTRE ENTIDADES
+# =============================================================================
+relationships:
+
+  parcela_municipio:
+    from_entity: "parcela"
+    to_entity: "municipio"
+    type: "spatial_within"
+    description: "Parcelas contenidas en un municipio"
+
+  parcela_zona_riesgo:
+    from_entity: "parcela"
+    to_entity: "zona_riesgo"
+    type: "spatial_intersects"
+    description: "Parcelas que intersectan zonas de riesgo"
+
+  equipamiento_municipio:
+    from_entity: "equipamiento"
+    to_entity: "municipio"
+    type: "spatial_within"
+    description: "Equipamientos dentro de un municipio"
+
+  via_municipio:
+    from_entity: "via"
+    to_entity: "municipio"
+    type: "spatial_intersects"
+    description: "Vías que atraviesan un municipio"
+
+# =============================================================================
+# ANÁLISIS PREDEFINIDOS
+# =============================================================================
+analysis_templates:
+
+  proximidad:
+    description: "Análisis de entidades cercanas a un punto o área"
+    parameters:
+      - name: "target_entity"
+        type: "entity"
+        description: "Entidad objetivo"
+      - name: "distance"
+        type: "float"
+        unit: "m"
+        description: "Distancia en metros"
+      - name: "source_entity"
+        type: "entity"
+        description: "Entidad fuente"
+
+  agregacion:
+    description: "Agregación de datos por unidad administrativa"
+    parameters:
+      - name: "data_entity"
+        type: "entity"
+        description: "Entidad con datos a agregar"
+      - name: "admin_entity"
+        type: "entity"
+        description: "Entidad administrativa para agrupar"
+      - name: "metric"
+        type: "string"
+        description: "Métrica a calcular"
+
+  cobertura:
+    description: "Análisis de cobertura de servicios"
+    parameters:
+      - name: "service_entity"
+        type: "entity"
+        description: "Entidad de servicio"
+      - name: "coverage_radius"
+        type: "float"
+        unit: "m"
+        description: "Radio de cobertura"
+      - name: "population_entity"
+        type: "entity"
+        description: "Entidad con población"
+
+# =============================================================================
+# METADATA
+# =============================================================================
+metadata:
+  created_at: "2024-11-20"
+  updated_at: "2024-11-20"
+  author: "GEO_COPILOT Team"
+  data_sources:
+    - name: "IGAC"
+      description: "Instituto Geográfico Agustín Codazzi"
+      url: "https://www.igac.gov.co"
+    - name: "DANE"
+      description: "Departamento Administrativo Nacional de Estadística"
+      url: "https://www.dane.gov.co"
+    - name: "IDEAM"
+      description: "Instituto de Hidrología, Meteorología y Estudios Ambientales"
+      url: "http://www.ideam.gov.co"

@@ -1,0 +1,221 @@
+# GEO_COPILOT — PRODUCCIÓN (F7, S7.2). Se aplica ENCIMA de docker-compose.yml:
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml \
+#                  --env-file .env.production pull
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml \
+#                  --env-file .env.production up -d --no-build
+#
+# Qué cambia respecto a desarrollo (el runbook docs/sistema/19-despliegue-produccion.md lo
+# explica paso a paso):
+#   - imágenes del registro (`IMAGEN_PREFIJO`/`VERSION`), nada se construye en el servidor;
+#   - `app` sin código montado, sin puerto publicado (solo nginx entra), en modo producción:
+#     Redis obligatorio (aborta si falta), varios procesos, la BD migrada ANTES de arrancar;
+#   - `app` recibe SOLO sus variables (lista explícita abajo), no todo .env.production;
+#   - logs con rotación y límites de memoria en todos los servicios;
+#   - el frontend publica 80/443 con el certificado de la organización, endurecido y en una red
+#     (`borde`) que solo comparte con la app.
+#
+# Los servicios de ejemplo (`examples`, `connectors`) no se activan en producción.
+
+x-logs: &logs
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  postgis:
+    <<: *logs
+    ports: !reset []
+    # F7 (auditoría): el primer arranque restaura el volcado del catastro (varios minutos) y la
+    # sonda por TCP falla mientras dura: con los 90 s de desarrollo postgis quedaba «unhealthy» y
+    # el `up -d` abortaba. Dentro del start_period los fallos no cuentan y el primer éxito lo pone
+    # healthy, así que en un reinicio normal no se espera más.
+    healthcheck:
+      start_period: 30m
+    deploy:
+      resources:
+        limits: { memory: 4g }
+
+  redis:
+    <<: *logs
+    ports: !reset []
+    deploy:
+      resources:
+        limits: { memory: 512m }
+
+  # Una sola vez por despliegue, antes de la app: pone el esquema de la plataforma en su versión
+  # (Alembic). Con el rol DUEÑO (geo_user), nunca con geo_app.
+  migrar:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO:?define IMAGEN_PREFIJO (p. ej. ghcr.io/geoai-latam/geo-copilot)}-app:${VERSION:?define VERSION}
+    command: ["python", "-m", "geo_copilot.migraciones"]
+    restart: "no"
+    environment:
+      # F7 (auditoría): usuario y BD FIJOS, los mismos que crea el servicio postgis (base). Antes
+      # salían de POSTGRES_USER/POSTGRES_DB, que postgis ignora: cambiarlos rompía el arranque.
+      MIGRACIONES_DATABASE_URL: postgresql://geo_user:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD}@postgis:5432/geo_copilot
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    depends_on:
+      postgis:
+        condition: service_healthy
+    networks: [geo_network]
+
+  app:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-app:${VERSION}
+    # F7 (auditoría): sin imagen en el registro (p. ej. Trivy la rechazó) el despliegue FALLA;
+    # antes `up` la construía aquí desde el checkout, sin escanear.
+    build: !reset null
+    # F7 (auditoría): .env.production NO entra entero al contenedor: trae la contraseña del
+    # superusuario de la BD (anularía AUD-04: la app usa geo_app NOSUPERUSER) y las listas de
+    # claves que aceptan los MCP. `--env-file` sirve para interpolar; la app recibe solo lo de
+    # `environment:` (las del base + las de abajo).
+    env_file: !reset []
+    # F7 (E7.2): réplicas detrás de nginx (que re-resuelve `app` y reparte). Sin nombre fijo de
+    # contenedor, que impediría tener más de una. El estado compartido va por Redis.
+    container_name: !reset null
+    environment:
+      ENVIRONMENT: production
+      SESSION_BACKEND: redis
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      PYTHONPATH: ""
+      # detrás de nginx: la IP del cliente viene en X-Forwarded-For (rate limit por usuario real)
+      TRUST_PROXY_HEADERS: "true"
+      # credencial del arcgis-mcp a la que apunta config/mcp_servers.yaml (env:ARCGIS_MCP_APP_KEY)
+      ARCGIS_MCP_APP_KEY: ${ARCGIS_MCP_APP_KEY:?define ARCGIS_MCP_APP_KEY}
+      # credencial del lugares-mcp (geocodificación; env:LUGARES_MCP_APP_KEY)
+      LUGARES_MCP_APP_KEY: ${LUGARES_MCP_APP_KEY:?define LUGARES_MCP_APP_KEY}
+      # clave maestra de los secretos de las conexiones de las organizaciones
+      SECRETS_KEK: ${SECRETS_KEK:?define SECRETS_KEK}
+      # F7 (auditoría): el base apunta al Keycloak de DESARROLLO (perfil `auth`, que aquí no
+      # corre): toda petición con Bearer daba 401. Aquí, las del proveedor de la organización.
+      OIDC_JWKS_URL:
+      OIDC_TOKEN_URL:
+      # Sin valor = se toma de .env.production si está definida; si no, NO llega al contenedor y
+      # manda el valor por defecto de core/config.py. Otro ajuste de la app: añadirlo aquí así.
+      LOG_LEVEL:
+      LOG_FORMAT:
+      LLM_PROVIDER:
+      LLM_MODEL:
+      LLM_MODEL_PROFILE:
+      LLM_MAX_RETRIES:
+      LLM_REQUEST_TIMEOUT:
+      LLM_ESPERA_SATURACION_S:
+      LLM_BASE_URL:
+      LLM_API_KEY:
+      OPENAI_API_KEY:
+      ANTHROPIC_API_KEY:
+      AZURE_OPENAI_API_KEY:
+      AZURE_OPENAI_ENDPOINT:
+      OPENAI_API_VERSION:
+      REACT_POLICY:
+      REACT_TOKEN_BUDGET:
+      REACT_MAX_TOOL_CALLS:
+      OIDC_ISSUER:
+      OIDC_CLIENT_ID:
+      OIDC_AUDIENCE:
+      OIDC_ORG_CLAIM:
+      OIDC_ROLES_CLAIM:
+      OIDC_API_CLIENT_ID:
+      API_KEY:
+      API_KEY_ORG:
+      API_KEY_ROLE:
+      ORG_PLATAFORMA:
+      SECRETS_KEK_ANTERIORES:
+      MCP_HOSTS_PERMITIDOS:
+      CORS_ORIGINS:
+      ALLOWED_DOMAINS:
+      RATE_LIMIT_REQUESTS:
+      SQL_AST_VALIDATION:
+      HITL_ENABLED:
+      HITL_TIMEOUT:
+      TOTAL_EXECUTION_TIMEOUT:
+      OTEL_TRACES_SAMPLER:
+      OTEL_TRACES_SAMPLER_ARG:
+      SENTRY_TRACES_SAMPLE_RATE:
+    # sin código montado: la imagen trae el paquete; config/ y la capa semántica de la imagen o,
+    # si la organización los personaliza, montados de solo lectura (descomentar)
+    volumes: !override
+      - ws_exports:/data/workspace
+      # - ./config.produccion:/app/config:ro
+    ports: !reset []
+    # se suma a las redes del base (geo_network, docker_proxy): la del frontend
+    networks: [borde]
+    depends_on:
+      migrar:
+        condition: service_completed_successfully
+    deploy:
+      replicas: ${APP_REPLICAS:-1}
+      resources:
+        limits: { memory: 6g }
+
+  frontend:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-frontend:${VERSION}
+    build: !reset null
+    ports: !override
+      - "${FRONTEND_BIND:-0.0.0.0}:80:80"
+      - "${FRONTEND_BIND:-0.0.0.0}:443:443"
+    environment:
+      PUERTO_TLS_PUBLICO: "443"
+    # F7 (auditoría): el ÚNICO contenedor expuesto a Internet iba con las capacidades por defecto
+    # y el rootfs escribible. nginx necesita: abrir 80/443, bajar sus workers a `nginx` (SETUID/
+    # SETGID), crear y dar a ese usuario sus directorios temporales (CHOWN) y LEER tls.key, que
+    # en la VM suele ser 600 de quien la copió (DAC_READ_SEARCH: salta solo los permisos de
+    # lectura; DAC_OVERRIDE saltaría también los de escritura). Lo que escribe va a tmpfs: la
+    # conf generada por envsubst (conf.d), temporales (cache), el pid (/run).
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, CHOWN, DAC_READ_SEARCH]
+    read_only: true
+    tmpfs:
+      - /etc/nginx/conf.d:size=1m
+      - /var/cache/nginx:size=64m
+      - /run:size=1m
+      - /tmp:size=16m
+    # el certificado de la organización, de solo lectura: sin él el arranque FALLA (en desarrollo
+    # se generaba uno autofirmado en esta carpeta; en producción eso sería un fallo silencioso)
+    volumes: !override
+      - ./certs:/etc/nginx/certs:ro
+    # F7 (auditoría): nginx solo habla con `app:8000`. En geo_network veía también redis, postgis
+    # y los MCP: un nginx comprometido llegaba a todos. En `borde` solo están él y la app (el DNS
+    # de Docker, 127.0.0.11, sigue resolviendo `app` en una red propia).
+    networks: !override [borde]
+    deploy:
+      resources:
+        limits: { memory: 256m }
+
+  sandbox:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-sandbox:${VERSION}
+    build: !reset null
+
+  docker-socket-proxy:
+    <<: *logs
+
+  imagery-mcp:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-imagery-mcp:${VERSION}
+    build: !reset null
+    ports: !reset []
+
+  arcgis-mcp:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-arcgis-mcp:${VERSION}
+    build: !reset null
+    ports: !reset []
+
+  lugares-mcp:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-lugares-mcp:${VERSION}
+    build: !reset null
+
+networks:
+  # F7 (auditoría): la red del borde, solo frontend ↔ app (ver `frontend`). No es `internal`:
+  # con `internal` Docker no publicaría el 80/443.
+  borde:
+    driver: bridge

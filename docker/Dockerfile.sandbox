@@ -1,0 +1,75 @@
+# GEO_COPILOT - Sandbox container for safe Python execution.
+#
+# This image is the isolation boundary used by the PythonAgent sandbox.
+# Compose pairs it with strict runtime constraints (no network, read-only
+# root filesystem, dropped capabilities, no-new-privileges) — see the
+# ``sandbox`` service in docker/docker-compose.yml.
+#
+# The Fase 1 work will replace the in-process ``exec()`` sandbox with a
+# subprocess executor that runs *inside* this container. For now this
+# Dockerfile only needs to build successfully so ``docker compose build``
+# works end-to-end; the production sandbox runner is added in Fase 1.
+
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# F7 (S7.2): los wheels geoespaciales (shapely, pyproj, pyogrio) traen sus bibliotecas nativas;
+# las cabeceras de GDAL/GEOS/PROJ de antes solo sumaban superficie (Trivy: 15 CRÍTICAS). Solo los
+# parches de seguridad del sistema base.
+# F7: invalida la caché del build una vez al día para que los parches del SO lleguen: sin esto, la
+# caché de buildx reutilizaba la capa de upgrade de antes del parche (pcre2, CVE-2026-103111).
+ARG PARCHES_SO=
+RUN echo "parches del SO: ${PARCHES_SO:-sin fecha}" && apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
+# Minimal scientific / geospatial runtime allowed inside the sandbox. Debe
+# cubrir TODO PythonSandbox.ALLOWED_MODULES (sandbox.py): además de los
+# geoespaciales, sklearn + statsmodels habilitan el canal analítico
+# (clustering, regresión OLS) que el PythonAgent rutea con intent=analyze.
+# S2.4: pyarrow es para el RUNNER (código de confianza), que lee los datasets
+# del workspace en GeoParquet. El código del LLM no puede importar pyarrow (no
+# está en ALLOWED_MODULES) ni llamar read_parquet (FORBIDDEN_METHODS).
+RUN pip install --upgrade pip && \
+    pip install \
+        "numpy>=1.26" \
+        "pandas>=2.1" \
+        "shapely>=2.0" \
+        "pyproj>=3.6" \
+        "geopandas>=0.14" \
+        "scipy>=1.11" \
+        "scikit-learn>=1.4" \
+        "statsmodels>=0.14" \
+        "esda>=2.5.0" \
+        "libpysal>=4.9.0" \
+        "spreg>=1.4.0" \
+        "pointpats>=2.4.0" \
+        "networkx>=3.0" \
+        # S2.4: el runner (código de confianza) lee los datasets del workspace
+        # en GeoParquet. El código del LLM NO puede importar pyarrow (no está en
+        # ALLOWED_MODULES) ni llamar read_parquet (FORBIDDEN_METHODS).
+        "pyarrow>=15.0"
+
+# F7 (S7.2): las herramientas de empaquetado no hacen falta para ejecutar y traen vulnerabilidades
+# propias y vendorizadas (Trivy); fuera de la imagen final.
+RUN pip uninstall -y wheel setuptools pip
+
+# Punto de montaje del runner (SEC-SANDBOX-RCE p2). docker-compose monta
+# sandbox_runner.py aquí read-only; `docker exec ... python -I
+# /opt/sandbox/sandbox_runner.py` lo ejecuta dentro de este contenedor
+# endurecido. Se crea antes de bajar a non-root para fijar permisos.
+RUN mkdir -p /opt/sandbox
+
+# Non-root execution. The container is started with the `none` network and
+# a read-only root filesystem by docker-compose, so this user has no way to
+# reach the host or other services.
+RUN groupadd -r sandbox && useradd -r -g sandbox -m -d /home/sandbox sandbox
+USER sandbox
+WORKDIR /home/sandbox
+
+# Keep the container alive so the orchestrator can attach `docker exec`
+# sessions to it (SEC-SANDBOX-RCE p2). Cada ejecución del PythonAgent es un
+# exec efímero contra este contenedor de larga vida.
+CMD ["python", "-c", "import time; time.sleep(2**31)"]

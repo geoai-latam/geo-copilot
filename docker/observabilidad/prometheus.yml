@@ -1,0 +1,27 @@
+# F7 (S7.3): Prometheus del stack (perfil `observabilidad`).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alertas.yml
+
+# F7 (auditoría): SIN `alerting:` a propósito, porque el stack no trae Alertmanager. Las alertas
+# se evalúan y se ven en la UI (estado «firing»), pero NADIE recibe un aviso. Para notificar:
+# añadir el servicio alertmanager (con su receptor de correo o webhook) al compose y aquí
+#   alerting:
+#     alertmanagers:
+#       - static_configs: [{ targets: ["alertmanager:9093"] }]
+
+scrape_configs:
+  # CADA réplica de la app por separado (su /metrics agrega sus workers). Con un target fijo
+  # `app:8000`, cada scrape caía en una réplica cualquiera: Prometheus mezclaba contadores de dos
+  # procesos, veía «reinicios» falsos y los rate/increase salían absurdos (visto en la prueba E7.5:
+  # 1,1 M tokens/min).
+  - job_name: geo-copilot-app
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: ["app"]
+        type: A
+        port: 8000
+        refresh_interval: 15s

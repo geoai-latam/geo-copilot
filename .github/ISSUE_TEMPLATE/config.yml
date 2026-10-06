@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Reportar una vulnerabilidad
+    url: https://github.com/geoai-latam/GEO_COPILOT/blob/main/SECURITY.md
+    about: Los fallos de seguridad no van en un issue público. Acá está el canal privado.
+  - name: Documentación del sistema
+    url: https://github.com/geoai-latam/GEO_COPILOT/tree/main/docs/sistema
+    about: La fuente de verdad documental. Arquitectura, agentes, configuración y despliegue.

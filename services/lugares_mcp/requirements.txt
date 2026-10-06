@@ -1,0 +1,6 @@
+# lugares-mcp — geocodificación (el kit se instala aparte en el Dockerfile)
+mcp>=1.28,<2
+uvicorn>=0.30
+httpx>=0.27,<1
+pyproj>=3.6,<4
+shapely>=2.0,<3

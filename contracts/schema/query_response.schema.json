@@ -1,0 +1,2943 @@
+{
+  "$defs": {
+    "ArcGisImage": {
+      "additionalProperties": false,
+      "description": "Raster de un MapServer/ImageServer ArcGIS, pedido por extensión (export/exportImage).",
+      "properties": {
+        "kind": {
+          "const": "arcgis-image",
+          "default": "arcgis-image",
+          "title": "Kind",
+          "type": "string"
+        },
+        "service_url": {
+          "pattern": "^https?://",
+          "title": "Service Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "service_url"
+      ],
+      "title": "ArcGisImage",
+      "type": "object"
+    },
+    "ChartOut": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "title": "Data",
+          "type": "array"
+        },
+        "kind": {
+          "const": "chart",
+          "default": "chart",
+          "title": "Kind",
+          "type": "string"
+        },
+        "spec": {
+          "$ref": "#/$defs/ChartSpec"
+        }
+      },
+      "required": [
+        "kind",
+        "spec",
+        "data"
+      ],
+      "title": "ChartOut",
+      "type": "object"
+    },
+    "ChartSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_type": {
+          "enum": [
+            "bar",
+            "line",
+            "pie",
+            "scatter",
+            "histogram",
+            "area"
+          ],
+          "title": "Chart Type",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "x_key": {
+          "title": "X Key",
+          "type": "string"
+        },
+        "y_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Y Key"
+        }
+      },
+      "required": [
+        "chart_type",
+        "x_key",
+        "y_key",
+        "title"
+      ],
+      "title": "ChartSpec",
+      "type": "object"
+    },
+    "ClassBreak": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "title": "Color",
+          "type": "string"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "max_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Value"
+        },
+        "min_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Value"
+        }
+      },
+      "required": [
+        "label",
+        "color",
+        "min_value",
+        "max_value",
+        "count"
+      ],
+      "title": "ClassBreak",
+      "type": "object"
+    },
+    "ClearSelection": {
+      "additionalProperties": false,
+      "description": "Sin `layer_id`: limpia la selección de todas las capas.",
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/ClearSelectionArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "clear_selection",
+          "default": "clear_selection",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "ClearSelection",
+      "type": "object"
+    },
+    "ClearSelectionArgs": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "ClearSelectionArgs",
+      "type": "object"
+    },
+    "Compare": {
+      "additionalProperties": false,
+      "description": "FH.10: comparación con cortina (swipe): `left` a la izquierda, `right` a la derecha.",
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/CompareArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "compare",
+          "default": "compare",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "Compare",
+      "type": "object"
+    },
+    "CompareArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Left",
+          "type": "string"
+        },
+        "right": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Right",
+          "type": "string"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ],
+      "title": "CompareArgs",
+      "type": "object"
+    },
+    "CorrectionInfo": {
+      "additionalProperties": false,
+      "description": "El SQL falló y se auto-corrigió: cuántas veces y por qué (categoría, no el error crudo).",
+      "properties": {
+        "corrections_applied": {
+          "minimum": 0,
+          "title": "Corrections Applied",
+          "type": "integer"
+        },
+        "final_success": {
+          "default": false,
+          "title": "Final Success",
+          "type": "boolean"
+        },
+        "original_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Original Error"
+        }
+      },
+      "required": [
+        "corrections_applied",
+        "original_error",
+        "final_success"
+      ],
+      "title": "CorrectionInfo",
+      "type": "object"
+    },
+    "EndCompare": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/EndCompareArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "end_compare",
+          "default": "end_compare",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "EndCompare",
+      "type": "object"
+    },
+    "EndCompareArgs": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "EndCompareArgs",
+      "type": "object"
+    },
+    "FieldInfo": {
+      "additionalProperties": false,
+      "description": "Un campo de la capa, con muestras: el contexto que el LLM usa para decidir\n(Sprints A–F: el LLM juzga viendo esquema + muestras, sin heurísticas).",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "nullable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nullable"
+        },
+        "sample": {
+          "items": {},
+          "maxItems": 5,
+          "title": "Sample",
+          "type": "array"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "geometry",
+            "json",
+            "unknown"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "nullable",
+        "sample"
+      ],
+      "title": "FieldInfo",
+      "type": "object"
+    },
+    "InlineGeoJSON": {
+      "additionalProperties": false,
+      "description": "GeoJSON en el propio documento. Transitorio (S1.4) y solo para capas chicas.",
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "kind": {
+          "const": "geojson-inline",
+          "default": "geojson-inline",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "data"
+      ],
+      "title": "InlineGeoJSON",
+      "type": "object"
+    },
+    "LayerArtifact": {
+      "additionalProperties": false,
+      "description": "Una capa para el mapa: su referencia + CÓMO se entrega ahora.\n\n`inline` (capas chicas: el GeoJSON viaja ya) o `tiles` (grandes: el navegador\npide solo lo visible). Un raster se dibuja por `layer.storage`. `replaces` =\nid de la capa del mapa que esta sustituye (re-estilo: misma capa, nuevo\nestilo; FRT-04 la elige por nombre).",
+      "properties": {
+        "inline": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inline"
+        },
+        "kind": {
+          "const": "layer",
+          "default": "layer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "layer": {
+          "$ref": "#/$defs/LayerRef"
+        },
+        "replaces": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replaces"
+        },
+        "tiles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VectorTilesOut"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind",
+        "layer",
+        "inline",
+        "tiles",
+        "replaces"
+      ],
+      "title": "LayerArtifact",
+      "type": "object"
+    },
+    "LayerRef": {
+      "additionalProperties": false,
+      "description": "Una capa del núcleo.",
+      "properties": {
+        "bbox": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox"
+        },
+        "crs": {
+          "pattern": "^(EPSG|OGC|ESRI|IAU_2015):[A-Za-z0-9_.]+$",
+          "title": "Crs",
+          "type": "string"
+        },
+        "feature_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feature Count"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/FieldInfo"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "geometry_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geometry Type"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "vector",
+            "raster",
+            "table"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "storage": {
+          "discriminator": {
+            "mapping": {
+              "arcgis-image": "#/$defs/ArcGisImage",
+              "geojson-inline": "#/$defs/InlineGeoJSON",
+              "raster-tiles": "#/$defs/RasterTiles",
+              "remote-ref": "#/$defs/RemoteRef",
+              "table-rows": "#/$defs/TableRows",
+              "wms": "#/$defs/WmsLayer",
+              "workspace-table": "#/$defs/WorkspaceTable"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InlineGeoJSON"
+            },
+            {
+              "$ref": "#/$defs/WorkspaceTable"
+            },
+            {
+              "$ref": "#/$defs/RemoteRef"
+            },
+            {
+              "$ref": "#/$defs/RasterTiles"
+            },
+            {
+              "$ref": "#/$defs/ArcGisImage"
+            },
+            {
+              "$ref": "#/$defs/WmsLayer"
+            },
+            {
+              "$ref": "#/$defs/TableRows"
+            }
+          ],
+          "title": "Storage"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StyleSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "time": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "provider",
+        "crs",
+        "storage",
+        "provenance",
+        "geometry_type",
+        "bbox",
+        "feature_count",
+        "fields",
+        "style",
+        "time"
+      ],
+      "title": "LayerRef",
+      "type": "object"
+    },
+    "MapCommandOut": {
+      "additionalProperties": false,
+      "description": "Una operación del agente sobre el mapa (re-estilar, filtrar, hacer zoom…).",
+      "properties": {
+        "command": {
+          "discriminator": {
+            "mapping": {
+              "clear_selection": "#/$defs/ClearSelection",
+              "compare": "#/$defs/Compare",
+              "end_compare": "#/$defs/EndCompare",
+              "remove_layer": "#/$defs/RemoveLayer",
+              "reorder": "#/$defs/Reorder",
+              "request_input": "#/$defs/RequestInput",
+              "save_view": "#/$defs/SaveView",
+              "select": "#/$defs/Select",
+              "set_filter": "#/$defs/SetFilter",
+              "set_label": "#/$defs/SetLabel",
+              "set_opacity": "#/$defs/SetOpacity",
+              "set_style": "#/$defs/SetStyle",
+              "set_time": "#/$defs/SetTime",
+              "set_visibility": "#/$defs/SetVisibility",
+              "zoom_to": "#/$defs/ZoomTo"
+            },
+            "propertyName": "op"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/SetStyle"
+            },
+            {
+              "$ref": "#/$defs/SetVisibility"
+            },
+            {
+              "$ref": "#/$defs/SetOpacity"
+            },
+            {
+              "$ref": "#/$defs/Reorder"
+            },
+            {
+              "$ref": "#/$defs/SetLabel"
+            },
+            {
+              "$ref": "#/$defs/ZoomTo"
+            },
+            {
+              "$ref": "#/$defs/RemoveLayer"
+            },
+            {
+              "$ref": "#/$defs/Select"
+            },
+            {
+              "$ref": "#/$defs/ClearSelection"
+            },
+            {
+              "$ref": "#/$defs/SetFilter"
+            },
+            {
+              "$ref": "#/$defs/RequestInput"
+            },
+            {
+              "$ref": "#/$defs/SaveView"
+            },
+            {
+              "$ref": "#/$defs/Compare"
+            },
+            {
+              "$ref": "#/$defs/EndCompare"
+            },
+            {
+              "$ref": "#/$defs/SetTime"
+            }
+          ],
+          "title": "Command"
+        },
+        "kind": {
+          "const": "map_command",
+          "default": "map_command",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "command"
+      ],
+      "title": "MapCommandOut",
+      "type": "object"
+    },
+    "Predicado": {
+      "additionalProperties": false,
+      "description": "Condición sobre un atributo: así viaja una selección grande (FH.2), sin ids\nni geometrías. El valor va como parámetro, nunca concatenado en SQL.",
+      "properties": {
+        "field": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Field",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "=",
+            "!=",
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "in",
+            "contains"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "field",
+        "op",
+        "value"
+      ],
+      "title": "Predicado",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Cómo se obtuvo la capa: el panel \"cómo se hizo\" (FH.7) sale de aquí.",
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "capability": {
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code"
+        },
+        "edits": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceEdit"
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "produced_at": {
+          "format": "date-time",
+          "title": "Produced At",
+          "type": "string"
+        },
+        "source_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Version"
+        },
+        "sql": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sql"
+        }
+      },
+      "required": [
+        "capability",
+        "arguments",
+        "produced_at",
+        "sql",
+        "code",
+        "source_version",
+        "edits"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ProvenanceEdit": {
+      "additionalProperties": false,
+      "description": "Una operación que MODIFICÓ el dataset en su sitio (p. ej. añadir el área de cada\nelemento): sin esto, \"cómo se hizo\" contaba solo cómo nació la capa (FH.7).",
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "capability": {
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "produced_at": {
+          "format": "date-time",
+          "title": "Produced At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "arguments",
+        "produced_at"
+      ],
+      "title": "ProvenanceEdit",
+      "type": "object"
+    },
+    "RasterTiles": {
+      "additionalProperties": false,
+      "description": "Capa raster servida como teselas XYZ (imagery NDVI/RGB, ImageServer…).",
+      "properties": {
+        "kind": {
+          "const": "raster-tiles",
+          "default": "raster-tiles",
+          "title": "Kind",
+          "type": "string"
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Legend"
+        },
+        "maxzoom": {
+          "default": 22,
+          "maximum": 24,
+          "minimum": 0,
+          "title": "Maxzoom",
+          "type": "integer"
+        },
+        "minzoom": {
+          "default": 0,
+          "maximum": 24,
+          "minimum": 0,
+          "title": "Minzoom",
+          "type": "integer"
+        },
+        "tile_size": {
+          "default": 256,
+          "enum": [
+            256,
+            512
+          ],
+          "title": "Tile Size",
+          "type": "integer"
+        },
+        "url_template": {
+          "title": "Url Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "url_template",
+        "minzoom",
+        "maxzoom",
+        "tile_size",
+        "legend"
+      ],
+      "title": "RasterTiles",
+      "type": "object"
+    },
+    "RemoteRef": {
+      "additionalProperties": false,
+      "description": "Archivo remoto que el workspace puede ingerir (feature_ref de un MCP).",
+      "properties": {
+        "format": {
+          "enum": [
+            "geoparquet",
+            "flatgeobuf",
+            "geojson"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "kind": {
+          "const": "remote-ref",
+          "default": "remote-ref",
+          "title": "Kind",
+          "type": "string"
+        },
+        "uri": {
+          "pattern": "^(https?|s3|az|gs)://",
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "uri",
+        "format"
+      ],
+      "title": "RemoteRef",
+      "type": "object"
+    },
+    "RemoveLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/RemoveLayerArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "remove_layer",
+          "default": "remove_layer",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "RemoveLayer",
+      "type": "object"
+    },
+    "RemoveLayerArgs": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "RemoveLayerArgs",
+      "type": "object"
+    },
+    "Reorder": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/ReorderArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "reorder",
+          "default": "reorder",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "Reorder",
+      "type": "object"
+    },
+    "ReorderArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "relative_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Relative To"
+        },
+        "to": {
+          "enum": [
+            "top",
+            "bottom",
+            "above",
+            "below"
+          ],
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to",
+        "relative_to"
+      ],
+      "title": "ReorderArgs",
+      "type": "object"
+    },
+    "ReportOut": {
+      "additionalProperties": false,
+      "properties": {
+        "cites": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cites",
+          "type": "array"
+        },
+        "kind": {
+          "const": "report",
+          "default": "report",
+          "title": "Kind",
+          "type": "string"
+        },
+        "markdown": {
+          "title": "Markdown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "markdown",
+        "cites"
+      ],
+      "title": "ReportOut",
+      "type": "object"
+    },
+    "RequestInput": {
+      "additionalProperties": false,
+      "description": "FH.9: el agente suspende el turno y pide algo en el mapa; la respuesta del usuario\nllega en el turno siguiente (`map_context.respuesta_mapa`), con la consulta original.\n`layer_id` (opcional) acota pick_features a una capa.",
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/RequestInputArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "request_input",
+          "default": "request_input",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "RequestInput",
+      "type": "object"
+    },
+    "RequestInputArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "pick_point",
+            "draw_area",
+            "pick_layer",
+            "pick_features"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "prompt": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "prompt"
+      ],
+      "title": "RequestInputArgs",
+      "type": "object"
+    },
+    "SaveView": {
+      "additionalProperties": false,
+      "description": "FH.10: guarda la vista actual como marcador (ir a una: `zoom_to` con su bbox).",
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SaveViewArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "save_view",
+          "default": "save_view",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SaveView",
+      "type": "object"
+    },
+    "SaveViewArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "nombre": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Nombre",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nombre"
+      ],
+      "title": "SaveViewArgs",
+      "type": "object"
+    },
+    "Select": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SelectArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "select",
+          "default": "select",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "Select",
+      "type": "object"
+    },
+    "SelectArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 5000,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ids"
+        },
+        "mode": {
+          "default": "replace",
+          "enum": [
+            "replace",
+            "add",
+            "toggle"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "origin": {
+          "default": "agent",
+          "enum": [
+            "click",
+            "box",
+            "lasso",
+            "table",
+            "query",
+            "agent",
+            "link"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "where": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Predicado"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "ids",
+        "where",
+        "mode",
+        "origin",
+        "count"
+      ],
+      "title": "SelectArgs",
+      "type": "object"
+    },
+    "ServiceCard": {
+      "additionalProperties": false,
+      "description": "Un servicio encontrado en fuentes externas (discovery): se elige por número.",
+      "properties": {
+        "credits": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credits"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "layer_count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Count"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "type": {
+          "default": "desconocido",
+          "title": "Type",
+          "type": "string"
+        },
+        "url": {
+          "default": "",
+          "title": "Url",
+          "type": "string"
+        },
+        "views": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Views"
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "type",
+        "description",
+        "layer_count",
+        "source",
+        "credits",
+        "views"
+      ],
+      "title": "ServiceCard",
+      "type": "object"
+    },
+    "ServicesOut": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ServiceCard"
+          },
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        },
+        "kind": {
+          "const": "services",
+          "default": "services",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "title": "ServicesOut",
+      "type": "object"
+    },
+    "SetFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SetFilterArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "set_filter",
+          "default": "set_filter",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SetFilter",
+      "type": "object"
+    },
+    "SetFilterArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "where": {
+          "items": {
+            "$ref": "#/$defs/Predicado"
+          },
+          "maxItems": 10,
+          "title": "Where",
+          "type": "array"
+        }
+      },
+      "required": [
+        "where",
+        "count"
+      ],
+      "title": "SetFilterArgs",
+      "type": "object"
+    },
+    "SetLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SetLabelArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "set_label",
+          "default": "set_label",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SetLabel",
+      "type": "object"
+    },
+    "SetLabelArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "SetLabelArgs",
+      "type": "object"
+    },
+    "SetOpacity": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SetOpacityArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "set_opacity",
+          "default": "set_opacity",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SetOpacity",
+      "type": "object"
+    },
+    "SetOpacityArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "opacity": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Opacity",
+          "type": "number"
+        }
+      },
+      "required": [
+        "opacity"
+      ],
+      "title": "SetOpacityArgs",
+      "type": "object"
+    },
+    "SetStyle": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SetStyleArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "set_style",
+          "default": "set_style",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SetStyle",
+      "type": "object"
+    },
+    "SetStyleArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "style": {
+          "$ref": "#/$defs/StyleSpec"
+        }
+      },
+      "required": [
+        "style"
+      ],
+      "title": "SetStyleArgs",
+      "type": "object"
+    },
+    "SetTime": {
+      "additionalProperties": false,
+      "description": "FH.10: control de tiempo sobre las capas con fecha (una serie de imagery).",
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SetTimeArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "set_time",
+          "default": "set_time",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SetTime",
+      "type": "object"
+    },
+    "SetTimeArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "play": {
+          "default": false,
+          "title": "Play",
+          "type": "boolean"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time"
+        }
+      },
+      "required": [
+        "time",
+        "play"
+      ],
+      "title": "SetTimeArgs",
+      "type": "object"
+    },
+    "SetVisibility": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/SetVisibilityArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "set_visibility",
+          "default": "set_visibility",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "SetVisibility",
+      "type": "object"
+    },
+    "SetVisibilityArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "visible": {
+          "title": "Visible",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "visible"
+      ],
+      "title": "SetVisibilityArgs",
+      "type": "object"
+    },
+    "Stat": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "label",
+        "value",
+        "unit"
+      ],
+      "title": "Stat",
+      "type": "object"
+    },
+    "StatsOut": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Stat"
+          },
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        },
+        "kind": {
+          "const": "stats",
+          "default": "stats",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "items"
+      ],
+      "title": "StatsOut",
+      "type": "object"
+    },
+    "StyleSpec": {
+      "additionalProperties": false,
+      "description": "Simbología de la capa: el mismo dialecto que produce el agente de\nsimbología y dibuja el frontend (tipos TS generados de este schema, F4).\nFH.6 la vuelve editable a mano sobre este mismo modelo.",
+      "properties": {
+        "class_breaks": {
+          "items": {
+            "$ref": "#/$defs/ClassBreak"
+          },
+          "title": "Class Breaks",
+          "type": "array"
+        },
+        "classification_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Classification Field"
+        },
+        "classification_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "equal_interval",
+                "quantile",
+                "natural_breaks",
+                "std_deviation",
+                "manual",
+                "unique_values"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Classification Method"
+        },
+        "color_scheme": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color Scheme"
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fill"
+        },
+        "heatmap_intensity_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heatmap Intensity Field"
+        },
+        "heatmap_radius": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heatmap Radius"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "layer_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Title"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "num_classes": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Classes"
+        },
+        "pinned": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pinned",
+          "type": "array"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning"
+        },
+        "stroke": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke"
+        },
+        "symbol_size_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Symbol Size Max"
+        },
+        "symbol_size_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Symbol Size Min"
+        },
+        "symbology_type": {
+          "default": "single_symbol",
+          "enum": [
+            "single_symbol",
+            "unique_values",
+            "graduated_colors",
+            "graduated_symbols",
+            "heatmap",
+            "cluster"
+          ],
+          "title": "Symbology Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "layer_title",
+        "symbology_type",
+        "fill",
+        "stroke",
+        "marker",
+        "classification_field",
+        "classification_method",
+        "class_breaks",
+        "color_scheme",
+        "num_classes",
+        "symbol_size_min",
+        "symbol_size_max",
+        "heatmap_radius",
+        "heatmap_intensity_field",
+        "label",
+        "reasoning",
+        "pinned"
+      ],
+      "title": "StyleSpec",
+      "type": "object"
+    },
+    "TableOut": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "kind": {
+          "const": "table",
+          "default": "table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "preview": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "title": "Preview",
+          "type": "array"
+        },
+        "rows_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rows Ref"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "total_rows": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Rows"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "columns",
+        "preview",
+        "total_rows",
+        "rows_ref"
+      ],
+      "title": "TableOut",
+      "type": "object"
+    },
+    "TableRows": {
+      "additionalProperties": false,
+      "description": "Resultado tabular sin geometría (conteos, estadísticas por grupo…).",
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "kind": {
+          "const": "table-rows",
+          "default": "table-rows",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "columns",
+        "rows"
+      ],
+      "title": "TableRows",
+      "type": "object"
+    },
+    "TimeInfo": {
+      "additionalProperties": false,
+      "description": "Dimensión temporal de la capa (control de tiempo, FH.10).",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "field"
+      ],
+      "title": "TimeInfo",
+      "type": "object"
+    },
+    "TraceEntry": {
+      "additionalProperties": false,
+      "description": "Una decisión del agente (router, herramienta, reflexión…), ya saneada.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step"
+        },
+        "success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Success"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool"
+        }
+      },
+      "required": [
+        "step",
+        "kind",
+        "agent",
+        "tool",
+        "detail",
+        "success"
+      ],
+      "title": "TraceEntry",
+      "type": "object"
+    },
+    "VectorTilesOut": {
+      "additionalProperties": false,
+      "description": "Cómo pedir una capa grande del workspace como teselas MVT (S2.3).",
+      "properties": {
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "source_layer": {
+          "default": "dataset",
+          "title": "Source Layer",
+          "type": "string"
+        },
+        "url_template": {
+          "title": "Url Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url_template",
+        "source_layer",
+        "fields"
+      ],
+      "title": "VectorTilesOut",
+      "type": "object"
+    },
+    "WmsLayer": {
+      "additionalProperties": false,
+      "description": "Capa WMS (GetMap por tesela con `{bbox-epsg-3857}`).",
+      "properties": {
+        "format": {
+          "default": "image/png",
+          "enum": [
+            "image/png",
+            "image/jpeg"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "kind": {
+          "const": "wms",
+          "default": "wms",
+          "title": "Kind",
+          "type": "string"
+        },
+        "layers": {
+          "minLength": 1,
+          "title": "Layers",
+          "type": "string"
+        },
+        "transparent": {
+          "default": true,
+          "title": "Transparent",
+          "type": "boolean"
+        },
+        "url": {
+          "pattern": "^https?://",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "url",
+        "layers",
+        "format",
+        "transparent"
+      ],
+      "title": "WmsLayer",
+      "type": "object"
+    },
+    "WorkspaceTable": {
+      "additionalProperties": false,
+      "description": "Tabla materializada en el workspace espacial (S2.1).",
+      "properties": {
+        "geometry_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "geom",
+          "title": "Geometry Column"
+        },
+        "kind": {
+          "const": "workspace-table",
+          "default": "workspace-table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_name": {
+          "pattern": "^ws_[a-z0-9_]+$",
+          "title": "Schema Name",
+          "type": "string"
+        },
+        "srid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 4326,
+          "title": "Srid"
+        },
+        "table": {
+          "pattern": "^[a-z_][a-z0-9_]*$",
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_name",
+        "table",
+        "geometry_column",
+        "srid"
+      ],
+      "title": "WorkspaceTable",
+      "type": "object"
+    },
+    "ZoomTo": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/ZoomToArgs"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Id"
+        },
+        "op": {
+          "const": "zoom_to",
+          "default": "zoom_to",
+          "title": "Op",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "layer_id",
+        "reason",
+        "op",
+        "args"
+      ],
+      "title": "ZoomTo",
+      "type": "object"
+    },
+    "ZoomToArgs": {
+      "additionalProperties": false,
+      "properties": {
+        "bbox": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox"
+        }
+      },
+      "required": [
+        "bbox"
+      ],
+      "title": "ZoomToArgs",
+      "type": "object"
+    }
+  },
+  "$id": "geo-copilot/query_response/1.8.0",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "chart": "#/$defs/ChartOut",
+            "layer": "#/$defs/LayerArtifact",
+            "map_command": "#/$defs/MapCommandOut",
+            "report": "#/$defs/ReportOut",
+            "services": "#/$defs/ServicesOut",
+            "stats": "#/$defs/StatsOut",
+            "table": "#/$defs/TableOut"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/LayerArtifact"
+          },
+          {
+            "$ref": "#/$defs/TableOut"
+          },
+          {
+            "$ref": "#/$defs/ChartOut"
+          },
+          {
+            "$ref": "#/$defs/StatsOut"
+          },
+          {
+            "$ref": "#/$defs/ReportOut"
+          },
+          {
+            "$ref": "#/$defs/ServicesOut"
+          },
+          {
+            "$ref": "#/$defs/MapCommandOut"
+          }
+        ]
+      },
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "contract_version": {
+      "default": "1.8.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "correction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CorrectionInfo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "intent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Intent"
+    },
+    "message": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message"
+    },
+    "pending_approval_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pending Approval Id"
+    },
+    "query_id": {
+      "title": "Query Id",
+      "type": "string"
+    },
+    "reasoning_trace": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/TraceEntry"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Trace"
+    },
+    "requires_approval": {
+      "default": false,
+      "title": "Requires Approval",
+      "type": "boolean"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "sql": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sql"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "processing",
+        "waiting_approval",
+        "completed",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "suggestions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "title": "Suggestions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract_version",
+    "query_id",
+    "session_id",
+    "status",
+    "intent",
+    "confidence",
+    "message",
+    "requires_approval",
+    "pending_approval_id",
+    "artifacts",
+    "sql",
+    "suggestions",
+    "correction",
+    "reasoning_trace",
+    "created_at"
+  ],
+  "title": "QueryResponse",
+  "type": "object"
+}

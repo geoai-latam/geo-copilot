@@ -1,0 +1,79 @@
+# F7 (auditoría): actualizaciones de dependencias.
+#
+# - github-actions: las acciones van fijadas por SHA (con la versión en un comentario); sin esto
+#   nadie las movía y un arreglo de seguridad de una acción no llegaba nunca.
+# - pip: con `increase-if-necessary` solo se abre PR cuando sale una versión FUERA del rango
+#   declarado. Cobertura real: avisa del siguiente major de lo que tiene techo (openai, anthropic,
+#   langgraph, alembic, sqlalchemy, psycopg, sqlglot, mcp, duckdb y los techos de los servicios
+#   MCP); los rangos SIN techo (`>=`: pydantic, fastapi, uvicorn, httpx, pyjwt, opentelemetry… y
+#   casi todo requirements.txt) NUNCA abren PR: pip ya instala lo último en cada build, así que un
+#   major que rompa llega sin aviso y lo para el CI (o Trivy), no Dependabot. Los fijados con `==`
+#   (ruff y mypy en el extra dev de pyproject.toml) quedan fuera del rango con CADA versión nueva:
+#   abren PR en cada release, que es lo buscado (subirlos a mano, con el CI en verde).
+# - npm: el frontend tiene package-lock.json; los menores y parches van en un único PR.
+# - docker: las imágenes base de los Dockerfile (docker/ y services/*), para que una que llega a
+#   fin de vida o tiene un parche de seguridad se vea. Los saltos de Python o de la línea LTS de
+#   Node se ignoran: son una decisión (dependencias nativas, CI en 3.11), no un PR semanal. Ojo:
+#   así nadie avisa del fin de vida de Python 3.11 (2027-10) ni de Node 22 (2027-04-30). Las
+#   imágenes que fijan los compose (postgis, redis, prometheus, jaeger…) no entran aquí.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      acciones:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: pip
+    directories:
+      - /
+      - /packages/*
+      - /services/*
+    schedule:
+      interval: weekly
+      day: monday
+    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 5
+    ignore:
+      # mcp 2.x NO es subir el techo: FastMCP pasa a MCPServer (transporte y transport_security
+      # van a run()), lifespan una sola vez, handlers síncronos en hilo, httpx -> httpx2, campos en
+      # snake_case (nextCursor -> next_cursor), 4 MiB por POST y OTel activo por defecto. Es una
+      # migración propia de los 7 servidores y el cliente (2026-10-05, PRs #32 y #43-#49 cerrados).
+      # La línea 1.x sigue recibiendo parches de seguridad. Quitar este ignore al migrar.
+      - dependency-name: mcp
+        versions: [">=2"]
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      menores:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps(frontend)"
+
+  - package-ecosystem: docker
+    directories:
+      - /docker
+      - /services/*
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: python
+        versions: [">=3.12"]
+      - dependency-name: node
+        versions: [">=23"]
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(docker)"

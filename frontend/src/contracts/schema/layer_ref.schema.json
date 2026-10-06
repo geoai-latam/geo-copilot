@@ -1,0 +1,954 @@
+{
+  "$defs": {
+    "ArcGisImage": {
+      "additionalProperties": false,
+      "description": "Raster de un MapServer/ImageServer ArcGIS, pedido por extensión (export/exportImage).",
+      "properties": {
+        "kind": {
+          "const": "arcgis-image",
+          "default": "arcgis-image",
+          "title": "Kind",
+          "type": "string"
+        },
+        "service_url": {
+          "pattern": "^https?://",
+          "title": "Service Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "service_url"
+      ],
+      "title": "ArcGisImage",
+      "type": "object"
+    },
+    "ClassBreak": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "title": "Color",
+          "type": "string"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "max_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Value"
+        },
+        "min_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Value"
+        }
+      },
+      "required": [
+        "label",
+        "color",
+        "min_value",
+        "max_value",
+        "count"
+      ],
+      "title": "ClassBreak",
+      "type": "object"
+    },
+    "FieldInfo": {
+      "additionalProperties": false,
+      "description": "Un campo de la capa, con muestras: el contexto que el LLM usa para decidir\n(Sprints A–F: el LLM juzga viendo esquema + muestras, sin heurísticas).",
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "nullable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nullable"
+        },
+        "sample": {
+          "items": {},
+          "maxItems": 5,
+          "title": "Sample",
+          "type": "array"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "geometry",
+            "json",
+            "unknown"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "nullable",
+        "sample"
+      ],
+      "title": "FieldInfo",
+      "type": "object"
+    },
+    "InlineGeoJSON": {
+      "additionalProperties": false,
+      "description": "GeoJSON en el propio documento. Transitorio (S1.4) y solo para capas chicas.",
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "kind": {
+          "const": "geojson-inline",
+          "default": "geojson-inline",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "data"
+      ],
+      "title": "InlineGeoJSON",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Cómo se obtuvo la capa: el panel \"cómo se hizo\" (FH.7) sale de aquí.",
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "capability": {
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code"
+        },
+        "edits": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceEdit"
+          },
+          "title": "Edits",
+          "type": "array"
+        },
+        "produced_at": {
+          "format": "date-time",
+          "title": "Produced At",
+          "type": "string"
+        },
+        "source_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Version"
+        },
+        "sql": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sql"
+        }
+      },
+      "required": [
+        "capability",
+        "arguments",
+        "produced_at",
+        "sql",
+        "code",
+        "source_version",
+        "edits"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ProvenanceEdit": {
+      "additionalProperties": false,
+      "description": "Una operación que MODIFICÓ el dataset en su sitio (p. ej. añadir el área de cada\nelemento): sin esto, \"cómo se hizo\" contaba solo cómo nació la capa (FH.7).",
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "capability": {
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "produced_at": {
+          "format": "date-time",
+          "title": "Produced At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "arguments",
+        "produced_at"
+      ],
+      "title": "ProvenanceEdit",
+      "type": "object"
+    },
+    "RasterTiles": {
+      "additionalProperties": false,
+      "description": "Capa raster servida como teselas XYZ (imagery NDVI/RGB, ImageServer…).",
+      "properties": {
+        "kind": {
+          "const": "raster-tiles",
+          "default": "raster-tiles",
+          "title": "Kind",
+          "type": "string"
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Legend"
+        },
+        "maxzoom": {
+          "default": 22,
+          "maximum": 24,
+          "minimum": 0,
+          "title": "Maxzoom",
+          "type": "integer"
+        },
+        "minzoom": {
+          "default": 0,
+          "maximum": 24,
+          "minimum": 0,
+          "title": "Minzoom",
+          "type": "integer"
+        },
+        "tile_size": {
+          "default": 256,
+          "enum": [
+            256,
+            512
+          ],
+          "title": "Tile Size",
+          "type": "integer"
+        },
+        "url_template": {
+          "title": "Url Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "url_template",
+        "minzoom",
+        "maxzoom",
+        "tile_size",
+        "legend"
+      ],
+      "title": "RasterTiles",
+      "type": "object"
+    },
+    "RemoteRef": {
+      "additionalProperties": false,
+      "description": "Archivo remoto que el workspace puede ingerir (feature_ref de un MCP).",
+      "properties": {
+        "format": {
+          "enum": [
+            "geoparquet",
+            "flatgeobuf",
+            "geojson"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "kind": {
+          "const": "remote-ref",
+          "default": "remote-ref",
+          "title": "Kind",
+          "type": "string"
+        },
+        "uri": {
+          "pattern": "^(https?|s3|az|gs)://",
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "uri",
+        "format"
+      ],
+      "title": "RemoteRef",
+      "type": "object"
+    },
+    "StyleSpec": {
+      "additionalProperties": false,
+      "description": "Simbología de la capa: el mismo dialecto que produce el agente de\nsimbología y dibuja el frontend (tipos TS generados de este schema, F4).\nFH.6 la vuelve editable a mano sobre este mismo modelo.",
+      "properties": {
+        "class_breaks": {
+          "items": {
+            "$ref": "#/$defs/ClassBreak"
+          },
+          "title": "Class Breaks",
+          "type": "array"
+        },
+        "classification_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Classification Field"
+        },
+        "classification_method": {
+          "anyOf": [
+            {
+              "enum": [
+                "equal_interval",
+                "quantile",
+                "natural_breaks",
+                "std_deviation",
+                "manual",
+                "unique_values"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Classification Method"
+        },
+        "color_scheme": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color Scheme"
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fill"
+        },
+        "heatmap_intensity_field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heatmap Intensity Field"
+        },
+        "heatmap_radius": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heatmap Radius"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "layer_title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layer Title"
+        },
+        "marker": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Marker"
+        },
+        "num_classes": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Num Classes"
+        },
+        "pinned": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pinned",
+          "type": "array"
+        },
+        "reasoning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning"
+        },
+        "stroke": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke"
+        },
+        "symbol_size_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Symbol Size Max"
+        },
+        "symbol_size_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Symbol Size Min"
+        },
+        "symbology_type": {
+          "default": "single_symbol",
+          "enum": [
+            "single_symbol",
+            "unique_values",
+            "graduated_colors",
+            "graduated_symbols",
+            "heatmap",
+            "cluster"
+          ],
+          "title": "Symbology Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "layer_title",
+        "symbology_type",
+        "fill",
+        "stroke",
+        "marker",
+        "classification_field",
+        "classification_method",
+        "class_breaks",
+        "color_scheme",
+        "num_classes",
+        "symbol_size_min",
+        "symbol_size_max",
+        "heatmap_radius",
+        "heatmap_intensity_field",
+        "label",
+        "reasoning",
+        "pinned"
+      ],
+      "title": "StyleSpec",
+      "type": "object"
+    },
+    "TableRows": {
+      "additionalProperties": false,
+      "description": "Resultado tabular sin geometría (conteos, estadísticas por grupo…).",
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "kind": {
+          "const": "table-rows",
+          "default": "table-rows",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "columns",
+        "rows"
+      ],
+      "title": "TableRows",
+      "type": "object"
+    },
+    "TimeInfo": {
+      "additionalProperties": false,
+      "description": "Dimensión temporal de la capa (control de tiempo, FH.10).",
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "field"
+      ],
+      "title": "TimeInfo",
+      "type": "object"
+    },
+    "WmsLayer": {
+      "additionalProperties": false,
+      "description": "Capa WMS (GetMap por tesela con `{bbox-epsg-3857}`).",
+      "properties": {
+        "format": {
+          "default": "image/png",
+          "enum": [
+            "image/png",
+            "image/jpeg"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "kind": {
+          "const": "wms",
+          "default": "wms",
+          "title": "Kind",
+          "type": "string"
+        },
+        "layers": {
+          "minLength": 1,
+          "title": "Layers",
+          "type": "string"
+        },
+        "transparent": {
+          "default": true,
+          "title": "Transparent",
+          "type": "boolean"
+        },
+        "url": {
+          "pattern": "^https?://",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "url",
+        "layers",
+        "format",
+        "transparent"
+      ],
+      "title": "WmsLayer",
+      "type": "object"
+    },
+    "WorkspaceTable": {
+      "additionalProperties": false,
+      "description": "Tabla materializada en el workspace espacial (S2.1).",
+      "properties": {
+        "geometry_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "geom",
+          "title": "Geometry Column"
+        },
+        "kind": {
+          "const": "workspace-table",
+          "default": "workspace-table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "schema_name": {
+          "pattern": "^ws_[a-z0-9_]+$",
+          "title": "Schema Name",
+          "type": "string"
+        },
+        "srid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 4326,
+          "title": "Srid"
+        },
+        "table": {
+          "pattern": "^[a-z_][a-z0-9_]*$",
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_name",
+        "table",
+        "geometry_column",
+        "srid"
+      ],
+      "title": "WorkspaceTable",
+      "type": "object"
+    }
+  },
+  "$id": "geo-copilot/layer_ref/1.8.0",
+  "additionalProperties": false,
+  "description": "Una capa del núcleo.",
+  "properties": {
+    "bbox": {
+      "anyOf": [
+        {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Bbox"
+    },
+    "crs": {
+      "pattern": "^(EPSG|OGC|ESRI|IAU_2015):[A-Za-z0-9_.]+$",
+      "title": "Crs",
+      "type": "string"
+    },
+    "feature_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Feature Count"
+    },
+    "fields": {
+      "items": {
+        "$ref": "#/$defs/FieldInfo"
+      },
+      "title": "Fields",
+      "type": "array"
+    },
+    "geometry_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Geometry Type"
+    },
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "vector",
+        "raster",
+        "table"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "provider": {
+      "minLength": 1,
+      "title": "Provider",
+      "type": "string"
+    },
+    "storage": {
+      "discriminator": {
+        "mapping": {
+          "arcgis-image": "#/$defs/ArcGisImage",
+          "geojson-inline": "#/$defs/InlineGeoJSON",
+          "raster-tiles": "#/$defs/RasterTiles",
+          "remote-ref": "#/$defs/RemoteRef",
+          "table-rows": "#/$defs/TableRows",
+          "wms": "#/$defs/WmsLayer",
+          "workspace-table": "#/$defs/WorkspaceTable"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/InlineGeoJSON"
+        },
+        {
+          "$ref": "#/$defs/WorkspaceTable"
+        },
+        {
+          "$ref": "#/$defs/RemoteRef"
+        },
+        {
+          "$ref": "#/$defs/RasterTiles"
+        },
+        {
+          "$ref": "#/$defs/ArcGisImage"
+        },
+        {
+          "$ref": "#/$defs/WmsLayer"
+        },
+        {
+          "$ref": "#/$defs/TableRows"
+        }
+      ],
+      "title": "Storage"
+    },
+    "style": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StyleSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "time": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TimeInfo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "kind",
+    "provider",
+    "crs",
+    "storage",
+    "provenance",
+    "geometry_type",
+    "bbox",
+    "feature_count",
+    "fields",
+    "style",
+    "time"
+  ],
+  "title": "LayerRef",
+  "type": "object"
+}

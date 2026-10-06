@@ -1,0 +1,31 @@
+# Local pre-commit hooks. Added in Fase 4 (QA-8).
+# Run ``pre-commit install`` once after cloning to wire the hooks into git.
+# The same checks run in CI; this just shortens the feedback loop.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Misma versión que pyproject.toml (dev). Subir las dos a la vez.
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      # Sin `ruff-format`: el repo no está formateado con ruff (207 archivos
+      # cambiarían) y el hook reescribiría cada archivo tocado en su primer
+      # commit, mezclando formato con cambios reales. Reformatear todo es una
+      # decisión aparte, en un commit propio.
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # F1: un prompt es texto EXACTO que lee el LLM (src/geo_copilot/prompts/__init__.py): estos dos
+      # hooks le quitaban el salto de línea final a 6 prompts, que cambiaban sin que nadie lo pidiera.
+      - id: trailing-whitespace
+        exclude: ^src/geo_copilot/prompts/.*\.md$
+      - id: end-of-file-fixer
+        exclude: ^src/geo_copilot/prompts/.*\.md$
+      - id: check-yaml
+        # F7: docker-compose.prod.yml usa las etiquetas de compose !reset / !override
+        args: [--unsafe]
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]

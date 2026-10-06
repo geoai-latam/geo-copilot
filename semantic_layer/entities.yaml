@@ -1,0 +1,316 @@
+# =============================================================================
+# GEO_COPILOT — Capa semántica (ACTIVA)
+# =============================================================================
+# Mapea conceptos de negocio a las tablas físicas de la base. Se carga en
+# `api/dependencies.py:102` y su salida entra COMPLETA al prompt del LLM
+# (`agents/data_agent/agent.py:269-270` → `SemanticLayer.get_context_for_llm`).
+# Todo lo que se declare acá el modelo lo da por cierto y escribe SQL contra
+# ello: si una tabla o una columna no existe, el SQL generado falla.
+#
+# QUÉ HAY REALMENTE EN LA BASE (verificado, no de memoria)
+#
+#   catastro.construcciones — 25 filas en el seed de demostración,
+#                             ~2,4 M en el dump catastral real.
+#   catastro.lotes          — 8 filas en el seed, ~933 K en el dump real.
+#
+# Y nada más. Comprobado de dos maneras:
+#   - `pg_restore --list docker/init-db/02_catastro_real.dump` → dos TABLE.
+#   - `pg_restore --schema-only --table=…` → el CREATE TABLE de cada una, que
+#     es el mismo que `docker/init-db/02_seed_demo.sql` crea columna a columna.
+# Las columnas y los tipos de abajo salen de ese CREATE TABLE.
+#
+# GEOMETRÍA: la columna se llama `shape`, no `geom`. Está declarada como
+# `geometry` sin typmod, con un CHECK `st_srid(shape) = 4326`; `geometry_columns`
+# reporta srid 4326 y type GEOMETRY (comprobado contra la BD sembrada). Acá se
+# declara POLYGON porque todas las filas lo son, pero el introspector, cuando
+# hay BD conectada, reportará GEOMETRY: es el tipo de la columna, no un error.
+#
+# UNIDADES: 4326 son GRADOS. `ST_Area(shape)` devuelve grados², no metros. El
+# validador AST (`agents/gis_agent/sql_ast_validator.py`) RECHAZA medir sobre
+# grados, así que toda métrica de área o distancia de acá usa `::geography`,
+# que mide sobre el elipsoide y devuelve m² / m. No quites esos casts.
+#
+# DATOS PERSONALES: ninguna de las dos tablas tiene propietario, dirección ni
+# identificador de persona — por eso no hay ningún campo `sensitive: true`. La
+# versión anterior de este archivo declaraba un `nombre_prop` que no existe.
+#
+# La plantilla de ejemplo con más entidades está en `entities.example.yaml`, y
+# NO se carga.
+# =============================================================================
+
+version: "2.0"
+description: "Capa semántica del catastro: construcciones y lotes (catastro.*)"
+
+# =============================================================================
+# ENTIDADES
+# =============================================================================
+entities:
+
+  # ---------------------------------------------------------------------------
+  # CONSTRUCCIONES — la huella de cada edificación
+  # ---------------------------------------------------------------------------
+  # `description` NO nombra a la otra entidad, a propósito: `find_entity` busca
+  # el término del usuario también DENTRO de la descripción, así que un "lote"
+  # escrito acá haría que preguntar por lotes devolviera además esta entidad
+  # (medido: `find_entity('lote')` devolvía las dos). La relación entre ambas se
+  # explica en el campo `lotecodigo`, que el LLM sí ve y el buscador no indexa.
+  construcciones:
+    description: >-
+      Huella catastral de cada construcción: el polígono de la planta del
+      edificio, con su número de pisos, semisótanos, sótanos y altura.
+    aliases:
+      - construccion
+      - construcción
+      - edificacion
+      - edificación
+      - edificio
+      - edificios
+      - casa
+      - casas
+      - inmueble
+      - huella
+    table: "construcciones"
+    schema: "catastro"
+    geometry_column: "shape"
+    geometry_type: "POLYGON"
+    srid: 4326
+
+    # Las claves de `fields` son los nombres FÍSICOS de las columnas a
+    # propósito: `get_context_for_llm` imprime la clave, no el `column:`, así
+    # que una clave "bonita" (p. ej. `pisos`) le enseñaría al modelo un nombre
+    # de columna que no existe. La traducción humana va en `description`.
+    fields:
+      objectid:
+        column: "objectid"
+        type: "integer"
+        description: "Identificador único de la construcción"
+        primary_key: true
+
+      concodigo:
+        column: "concodigo"
+        type: "string"
+        description: >-
+          Código catastral de la construcción. Los dos primeros dígitos son el
+          departamento (11 = Bogotá D.C., 25 = Cundinamarca)
+
+      connpisos:
+        column: "connpisos"
+        type: "integer"
+        description: "Número de pisos sobre el nivel del suelo (1 a 15 en los datos de demostración)"
+
+      connsotano:
+        column: "connsotano"
+        type: "integer"
+        description: "Número de sótanos. 0 si no tiene"
+
+      contsemis:
+        column: "contsemis"
+        type: "integer"
+        description: "Número de semisótanos. 0 si no tiene"
+
+      convoladiz:
+        column: "convoladiz"
+        type: "integer"
+        description: "Voladizo: 1 si la construcción tiene, 0 si no"
+
+      conaltura:
+        column: "conaltura"
+        type: "float"
+        unit: "m"
+        description: "Altura de la construcción en metros"
+
+      conmejora:
+        column: "conmejora"
+        type: "float"
+        unit: "COP"
+        description: >-
+          Valor de la mejora (la construcción) en pesos colombianos. En el seed
+          de demostración es un valor sintético, no un avalúo real
+
+      conelevaci:
+        column: "conelevaci"
+        type: "integer"
+        description: >-
+          Código de elevación heredado del catastro de origen. En los datos de
+          demostración toma valores entre 100 y 180 y NO tiene unidad
+          documentada: no lo uses para medir ni lo reportes en metros
+
+      lotecodigo:
+        column: "lotecodigo"
+        type: "string"
+        description: >-
+          Código del lote sobre el que se apoya la construcción. Es la llave
+          para unirla con catastro.lotes.lotcodigo
+
+    metrics:
+      - name: "cantidad"
+        expression: "COUNT(*)"
+        description: "Número de construcciones"
+
+      - name: "area_construida_total_m2"
+        expression: "SUM(ST_Area(shape::geography))"
+        description: "Área total de huella construida en metros cuadrados (geodésica)"
+
+      - name: "pisos_promedio"
+        expression: "AVG(connpisos)"
+        description: "Promedio de pisos"
+
+      - name: "altura_maxima"
+        expression: "MAX(conaltura)"
+        description: "Altura máxima en metros"
+
+  # ---------------------------------------------------------------------------
+  # LOTES — la unidad de terreno (predio)
+  # ---------------------------------------------------------------------------
+  # Misma regla que arriba: la descripción no nombra a la otra entidad.
+  lotes:
+    description: >-
+      Unidad catastral de terreno (predio): el polígono del suelo, con su
+      código, la manzana a la que pertenece y el distrito.
+    aliases:
+      - lote
+      - predio
+      - predios
+      - parcela
+      - parcelas
+      - terreno
+      - terrenos
+    table: "lotes"
+    schema: "catastro"
+    geometry_column: "shape"
+    geometry_type: "POLYGON"
+    srid: 4326
+
+    fields:
+      objectid:
+        column: "objectid"
+        type: "integer"
+        description: "Identificador único del lote"
+        primary_key: true
+
+      lotcodigo:
+        column: "lotcodigo"
+        type: "string"
+        description: >-
+          Código catastral del lote. Es la llave para unirlo con
+          catastro.construcciones.lotecodigo
+
+      manzcodigo:
+        column: "manzcodigo"
+        type: "string"
+        description: "Código de la manzana catastral que contiene el lote"
+
+      lotdistrit:
+        column: "lotdistrit"
+        type: "integer"
+        description: >-
+          Código de distrito catastral. En los datos de demostración: 11
+          (Bogotá D.C.) y 25 (Cundinamarca). No es el código DANE de municipio
+
+      lotupredia:
+        column: "lotupredia"
+        type: "integer"
+        description: "Número de unidades prediales del lote"
+
+      lotdispers:
+        column: "lotdispers"
+        type: "string"
+        description: "Indicador de lote disperso: 'N' no, 'S' sí"
+        enum: ["N", "S"]
+
+      lotildispe:
+        column: "lotildispe"
+        type: "string"
+        description: "Código del lote disperso asociado. NULL cuando no aplica"
+
+    metrics:
+      - name: "cantidad"
+        expression: "COUNT(*)"
+        description: "Número de lotes"
+
+      - name: "area_total_m2"
+        expression: "SUM(ST_Area(shape::geography))"
+        description: "Área total de los lotes en metros cuadrados (geodésica)"
+
+      - name: "area_promedio_m2"
+        expression: "AVG(ST_Area(shape::geography))"
+        description: "Área promedio por lote en metros cuadrados (geodésica)"
+
+# =============================================================================
+# RELACIONES ENTRE ENTIDADES
+# =============================================================================
+# OJO: las dos relaciones de abajo NO devuelven lo mismo sobre los datos de
+# demostración (medido: 9 pares por geometría, 8 por código). Hay un lote con
+# dos construcciones encima y construcciones que no caen dentro de ningún lote
+# del seed. Si una consulta necesita "todas las construcciones", el join
+# espacial tiene que ser LEFT.
+relationships:
+
+  construccion_en_lote:
+    from_entity: "construcciones"
+    to_entity: "lotes"
+    type: "spatial_within"
+    description: "Construcciones contenidas en un lote: ST_Within(construcciones.shape, lotes.shape)"
+
+  construccion_lote_por_codigo:
+    from_entity: "construcciones"
+    to_entity: "lotes"
+    type: "attribute_join"
+    description: "Construcciones unidas a su lote por código: construcciones.lotecodigo = lotes.lotcodigo"
+
+# =============================================================================
+# ANÁLISIS PREDEFINIDOS
+# =============================================================================
+analysis_templates:
+
+  proximidad:
+    description: >-
+      Análisis de entidades cercanas a un punto o área. Las distancias van en
+      metros, así que la geometría se mide con ::geography (4326 son grados)
+    parameters:
+      - name: "target_entity"
+        type: "entity"
+        description: "Entidad objetivo"
+      - name: "distance"
+        type: "float"
+        unit: "m"
+        description: "Distancia en metros"
+      - name: "source_entity"
+        type: "entity"
+        description: "Entidad fuente"
+
+  agregacion:
+    description: "Agregación de datos por unidad territorial (lote, manzana o distrito)"
+    parameters:
+      - name: "data_entity"
+        type: "entity"
+        description: "Entidad con datos a agregar"
+      - name: "admin_entity"
+        type: "entity"
+        description: "Entidad territorial para agrupar"
+      - name: "metric"
+        type: "string"
+        description: "Métrica a calcular"
+
+# =============================================================================
+# METADATA
+# =============================================================================
+metadata:
+  created_at: "2024-11-20"
+  updated_at: "2026-09-08"
+  author: "GEO_COPILOT"
+  notes: >-
+    Reescrito el 2026-09-08. Antes describía seis entidades (parcela,
+    municipio, río, vía, zona de riesgo, equipamiento) que no existen en
+    ninguna base de este repositorio; quedaron como plantilla en
+    entities.example.yaml, que no se carga.
+  data_sources:
+    - name: "Seed de demostración"
+      description: >-
+        docker/init-db/02_seed_demo.sql — 25 construcciones y 8 lotes
+        SINTÉTICOS sobre coordenadas reales de Bogotá y Cundinamarca. Es lo que
+        trae un clon limpio.
+    - name: "Dump catastral real (opcional)"
+      description: >-
+        docker/init-db/02_catastro_real.dump — no se versiona (522 MB). Mismo
+        esquema; quien lo tenga lo pone ahí y el seed se aparta solo.

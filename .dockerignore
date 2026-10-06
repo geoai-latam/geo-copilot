@@ -1,0 +1,72 @@
+# Build context exclusions — keep image builds fast and small.
+.git
+.github
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.venv
+venv
+env
+node_modules
+frontend/node_modules
+frontend/dist
+dist
+build
+*.egg-info
+docs
+.env
+# RUN (auditoría E2E): el dump catastral (~500 MB) solo lo consume el bind-mount
+# de postgis (docker/init-db), NUNCA la imagen de `app`/`frontend`. El Dockerfile
+# de app usa contexto `..` y `COPY . .`, así que sin esto el dump se hornea en la
+# imagen (+500 MB) y todo el contexto se transfiere al daemon en cada build.
+*.dump
+docker/init-db/*.dump
+
+# -----------------------------------------------------------------------------
+# Auditoría 2026-09-08 (§3): LOGS. Con `COPY . .` en docker/Dockerfile:39 los
+# logs del desarrollador se hornean en la imagen y viajan con ella. Medido en
+# este árbol: backend.log (704 líneas, 92 KB) lleva prompts de usuario, el SQL
+# que generó el LLM y UUIDs de sesión; backend.err.log y frontend.log lo mismo
+# en menor escala. Están en .gitignore (`*.log`), o sea que NO se ven en el
+# repositorio y por eso nadie los echaba de menos — pero .gitignore no es
+# .dockerignore, y la imagen sí los llevaba. En un repo público eso es
+# publicar la sesión de trabajo de otro dentro de un artefacto distribuible.
+# `**/` porque un patrón sin barra solo casa en la raíz del contexto.
+**/*.log
+**/logs
+
+# Artefactos de test y cobertura: no los ejecuta ni los lee la imagen, y las
+# trazas de Playwright guardan capturas de la app con datos reales.
+# (.coverage y htmlcov ya están arriba; faltaban las variantes y el frontend.)
+.coverage.*
+coverage.xml
+**/coverage
+frontend/test-results
+frontend/playwright-report
+frontend/.nyc_output
+
+# Resultados de benchmark: JSON con consultas y respuestas de corridas locales.
+bench_results
+
+# Configuración local del entorno y del editor. `.env` ya está arriba; estas
+# son las variantes (.env.local, .env.production...) que un colaborador crea
+# sin pensar y que el `COPY . .` se llevaría igual.
+.env.*
+!.env.example
+.claude
+.vscode
+.idea
+**/*.swp
+
+# NO excluir (deliberado, para que nadie lo "optimice" después):
+#   data/      — arcgis_discovery.py:624 lee data/arcgis_catalog.json en
+#                runtime. Está en .gitignore, así que solo existe en la máquina
+#                de quien lo generó; sacarlo del contexto deja al catálogo
+#                ArcGIS vacío dentro del contenedor.
+#   tests/     — la suite se corre DENTRO del contenedor `app` a propósito
+#                (el benchmark agéntico necesita el sandbox POSIX).
+#   docker/corporate-ca.pem — Dockerfile.frontend:40 lo copia si existe.

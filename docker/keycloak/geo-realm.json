@@ -1,0 +1,145 @@
+{
+  "realm": "geo",
+  "displayName": "GEO Copilot (desarrollo)",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "loginWithEmailAllowed": true,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["es", "en"],
+  "defaultLocale": "es",
+  "roles": {
+    "realm": [
+      { "name": "viewer", "description": "Ve y consulta; no ejecuta cálculos ni escrituras" },
+      { "name": "analyst", "description": "Consulta, calcula y analiza" },
+      { "name": "admin", "description": "Todo, más conexiones, re-aprobación de tools y auditoría" }
+    ]
+  },
+  "groups": [
+    { "name": "acme", "path": "/acme", "attributes": { "org": ["acme"] } },
+    { "name": "beta", "path": "/beta", "attributes": { "org": ["beta"] } }
+  ],
+  "users": [
+    {
+      "id": "bebcdc2e-72e4-41dc-8f47-1ac3fa797849",
+      "username": "ana", "enabled": true, "emailVerified": true,
+      "firstName": "Ana", "lastName": "Analista", "email": "ana@acme.test",
+      "credentials": [{ "type": "password", "value": "${KC_DEV_PASSWORD}", "temporary": false }],
+      "realmRoles": ["analyst"], "groups": ["/acme"], "requiredActions": []
+    },
+    {
+      "id": "faaa52b5-3034-4538-97b7-8cf93efa6ee5",
+      "username": "beto", "enabled": true, "emailVerified": true,
+      "firstName": "Beto", "lastName": "Visor", "email": "beto@acme.test",
+      "credentials": [{ "type": "password", "value": "${KC_DEV_PASSWORD}", "temporary": false }],
+      "realmRoles": ["viewer"], "groups": ["/acme"], "requiredActions": []
+    },
+    {
+      "id": "e5339db1-e147-4906-babe-d44a28ccf29a",
+      "username": "carla", "enabled": true, "emailVerified": true,
+      "firstName": "Carla", "lastName": "Admin", "email": "carla@acme.test",
+      "credentials": [{ "type": "password", "value": "${KC_DEV_PASSWORD}", "temporary": false }],
+      "realmRoles": ["admin"], "groups": ["/acme"], "requiredActions": []
+    },
+    {
+      "id": "c8ec71bc-e88b-42a5-a519-86376d08e8b4",
+      "username": "diego", "enabled": true, "emailVerified": true,
+      "firstName": "Diego", "lastName": "Beta", "email": "diego@beta.test",
+      "credentials": [{ "type": "password", "value": "${KC_DEV_PASSWORD}", "temporary": false }],
+      "realmRoles": ["analyst"], "groups": ["/beta"], "requiredActions": []
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "geo-copilot-web",
+      "name": "GEO Copilot (navegador)",
+      "description": "Cliente público del frontend: código de autorización con PKCE",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*", "http://localhost:5175/*", "http://localhost:3001/*", "https://localhost:3443/*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "protocolMappers": [
+        {
+          "name": "organizacion", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": { "user.attribute": "org", "claim.name": "org", "jsonType.label": "String",
+                      "aggregate.attrs": "false", "multivalued": "false",
+                      "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" }
+        },
+        {
+          "name": "audiencia-api", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "geo-copilot-api", "access.token.claim": "true", "id.token.claim": "false" }
+        }
+      ]
+    },
+    {
+      "clientId": "geo-copilot-e2e",
+      "name": "GEO Copilot (tests automáticos, SOLO desarrollo)",
+      "description": "Contraseña directa (ROPC) para que los tests obtengan tokens de dos usuarios reales sin navegador",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "organizacion", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": { "user.attribute": "org", "claim.name": "org", "jsonType.label": "String",
+                      "aggregate.attrs": "false", "multivalued": "false",
+                      "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" }
+        },
+        {
+          "name": "audiencia-api", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.custom.audience": "geo-copilot-api", "access.token.claim": "true", "id.token.claim": "false" }
+        }
+      ]
+    },
+    {
+      "clientId": "geo-copilot-api",
+      "name": "GEO Copilot (API)",
+      "description": "La API: audiencia de los tokens y, con token exchange, pide tokens del usuario para los MCP",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KC_API_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": { "standard.token.exchange.enabled": "true" },
+      "protocolMappers": [
+        {
+          "name": "audiencia-hello-geo", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.client.audience": "hello-geo", "access.token.claim": "true", "id.token.claim": "false" }
+        },
+        {
+          "name": "organizacion", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": { "user.attribute": "org", "claim.name": "org", "jsonType.label": "String",
+                      "aggregate.attrs": "false", "multivalued": "false",
+                      "access.token.claim": "true", "id.token.claim": "false", "userinfo.token.claim": "false" }
+        }
+      ]
+    },
+    {
+      "clientId": "hello-geo",
+      "name": "hello-geo (servidor MCP de ejemplo)",
+      "description": "Audiencia de los tokens de usuario que la API obtiene por token exchange para este servidor",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ]
+}

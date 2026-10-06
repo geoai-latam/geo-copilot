@@ -1,0 +1,383 @@
+# Benchmark agéntico de GEO_COPILOT — 32 tareas NL end-to-end.
+#
+# Cada tarea corre contra el grafo REAL (LLM real + BD real + sandbox) con
+# estado fresco. `setup` precarga contexto (capas sintéticas deterministas,
+# historial, feature seleccionada). `expected` son checks DETERMINISTAS que
+# evalúa evaluator.py — ver ese módulo para el vocabulario completo.
+#
+# BD real de referencia (no cambiar las tareas sin verificarla):
+#   catastro.lotes          933.473 filas (objectid, lotcodigo, manzcodigo, lotdistrit, …)
+#   catastro.construcciones 2.409.199 filas (connpisos, conaltura, connsotano, lotecodigo, …)
+#
+# `flaky: true` = depende de red externa (ArcGIS Hub); su fallo se reporta
+# pero NO baja el score principal (score_strict lo incluye).
+
+# ---------------------------------------------------------------- simple (5)
+- id: simple-count-lotes
+  category: simple
+  query: "¿cuántos lotes hay en total en la base de datos?"
+  expected:
+    success: true
+    intent_any: [query_data]
+    intent_optional_react: true
+    trajectory_contains: [gis_agent]
+    sql_regex: "count"
+    min_results: 1
+
+- id: simple-select-25
+  category: simple
+  query: "muéstrame 25 lotes de catastro"
+  expected:
+    success: true
+    sql_regex: "limit"
+    result_kind: geojson
+    max_results: 25
+
+- id: simple-filtro-pisos
+  category: simple
+  query: "trae las construcciones con más de 10 pisos, máximo 50"
+  expected:
+    success: true
+    sql_regex: "connpisos"
+    min_results: 1
+    max_results: 50
+
+- id: simple-que-entidades
+  category: simple
+  query: "¿qué datos tengo disponibles en la base de datos?"
+  expected:
+    success: true
+    answer_regex: "lotes|construccion"
+
+- id: simple-lotes-de-manzana
+  category: simple
+  query: "dame los primeros 10 lotes de la manzana con manzcodigo 002412028"
+  expected:
+    success: true
+    sql_regex: "manzcodigo"
+    min_results: 1
+    max_results: 10
+
+# ------------------------------------------------------------ aggregation (4)
+- id: agg-conteo-por-pisos
+  category: aggregation
+  query: "¿cuántas construcciones hay por número de pisos? dame el conteo agrupado por connpisos"
+  expected:
+    success: true
+    sql_regex: "group\\s+by"
+    min_results: 2
+
+- id: agg-altura-promedio
+  category: aggregation
+  query: "¿cuál es la altura promedio (conaltura) de las construcciones?"
+  expected:
+    success: true
+    sql_regex: "avg"
+    min_results: 1
+
+- id: agg-lotes-por-distrito
+  category: aggregation
+  query: "¿cuántos lotes hay por distrito (lotdistrit)? muéstrame el top 10"
+  expected:
+    success: true
+    sql_regex: "group\\s+by"
+    min_results: 2
+    max_results: 10
+
+- id: agg-max-sotanos
+  category: aggregation
+  query: "¿cuál es el número máximo de sótanos (connsotano) registrado en las construcciones?"
+  expected:
+    success: true
+    sql_regex: "max"
+    min_results: 1
+
+# ---------------------------------------------------------------- spatial (3)
+- id: spatial-buffer
+  category: spatial
+  query: "haz un buffer de 300 metros alrededor de estos puntos"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: geojson
+
+- id: spatial-centroides
+  category: spatial
+  query: "calcula el centroide de cada polígono de la capa cargada"
+  setup:
+    previous_geojson: synthetic_polygons
+    active_data_source: internal
+    active_source_name: "capa de polígonos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: geojson
+    min_results: 24
+    max_results: 24
+
+- id: spatial-areas
+  category: spatial
+  query: "calcula el área en metros cuadrados de cada polígono y agrégala como atributo"
+  setup:
+    previous_geojson: synthetic_polygons
+    active_data_source: internal
+    active_source_name: "capa de polígonos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: geojson
+
+# --------------------------------------------------------------- analytic (5)
+- id: analytic-dbscan
+  category: analytic
+  query: "agrupa estos puntos en clusters con DBSCAN y muéstrame cuántos puntos tiene cada cluster"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: table_or_chart
+
+- id: analytic-correlacion
+  category: analytic
+  query: "calcula la correlación entre los campos valor y pisos de esta capa"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: table_or_chart
+
+- id: analytic-outliers
+  category: analytic
+  query: "detecta valores atípicos (outliers) en el campo valor de esta capa"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: table_or_chart
+
+- id: analytic-distribucion
+  category: analytic
+  query: "muéstrame la distribución del campo valor en un histograma"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: table_or_chart
+
+- id: analytic-descriptivas
+  category: analytic
+  query: "dame estadísticas descriptivas (media, mediana, desviación estándar) del campo valor"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [python_agent]
+    result_kind: table_or_chart
+
+# -------------------------------------------------------------- multistep (4)
+- id: multi-lotes-dbscan
+  category: multistep
+  query: "trae 100 lotes de catastro y agrúpalos en clusters con DBSCAN"
+  expected:
+    success: true
+    trajectory_contains: [gis_agent, python_agent]
+    result_kind: table_or_chart
+
+- id: multi-construcciones-distribucion
+  category: multistep
+  query: "trae 60 construcciones con 2 o más pisos y muéstrame la distribución del número de pisos"
+  expected:
+    success: true
+    trajectory_contains: [gis_agent, python_agent]
+    result_kind: table_or_chart
+
+- id: multi-lotes-simbologia
+  category: multistep
+  query: "trae 80 lotes de catastro y coloréalos por manzana"
+  expected:
+    success: true
+    trajectory_contains: [gis_agent, symbology_agent]
+    result_kind: geojson
+    has_symbology: true
+
+- id: multi-lotes-centroides
+  category: multistep
+  query: "trae 40 lotes de catastro y calcula sus centroides"
+  expected:
+    success: true
+    trajectory_contains: [gis_agent, python_agent]
+    result_kind: geojson
+
+# --------------------------------------------------------------- followup (3)
+- id: follow-campos-previos
+  category: followup
+  query: "¿qué campos tenían esos resultados que me mostraste?"
+  setup:
+    active_data_source: internal
+    conversation_history:
+      - role: user
+        content: "trae 50 lotes de catastro"
+      - role: assistant
+        content: "Se encontraron 50 lotes en la capa 'Lotes'."
+    previous_sql: "SELECT objectid, lotcodigo, manzcodigo FROM catastro.lotes LIMIT 50"
+    previous_results:
+      - {objectid: 1, lotcodigo: "001", manzcodigo: "00A"}
+      - {objectid: 2, lotcodigo: "002", manzcodigo: "00B"}
+  expected:
+    success: true
+    intent_any: [follow_up, direct_response]
+    intent_optional_react: true
+    no_sql: true
+    answer_regex: "lotcodigo|manzcodigo|objectid"
+
+- id: follow-feature-seleccionada
+  category: followup
+  query: "dame todos los datos del lote que seleccioné en el mapa"
+  setup:
+    active_data_source: internal
+    conversation_history:
+      - role: user
+        content: "trae 50 lotes de catastro"
+      - role: assistant
+        content: "Se encontraron 50 lotes en la capa 'Lotes'."
+    map_context:
+      selected_feature:
+        layer_id: "Lotes"
+        properties: {objectid: 841176, lotcodigo: "002412028019", manzcodigo: "002412028"}
+  expected:
+    success: true
+    sql_regex: "lotcodigo|objectid"
+    min_results: 1
+
+- id: follow-saludo-capacidades
+  category: followup
+  query: "hola, ¿qué sabes hacer?"
+  expected:
+    success: true
+    intent_any: [direct_response]
+    intent_optional_react: true
+    no_sql: true
+    result_kind: text_only
+
+# -------------------------------------------------------------- symbology (2)
+- id: symb-por-uso
+  category: symbology
+  query: "colorea la capa por el campo uso"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [symbology_agent]
+    has_symbology: true
+
+- id: symb-sin-agrupar
+  category: symbology
+  query: "colorea los puntos por uso, sin agrupar"
+  setup:
+    previous_geojson: synthetic_points
+    active_data_source: internal
+    active_source_name: "capa de puntos de prueba"
+  expected:
+    success: true
+    has_symbology: true
+    symbology_type_not: cluster
+
+# --------------------------------------------------------------- external (2)
+- id: ext-buscar-bomberos
+  category: external
+  flaky: true
+  query: "busca datasets de estaciones de bomberos en datos abiertos"
+  expected:
+    success: true
+    trajectory_contains: [data_agent]
+    min_services: 1
+
+- id: ext-buscar-ortofotos
+  category: external
+  flaky: true
+  query: "busca ortofotos de Colombia en portales de datos abiertos"
+  expected:
+    success: true
+    trajectory_contains: [data_agent]
+    min_services: 1
+
+# -------------------------------------------------------------- ambiguous (2)
+# Hoy el contrato es honestidad SIN crash (tras A5 se endurece a `clarify`).
+- id: amb-cruzalas
+  category: ambiguous
+  query: "crúzalas"
+  expected:
+    answer_not_regex: "traceback|exception|internal error"
+    answer_regex: "qué|cuál|capa|datos|especifica|falta|no hay|aclarar|indicar"
+
+- id: amb-mejoralo
+  category: ambiguous
+  query: "mejóralo"
+  expected:
+    answer_not_regex: "traceback|exception|internal error"
+    answer_regex: "qué|cuál|especifica|no hay|contexto|aclarar|indicar|falta"
+
+# ------------------------------------------------------------ unresolvable (2)
+- id: unres-tabla-inexistente
+  category: unresolvable
+  query: "¿cuántos hospitales hay en la tabla hospitales de la base de datos?"
+  expected:
+    answer_not_regex: "hay \\d+ hospitales"
+    answer_regex: "no (existe|encontr|hay|dispon|pude|se pudo)|does not exist|no está"
+
+- id: unres-delete-rechazado
+  category: unresolvable
+  query: "elimina todos los lotes de la base de datos"
+  expected:
+    answer_not_regex: "eliminad[oa]s? (con éxito|correctamente)"
+    answer_regex: "no (puedo|permitid|está permitido)|solo (lectura|consulta)|rechaz|no se puede|no es posible|únicamente|lectura"
+
+# ---------------------------------------------------------------- imagery (2)
+# Requieren el servicio imagery-mcp levantado (compose), registrado en el YAML
+# de servidores MCP, y red a Planetary Computer. Las tools llegan por el hub
+# (`imagery__…`); si el servicio no está, el fallo honesto es el resultado.
+- id: imagery-ndvi-zona
+  category: imagery
+  flaky: true
+  query: "dame el NDVI de la zona visible del mapa"
+  setup:
+    map_context:
+      viewport: {bbox: [-74.12, 4.60, -74.08, 4.64]}
+  expected:
+    success: true
+    trajectory_contains: [imagery__imagery_ndvi]
+    result_kind: table_or_chart
+    answer_not_regex: "traceback|exception"
+
+- id: imagery-zonal-poligonos
+  category: imagery
+  flaky: true
+  query: "calcula el NDVI de cada polígono de la capa cargada"
+  setup:
+    previous_geojson: synthetic_polygons
+    active_data_source: internal
+    active_source_name: "capa de polígonos de prueba"
+  expected:
+    success: true
+    trajectory_contains: [imagery__imagery_zonal_stats]
+    answer_not_regex: "traceback|exception"

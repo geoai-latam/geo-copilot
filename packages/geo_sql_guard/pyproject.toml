@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geo_sql_guard"
+version = "0.1.0"
+description = "Validación estructural de SQL de LLM y CRS medibles (compartido núcleo/servidores MCP)."
+requires-python = ">=3.11"
+dependencies = ["sqlglot>=25,<31", "pyproj>=3.6"]
+
+[tool.setuptools]
+packages = ["geo_sql_guard"]

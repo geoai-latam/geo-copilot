@@ -1,0 +1,5 @@
+# arcgis-mcp — servidor GeoMCP de ArcGIS (el kit se instala aparte en el Dockerfile)
+mcp>=1.28,<2
+uvicorn>=0.30
+httpx>=0.27,<1
+pyproj>=3.6,<4

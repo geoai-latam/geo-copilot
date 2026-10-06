@@ -1,0 +1,4 @@
+{
+  "_comment": "FND-NOCESIUM-GATE: baseline VACÍO — Cesium fue retirado por completo (MAP-CAMERA-RETIRE). El gate por default y --strict ambos exigen 0 referencias a Cesium en frontend/src + package.json + vite.config. NO agregar entradas: no debe volver a entrar Cesium.",
+  "allowed": []
+}

@@ -1,0 +1,193 @@
+{
+  "artifacts": [
+    {
+      "inline": {
+        "features": [
+          {
+            "geometry": {
+              "coordinates": [
+                -74.1,
+                4.6
+              ],
+              "type": "Point"
+            },
+            "properties": {
+              "area": 10,
+              "uso": "res"
+            },
+            "type": "Feature"
+          }
+        ],
+        "type": "FeatureCollection"
+      },
+      "kind": "layer",
+      "layer": {
+        "bbox": null,
+        "crs": "EPSG:4326",
+        "feature_count": 1,
+        "fields": [],
+        "geometry_type": null,
+        "id": "ds_0123456789abcdef",
+        "kind": "vector",
+        "name": "Lotes",
+        "provenance": {
+          "arguments": {},
+          "capability": "core.query_data",
+          "code": null,
+          "edits": [],
+          "produced_at": "2026-09-25T00:00:00Z",
+          "source_version": null,
+          "sql": null
+        },
+        "provider": "core",
+        "storage": {
+          "geometry_column": "geom",
+          "kind": "workspace-table",
+          "schema_name": "ws_ejemplo",
+          "srid": 4326,
+          "table": "d_0123456789abcdef"
+        },
+        "style": {
+          "class_breaks": [
+            {
+              "color": "#1b9e77",
+              "count": 1,
+              "label": "res",
+              "max_value": null,
+              "min_value": null
+            }
+          ],
+          "classification_field": "uso",
+          "classification_method": null,
+          "color_scheme": null,
+          "fill": null,
+          "heatmap_intensity_field": null,
+          "heatmap_radius": null,
+          "label": null,
+          "layer_title": null,
+          "marker": null,
+          "num_classes": null,
+          "pinned": [],
+          "reasoning": null,
+          "stroke": null,
+          "symbol_size_max": null,
+          "symbol_size_min": null,
+          "symbology_type": "unique_values"
+        },
+        "time": null
+      },
+      "replaces": null,
+      "tiles": null
+    },
+    {
+      "inline": null,
+      "kind": "layer",
+      "layer": {
+        "bbox": null,
+        "crs": "EPSG:3857",
+        "feature_count": null,
+        "fields": [],
+        "geometry_type": null,
+        "id": "rast_b941e333a149d41c",
+        "kind": "raster",
+        "name": "NDVI",
+        "provenance": {
+          "arguments": {},
+          "capability": "mcp.imagery",
+          "code": null,
+          "edits": [],
+          "produced_at": "2026-09-25T00:00:00Z",
+          "source_version": null,
+          "sql": null
+        },
+        "provider": "mcp:imagery",
+        "storage": {
+          "kind": "raster-tiles",
+          "legend": {
+            "field": "NDVI",
+            "max": 1,
+            "min": 0,
+            "type": "ramp"
+          },
+          "maxzoom": 22,
+          "minzoom": 0,
+          "tile_size": 256,
+          "url_template": "/api/v1/proxy/mcp/imagery/tiles/S2/{z}/{x}/{y}.png"
+        },
+        "style": null,
+        "time": null
+      },
+      "replaces": null,
+      "tiles": null
+    },
+    {
+      "data": [
+        {
+          "n": 1,
+          "uso": "res"
+        }
+      ],
+      "kind": "chart",
+      "spec": {
+        "chart_type": "bar",
+        "title": null,
+        "x_key": "uso",
+        "y_key": "n"
+      }
+    },
+    {
+      "columns": [
+        "uso",
+        "n"
+      ],
+      "kind": "table",
+      "preview": [
+        {
+          "n": 1,
+          "uso": "res"
+        }
+      ],
+      "rows_ref": "ds_0123456789abcdef",
+      "title": null,
+      "total_rows": 1
+    },
+    {
+      "items": [
+        {
+          "credits": null,
+          "description": "",
+          "layer_count": null,
+          "name": "Parques",
+          "source": null,
+          "type": "FeatureServer",
+          "url": "https://ejemplo.org/FeatureServer",
+          "views": null
+        }
+      ],
+      "kind": "services"
+    }
+  ],
+  "confidence": null,
+  "contract_version": "1.8.0",
+  "correction": null,
+  "created_at": "2026-09-25T00:00:00Z",
+  "intent": "query_data",
+  "message": "ejemplo",
+  "pending_approval_id": null,
+  "query_id": "q-ejemplo",
+  "reasoning_trace": [
+    {
+      "agent": "router",
+      "detail": "query_data",
+      "kind": "decision",
+      "step": 0,
+      "success": true,
+      "tool": null
+    }
+  ],
+  "requires_approval": false,
+  "session_id": "s-ejemplo",
+  "sql": "SELECT uso, area FROM catastro.lotes LIMIT 1",
+  "status": "completed",
+  "suggestions": []
+}

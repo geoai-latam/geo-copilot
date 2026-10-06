@@ -1,0 +1,11 @@
+# Forzar LF en archivos que se consumen dentro de contenedores Linux. En
+# checkouts Windows con autocrlf=true, git convierte a CRLF y el `\r` rompe
+# la ejecución: nginx (proxy_set_header con valor + \r no inyecta la key),
+# scripts .sh (bad interpreter), y SQL de init-db. Ver Fase 3 (BFF nginx).
+*.sh            text eol=lf
+*.conf          text eol=lf
+*.sql           text eol=lf
+docker/nginx.frontend.conf text eol=lf
+docker/init-db/*.sh        text eol=lf
+# F1: los prompts del LLM son texto exacto (src/geo_copilot/prompts/__init__.py)
+src/geo_copilot/prompts/*.md text eol=lf

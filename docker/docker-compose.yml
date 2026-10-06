@@ -1,0 +1,741 @@
+# Docker Compose para GEO_COPILOT (Fase 0/6 — stack completo).
+#
+# Servicios:
+#   postgis   — base de datos con PostGIS habilitado.
+#   redis     — cache + backend opcional de sesiones (SESSION_BACKEND=redis).
+#   app       — backend FastAPI + orquestador LangGraph.
+#   frontend  — bundle Vite servido por nginx, con proxy a ``app``.
+#   sandbox   — contenedor endurecido donde corre el código Python que
+#               escribe el LLM. Desde R0.5 (AUD-03) es el backend POR
+#               DEFECTO (`sandbox_backend="docker"`): la cabecera anterior
+#               decía que el código corría como subprocess dentro de
+#               ``app`` —con DATABASE_URL y las claves en el entorno—, que
+#               es justo el modo que `api/auth.py` rehúsa en producción.
+#
+# ``version:`` se omite a propósito — Compose v2 lo trata como obsoleto.
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostGIS Database
+  # ---------------------------------------------------------------------------
+  postgis:
+    # PG18 + PostGIS — la imagen estable 18 todavía no existe (solo
+    # `:18-master`), pero el formato custom de pg_dump 18.1 (versión 1.16)
+    # NO se puede restaurar con pg_restore 15/16/17. Subimos a 18-master
+    # para que el dump real (catastro) cargue limpio.
+    # Si más adelante sale `:18-3.5` o estable, actualizar aquí.
+    # RUN (auditoría): pinneado al DIGEST para reproducibilidad — `:18-master`
+    # es un tag mutable (nightly). Re-pinnear al subir de versión.
+    image: postgis/postgis:18-master@sha256:5ea3187db8076c29ba13f8048d83fde9ecaad63484e104f3af3a99f3ba30c73e
+    container_name: geo_copilot_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: geo_user
+      # R0.3 (auditoría 2026-07-26, AUD-05): FAIL-CLOSED. El default
+      # `secure_password` está publicado en este repositorio, así que un
+      # `docker compose up` sin exportar la variable levantaba la BD con una
+      # contraseña conocida. Con `:?` el arranque FALLA en vez de degradar.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: geo_copilot
+      # R0.6 (AUD-04): `init-db/04` CREA el rol `geo_app` sin contraseña, y sin
+      # contraseña scram-sha-256 lo rechaza — la app no podía conectarse y el
+      # stack no arrancaba. `init-db/05` la fija leyendo esta variable, que es
+      # la MISMA que consume el DATABASE_URL del servicio `app`. Fail-closed
+      # igual que las otras dos: sin ella el bootstrap falla, no degrada.
+      GEO_APP_PASSWORD: ${GEO_APP_PASSWORD:?define GEO_APP_PASSWORD en .env}
+      # F7 (auditoría): init-db/08 crea `mcp_lector` con esta clave; sin pasarla aquí nunca le
+      # llegaba y el rol no se creaba. Opcional: sin ella, 08 lo avisa y postgis-mcp no lee.
+      MCP_SQL_LECTOR_PASSWORD: ${MCP_SQL_LECTOR_PASSWORD:-}
+    ports:
+      # R0.3 (AUD-05): atado a loopback. Antes era "5433:5432", que Docker
+      # publica en 0.0.0.0 e inserta en la cadena DOCKER de iptables — evaluada
+      # ANTES que UFW, así que el firewall del host no lo tapaba. La app le
+      # habla por la red interna (postgis:5432); esto es sólo para psql local.
+      # Host 5433 para NO chocar con el Postgres NATIVO que ocupa :5432.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # PG18+: cambió la convención del data dir. Antes (PG15) el mount
+      # era `/var/lib/postgresql/data`; ahora se monta el padre
+      # `/var/lib/postgresql` para que PG18 use `/var/lib/postgresql/18/docker/`
+      # como data dir (esto permite pg_upgrade --link entre versiones).
+      # Volumen renombrado a `postgis18_data` para evitar conflicto con
+      # el volumen viejo (`postgis_data`) que tenía la convención PG15.
+      - postgis18_data:/var/lib/postgresql
+      # Scripts en init-db/ se ejecutan SOLO la primera vez (volumen
+      # vacío). Para cargar tu BD existente: mete tu ``pg_dump`` ahí.
+      # Ver docker/init-db/README.md.
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      # `-h 127.0.0.1` NO es decorativo (medido el 8-sep-2026 levantando el stack
+      # con volumen limpio). Sin él, pg_isready consulta por el SOCKET UNIX — y
+      # ahí es donde escucha el servidor TEMPORAL que el entrypoint de Postgres
+      # levanta para correr los scripts de `init-db/`, con `listen_addresses=''`.
+      # Resultado: el healthcheck se ponía verde a los ~12 s, con el init todavía
+      # a medias, `app` arrancaba por `condition: service_healthy` y se estrellaba
+      # con `FATAL: role "geo_app" does not exist`. Por TCP la sonda falla hasta
+      # que el servidor REAL acepta conexiones, que es lo que se quería preguntar.
+      test: ["CMD-SHELL", "pg_isready -U geo_user -d geo_copilot -h 127.0.0.1 -p 5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      # El init corre una vez, con volumen nuevo, y ahí carga PostGIS y el seed.
+      # Sin `start_period` esos segundos cuentan como reintentos fallidos y el
+      # contenedor puede declararse unhealthy antes de terminar de inicializarse.
+      start_period: 90s
+    networks:
+      - geo_network
+
+  # ---------------------------------------------------------------------------
+  # Redis Cache + session store (opcional)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: geo_copilot_cache
+    restart: unless-stopped
+    ports:
+      # R0.3 (AUD-05): atado a loopback. Verificado antes del fix que desde el
+      # host se obtenía `+PONG` sin presentar credencial alguna, y lo que este
+      # Redis almacena no es cache anónimo: son las sesiones completas
+      # (`geocopilot:session:*`, historial conversacional de TODOS los usuarios).
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    # R0.3 (AUD-05): `--requirepass` FAIL-CLOSED. Antes no existía ninguna
+    # credencial de Redis en todo el repositorio (0 coincidencias de
+    # requirepass/REDIS_PASSWORD en docker/, .env.example y core/config.py).
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?define REDIS_PASSWORD en .env}
+    # F7 (auditoría): redis-cli lee REDISCLI_AUTH, así que `exec redis redis-cli …` (respaldos del
+    # runbook) se autentica solo. Antes la clave solo estaba en el `command` y `$REDIS_PASSWORD`
+    # dentro del contenedor salía vacía: el BGSAVE del runbook recibía NOAUTH.
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?define REDIS_PASSWORD en .env}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - geo_network
+
+  # ---------------------------------------------------------------------------
+  # F6 — proveedor de identidad de DESARROLLO (Keycloak), perfil `auth`:
+  #   docker compose --profile auth up -d keycloak
+  # Realm `geo` importado de keycloak/geo-realm.json: cliente público con PKCE para el
+  # frontend, roles viewer/analyst/admin, dos organizaciones (acme, beta) y cuatro usuarios
+  # de prueba con la contraseña KC_DEV_PASSWORD. En producción se usa el proveedor de la
+  # organización (Entra, Google, otro Keycloak…): solo cambian las OIDC_* del .env.
+  # `KC_HOSTNAME` fija el emisor (`iss`) que ven el navegador y la API; la API pide las
+  # claves por la red interna (OIDC_JWKS_URL abajo), de ahí el backchannel dinámico.
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    container_name: geo_copilot_keycloak
+    profiles: ["auth"]
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_HOST_PORT:-8081}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+      # los placeholders ${…} del realm se resuelven con estas variables al importarlo
+      KC_DEV_PASSWORD: ${KC_DEV_PASSWORD:-}
+      KC_API_CLIENT_SECRET: ${KC_API_CLIENT_SECRET:-}
+    volumes:
+      - ./keycloak/geo-realm.json:/opt/keycloak/data/import/geo-realm.json:ro
+    ports:
+      - "127.0.0.1:${KEYCLOAK_HOST_PORT:-8081}:8080"
+    networks:
+      - geo_network
+
+  # ---------------------------------------------------------------------------
+  # Backend (FastAPI + orquestador LangGraph)
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: geo_copilot_app
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      # F7 (S7.1): procesos de uvicorn (lee WEB_CONCURRENCY). Con más de 1, el estado va por
+      # Redis (bus, aprobaciones, sesiones, límites): obligatorio en producción.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
+      # Desarrollo: el código montado en /app/src manda sobre el paquete instalado en la imagen
+      # (F7: la imagen ya no es editable). En producción no hay montaje (docker-compose.prod.yml).
+      PYTHONPATH: /app/src
+      # F7 (S7.3): observabilidad, VACÍA = apagada. Con el perfil `observabilidad` las trazas van a
+      # Jaeger (OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 en .env) y Prometheus lee /metrics.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      # métricas de TODOS los workers (prometheus_client multiproceso, en un tmpfs)
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
+      # Override de URLs internas — usan los nombres de servicio del compose,
+      # no localhost. Esto pisa cualquier valor que esté en .env (que es lo
+      # correcto, porque .env es para correr fuera de Docker).
+      # RUN: el password se toma de POSTGRES_PASSWORD (mismo default de dev que
+      # postgis) para no hornear un secreto literal ni divergir de la BD.
+      # R0.6 (auditoría 2026-07-26, AUD-04): la app se conecta con `geo_app`,
+      # un rol NOSUPERUSER miembro de `gis_readonly` (ver init-db/04). Antes
+      # usaba `geo_user`, que en la imagen postgis es SUPERUSUARIO — y una
+      # transacción READ ONLY no contiene a un superusuario: verificado que
+      # `pg_read_file('/etc/passwd')` y `pg_authid` quedaban al alcance del SQL
+      # generado por el LLM. `POSTGRES_USER` queda sólo para inicialización.
+      DATABASE_URL: postgresql://geo_app:${GEO_APP_PASSWORD:?define GEO_APP_PASSWORD en .env}@postgis:5432/geo_copilot
+      # R0.3 (AUD-05): la credencial de `--requirepass` viaja en la URL.
+      REDIS_URL: redis://:${REDIS_PASSWORD:?define REDIS_PASSWORD en .env}@redis:6379/0
+      # F3: la app consume imagery-mcp por el hub MCP (URL en config/mcp_servers.yaml);
+      # aquí solo viaja la credencial a la que el YAML apunta (env:IMAGERY_MCP_API_KEY).
+      # Auditoría 2026-09-08 (§3): FAIL-CLOSED, igual que R0.3 hizo con
+      # Postgres y Redis. Antes era `${IMAGERY_MCP_APP_KEY:-dev-imagery-key}`:
+      # un `docker compose up` sin exportar la variable levantaba el stack con
+      # una credencial que está escrita en este repositorio, y que del otro
+      # lado el servicio `imagery-mcp` aceptaba (su default la traía dentro del
+      # JSON). Con `:?` el arranque FALLA en vez de degradar.
+      # OJO: esta línea PISA lo que traiga `.env` bajo el nombre
+      # IMAGERY_MCP_API_KEY — dentro del compose la variable que se define es
+      # IMAGERY_MCP_APP_KEY. Tiene que valer lo mismo que el `key` de
+      # IMAGERY_MCP_KEYS (servicio imagery-mcp, abajo) o las teselas dan 401.
+      IMAGERY_MCP_API_KEY: ${IMAGERY_MCP_APP_KEY:?define IMAGERY_MCP_APP_KEY en .env}
+      # SBX-01: el DESPLIEGUE ejecuta el código del LLM en el contenedor
+      # endurecido `sandbox` (network:none, cap_drop:ALL, read_only, non-root),
+      # NO en subprocess dentro de `app`. `app` llega al daemon SOLO vía el
+      # docker-socket-proxy (allowlist EXEC) — nunca el socket crudo del host.
+      SANDBOX_BACKEND: docker
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
+      # S2.4: app exporta aquí los datasets del workspace (GeoParquet) que pide
+      # el código del sandbox; el sandbox ve el mismo volumen de solo lectura.
+      WORKSPACE_EXPORT_DIR: /data/workspace
+      # F6: con OIDC_ISSUER en .env (la URL PÚBLICA del emisor, la del `iss`), la API pide las
+      # claves y los tokens del usuario al proveedor por la red interna. Sin OIDC_ISSUER no se usan.
+      # Los valores por defecto son los del Keycloak de DESARROLLO; producción los anula
+      # (docker-compose.prod.yml: OIDC_JWKS_URL/OIDC_TOKEN_URL del proveedor de la organización).
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL_INTERNA:-http://keycloak:8080/realms/geo/protocol/openid-connect/certs}
+      OIDC_TOKEN_URL: ${OIDC_TOKEN_URL_INTERNA:-http://keycloak:8080/realms/geo/protocol/openid-connect/token}
+      # T6.4: la API se autentica ante el proveedor para el token exchange hacia los MCP
+      OIDC_API_CLIENT_SECRET: ${KC_API_CLIENT_SECRET:-}
+    tmpfs:
+      # F7 (auditoría): con tope. Las series de métricas viven aquí (mmap por worker) y el tmpfs
+      # cuenta contra la memoria del contenedor: sin `size=` crecía hasta el OOM de la app.
+      - /tmp/prometheus:uid=999,mode=0700,size=128m
+    ports:
+      # R0.12 (auditoría 2026-07-26, AUD-121): atado a loopback. La API no
+      # necesita salir al host: `frontend` le habla por la red interna
+      # (`geo_network`). Se mantiene publicado en 127.0.0.1 para poder curlear
+      # /health y depurar sin entrar al contenedor.
+      - "127.0.0.1:8000:8000"
+    # R0.12 (AUD-121): endurecido al nivel que ya tenía `sandbox`. `app`
+    # ejecuta SQL y código generados por un LLM y habla con el daemon Docker
+    # vía proxy: es el contenedor con más superficie del stack y era el único
+    # sin restricciones de privilegio.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      # Explícito en compose (además del HEALTHCHECK del Dockerfile) para que
+      # ``frontend`` pueda esperar ``service_healthy`` y no arrancar nginx
+      # apuntando a un backend que aún inicializa.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # SBX-01: el backend docker hace `docker exec` contra `sandbox` a través
+      # del proxy; ambos deben estar arriba antes que `app`.
+      sandbox:
+        condition: service_started
+      docker-socket-proxy:
+        condition: service_started
+    volumes:
+      # Código montado (read-only para no contaminar el container). OJO: NO
+      # hay hot-reload — el comando es `uvicorn` SIN `--reload` (Dockerfile).
+      # Tras cambiar código: `docker compose restart app`. Los procesos que se
+      # lanzan con `docker exec` (bench, scripts) sí ven el código nuevo.
+      # (Este comentario decía "hot-reload" y costó una validación de F0.)
+      - ../src:/app/src:ro
+      - ../semantic_layer:/app/semantic_layer:ro
+      # `config/` se monta para que cambios en discovery_catalog.yaml
+      # y mcp_servers.yaml se reflejen sin rebuildar la imagen.
+      # Cualquier .yaml editado en el host se ve inmediatamente en el
+      # contenedor — la próxima llamada al DiscoveryAgent carga el nuevo
+      # catálogo desde disco.
+      - ../config:/app/config:ro
+      - ws_exports:/data/workspace
+      # SBX-01 / RUN-01: el socket CRUDO de Docker YA NO se monta en `app`
+      # (equivalía a root del host). El backend docker llega al daemon vía el
+      # docker-socket-proxy (DOCKER_HOST arriba), que solo permite EXEC.
+    networks:
+      - geo_network
+      - docker_proxy
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Vite build servido por nginx con proxy al backend)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: geo_copilot_frontend
+    environment:
+      # F6 (T6.2): nginx ya NO inyecta la API key (antes era un BFF que la ponía sin exigir
+      # nada: #11). El navegador manda el token de su usuario; el backend lo verifica.
+      # El 80 redirige a HTTPS en este puerto PÚBLICO (el del host, no el 443 del contenedor).
+      PUERTO_TLS_PUBLICO: ${FRONTEND_TLS_PORT:-3443}
+      # Origen del proveedor OIDC para la CSP (connect-src): el frontend le pide el token.
+      # En producción suele ser https (ya cubierto por `https:`); en desarrollo, Keycloak local.
+      OIDC_ORIGEN: ${OIDC_ORIGEN:-http://localhost:8081}
+    volumes:
+      # Certificado de la organización (tls.crt + tls.key). Si la carpeta está vacía, el
+      # arranque deja uno autofirmado de desarrollo (que persiste aquí: no se regenera).
+      - ./certs:/etc/nginx/certs
+    ports:
+      # R0.3 (AUD-01): atado a loopback por defecto. Con F6 la API exige identidad en cada
+      # petición, así que publicarlo es una decisión de despliegue (FRONTEND_BIND=0.0.0.0),
+      # no un agujero; en ese caso con el certificado de la organización.
+      # FRONTEND_PORT: el 3000 choca con Langfuse local (su UI también es :3000).
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:80"
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_TLS_PORT:-3443}:443"
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - geo_network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Sandbox container — aislamiento endurecido para el código del PythonAgent.
+  # SEC-SANDBOX-RCE p2: con SANDBOX_BACKEND=docker, la app hace `docker exec`
+  # contra este contenedor de larga vida (network:none, read_only, cap_drop
+  # ALL, non-root). Es la contención real de RCE/egreso del código de LLM.
+  # Con el backend por defecto ('subprocess') el contenedor queda ocioso.
+  # ---------------------------------------------------------------------------
+  sandbox:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sandbox
+    container_name: geo_copilot_sandbox
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      # /tmp escribible (el runner hace mkdtemp + chdir ahí). El resto del
+      # rootfs es read-only.
+      - /tmp:size=100M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      # El runner se monta read-only; `docker exec ... python -I
+      # /opt/sandbox/sandbox_runner.py` lo ejecuta dentro de este contenedor.
+      # Montarlo (en vez de hornearlo) mantiene el runner en sync con el host.
+      - ../src/geo_copilot/agents/gis_agent/sandbox_runner.py:/opt/sandbox/sandbox_runner.py:ro
+      # S2.4: datasets del workspace exportados por app, SOLO LECTURA. El runner
+      # carga únicamente las rutas que app le pasa (ws_<hex>/ds_<hex>.parquet);
+      # el código del LLM no puede leer archivos (open/read_* prohibidos).
+      - ws_exports:/data/workspace:ro
+
+  # ---------------------------------------------------------------------------
+  # docker-socket-proxy (SBX-01 / RUN-01): mediador de mínimos privilegios entre
+  # `app` y el daemon de Docker. `app` YA NO monta el socket crudo (= root del
+  # host); en su lugar habla por TCP con este proxy, que solo expone los
+  # endpoints necesarios para `docker exec` contra el contenedor `sandbox`
+  # (CONTAINERS + EXEC + POST). Todo lo demás (crear/borrar contenedores,
+  # imágenes, volúmenes, swarm...) queda denegado por defecto.
+  # ---------------------------------------------------------------------------
+  docker-socket-proxy:
+    # R0.4 (auditoría 2026-07-26, AUD-02): ANTES era
+    # `ghcr.io/tecnativa/docker-socket-proxy:0.3.0` con CONTAINERS/EXEC/POST=1.
+    # Su filtro es por SECCIÓN del API, no por endpoint: eso dejaba permitidos
+    # `POST /containers/create`, `/containers/{id}/start` y exec sobre
+    # CUALQUIER contenedor — root del host desde `app`. Verificado antes del
+    # cambio: `POST /containers/create` devolvía 400 del daemon, no 403.
+    # Ahora: haproxy propio con allowlist de RUTA EXACTA (ver el .cfg).
+    image: haproxy:3.0-alpine
+    container_name: geo_copilot_docker_proxy
+    restart: unless-stopped
+    # El socket es `root:root 0660`, así que el usuario `haproxy` (uid 99) de la
+    # imagen oficial no puede abrirlo (daba 503 en todas las rutas permitidas).
+    # El proxy anterior también corría como root. La frontera de seguridad de
+    # este contenedor es la allowlist del .cfg, no su uid: no tiene capacidades
+    # (`cap_drop: ALL`), no puede escalar (`no-new-privileges`), su config está
+    # montada read-only y sólo lo alcanza `app` por una red aislada.
+    user: root
+    volumes:
+      # El socket sigue siendo :ro por higiene, aunque en un socket unix el
+      # flag NO impide escribir (sólo desenlazar el inodo): la contención real
+      # es la allowlist del .cfg.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker-socket-mediator.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      # Solo la red aislada con `app`. NO geo_network (nadie más lo alcanza).
+      - docker_proxy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ---------------------------------------------------------------------------
+  # imagery-mcp (C3-v1): servicio MCP APARTE de análisis de imagery satelital
+  # (STAC→COG Sentinel-2, NDVI/cambio/zonal). Con autenticación por API keys.
+  # ÚNICO servicio con egress a los catálogos (el sandbox sigue network:none;
+  # la app le habla por la red interna). Spec: docs/SPEC_C3_IMAGERY_MCP_*.md
+  # ---------------------------------------------------------------------------
+  imagery-mcp:
+    build:
+      # S3.1: contexto = raíz del repo, para incluir packages/geo_mcp_kit.
+      context: ..
+      dockerfile: services/imagery_mcp/Dockerfile
+    container_name: geo_copilot_imagery
+    restart: unless-stopped
+    environment:
+      - IMAGERY_PROVIDER=${IMAGERY_PROVIDER:-planetary-computer}
+      - IMAGERY_PORT=9100
+      # F7 (S7.3): continúa la traza del agente (vacío = apagado)
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Claves que este MCP acepta (JSON). Auditoría 2026-09-08 (§3):
+      # FAIL-CLOSED. El default anterior no era "acceso completo en dev": era
+      # la clave `dev-imagery-key` escrita en el repositorio, del lado del
+      # servidor y del lado del cliente a la vez (ver IMAGERY_MCP_API_KEY en
+      # `app`). Cualquiera que clonase el repo conocía la credencial del único
+      # servicio del stack con egreso a Internet. Con `:?` el arranque falla y
+      # el operador tiene que poner una clave suya.
+      # El `key` del JSON debe ser EXACTAMENTE IMAGERY_MCP_APP_KEY. Plantilla
+      # lista para copiar en .env.example.
+      - IMAGERY_MCP_KEYS=${IMAGERY_MCP_KEYS:?define IMAGERY_MCP_KEYS (JSON) en .env - ver .env.example}
+    networks:
+      - geo_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------------------
+  # arcgis-mcp (F5, T5.2): servidor GeoMCP de ArcGIS. El discovery del núcleo (buscar en el
+  # Hub, describir y traer capas) va por aquí: el núcleo ya no tiene conectores de ArcGIS. Es
+  # el ÚNICO con egreso a servicios ArcGIS arbitrarios: bloquea IPs internas y fija la IP
+  # resuelta (anti DNS rebinding). `ARCGIS_ALLOWED_DOMAINS` (coma) restringe a dominios.
+  # ---------------------------------------------------------------------------
+  arcgis-mcp:
+    build:
+      context: ..
+      dockerfile: services/arcgis_mcp/Dockerfile
+    container_name: geo_copilot_arcgis
+    restart: unless-stopped
+    # T5.3: el MISMO servidor para otros clientes MCP (Claude Desktop) con SU clave; solo en
+    # la máquina (127.0.0.1). Publicarlo fuera exige TLS delante.
+    ports:
+      - "127.0.0.1:${ARCGIS_MCP_HOST_PORT:-9400}:9400"
+    environment:
+      - ARCGIS_MCP_PORT=9400
+      # F7 (auditoría): continúa la traza del agente, como imagery-mcp (la imagen instala
+      # geo_mcp_kit[otel], pero sin esta variable no exportaba nada). Vacío = apagado.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE ARCGIS_MCP_APP_KEY (la que usa la app)
+      - ARCGIS_MCP_KEYS=${ARCGIS_MCP_KEYS:?define ARCGIS_MCP_KEYS (JSON) en .env - ver .env.example}
+      - ARCGIS_ALLOWED_DOMAINS=${ARCGIS_ALLOWED_DOMAINS:-}
+      # capas grandes: GeoJSON servido por el propio servidor (el núcleo lo baja al momento; TTL 1 h)
+      - ARCGIS_RESULTADOS_DIR=/resultados
+    tmpfs:
+      - /resultados:size=512m,uid=10004
+      - /tmp:size=64m,uid=10004
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G      # una capa de 200.000 elementos se arma en memoria
+
+  # lugares-mcp: geocodificación (nombre de lugar → candidatos y límite) sobre Nominatim (OSM).
+  # Sin él, «el NDVI de Chía» terminaba en «dibuja el área de Chía». En producción conviene un
+  # Nominatim propio (LUGARES_NOMINATIM_URL) y un User-Agent con contacto (política de uso de OSM).
+  lugares-mcp:
+    build:
+      context: ..
+      dockerfile: services/lugares_mcp/Dockerfile
+    container_name: geo_copilot_lugares
+    restart: unless-stopped
+    environment:
+      - LUGARES_MCP_PORT=9700
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE LUGARES_MCP_APP_KEY (la que usa la app)
+      - LUGARES_MCP_KEYS=${LUGARES_MCP_KEYS:?define LUGARES_MCP_KEYS (JSON) en .env - ver .env.example}
+      - LUGARES_NOMINATIM_URL=${LUGARES_NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      - LUGARES_USER_AGENT=${LUGARES_USER_AGENT:-geo-copilot/1.0 (lugares-mcp)}
+    tmpfs:
+      - /tmp:size=32m,uid=10007
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # hello-geo (S3.3): servidor GeoMCP de EJEMPLO sobre packages/geo_mcp_kit.
+  # Perfil `examples`: no arranca por defecto. Para probar el enchufe de un MCP:
+  #   docker compose --profile examples up -d hello-geo
+  # y registrarlo en config/mcp_servers.yaml. Solo en la red interna.
+  # ---------------------------------------------------------------------------
+  # F7: las variables de los servicios de perfil (examples, connectors) no son obligatorias al
+  # interpolar: compose interpola TODOS los servicios, y un despliegue de producción sin esos
+  # perfiles fallaba. Siguen cerrados al ejecutarse: sin claves, el servicio no acepta a nadie;
+  # sin contraseña, PostgreSQL no arranca.
+  hello-geo:
+    profiles: ["examples"]
+    build:
+      context: ..
+      dockerfile: services/hello_geo/Dockerfile
+    container_name: geo_copilot_hello_geo
+    restart: unless-stopped
+    environment:
+      - HELLO_GEO_PORT=9200
+      - HELLO_GEO_KEYS=${HELLO_GEO_KEYS:-[]}
+      # F6 (S6.3): con OIDC, además acepta tokens de USUARIOS que la app obtiene por token
+      # exchange (audiencia `hello-geo`): sabe quién llama y le da los scopes de sus roles.
+      - HELLO_GEO_JWT_ISSUER=${OIDC_ISSUER:-}
+      - HELLO_GEO_JWT_AUDIENCE=hello-geo
+      - HELLO_GEO_JWT_JWKS=http://keycloak:8080/realms/geo/protocol/openid-connect/certs
+      - 'HELLO_GEO_JWT_ROLES={"viewer":["hello:use"],"analyst":["hello:use"],"admin":["hello:use"]}'
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # F5 (T5.1): conectores de referencia. Perfil `connectors`:
+  #   docker compose --profile connectors up -d postgis-demo postgis-mcp
+  # y registrar `sql` en el YAML de servidores MCP. Solo en la red interna.
+  # ---------------------------------------------------------------------------
+  # Segunda BD PostGIS (otra temática): sedes educativas de Cundinamarca (IGAC).
+  postgis-demo:
+    profiles: ["connectors"]
+    image: postgis/postgis:18-master@sha256:5ea3187db8076c29ba13f8048d83fde9ecaad63484e104f3af3a99f3ba30c73e
+    container_name: geo_copilot_db_demo
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: demo_admin
+      POSTGRES_DB: equipamientos
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:-}
+      DEMO_LECTOR_PASSWORD: ${DEMO_LECTOR_PASSWORD:-}
+    volumes:
+      - postgis_demo_data:/var/lib/postgresql
+      - ./init-demo:/docker-entrypoint-initdb.d:ro
+    networks:
+      - geo_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo_admin -d equipamientos"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  # Archivos geoespaciales con DuckDB-spatial (T5.6): GeoParquet/FlatGeobuf/CSV leídos donde
+  # están (local, S3, HTTP) y filtrados AQUÍ; al núcleo solo viaja el resultado. Datos de demo:
+  # `python scripts/demo_geoparquet.py` → data/archivos/. Resultados grandes en un tmpfs.
+  archivos-mcp:
+    profiles: ["connectors"]
+    build:
+      context: ..
+      dockerfile: services/archivos_mcp/Dockerfile
+    container_name: geo_copilot_archivos
+    restart: unless-stopped
+    environment:
+      - ARCHIVOS_MCP_PORT=9600
+      - ARCHIVOS_MCP_KEYS=${ARCHIVOS_MCP_KEYS:-[]}
+      - ARCHIVOS_RESULTADOS_DIR=/resultados
+      - 'ARCHIVOS_SOURCES=[{"id":"predios_chapinero_teusaquillo","descripcion":"EXTRACTO del catastro con solo los lotes de Chapinero y Teusaquillo (GeoParquet); el catastro completo de Bogotá está en la BD interna","uri":"/datos/predios_chapinero.parquet","formato":"geoparquet"}]'
+    volumes:
+      - ../data/archivos:/datos:ro
+    tmpfs:
+      - /resultados:size=512m,uid=10006
+      - /tmp:size=256m,uid=10006
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # MCP TABULAR de prueba (T5.4): a imagen del MCP oficial de Snowflake (filas en texto JSON, sin
+  # contrato geo) sobre la BD de demostración, para validar el adaptador `tabular_geo` sin cuenta
+  # de Snowflake. Rol de solo lectura y el mismo validador SQL del núcleo.
+  almacen-demo:
+    profiles: ["connectors"]
+    build:
+      context: ..
+      dockerfile: services/tabular_demo_mcp/Dockerfile
+    container_name: geo_copilot_almacen_demo
+    restart: unless-stopped
+    environment:
+      - ALMACEN_MCP_PORT=9500
+      - ALMACEN_MCP_KEYS=${ALMACEN_MCP_KEYS:-[]}
+      - ALMACEN_DSN=postgresql://lector:${DEMO_LECTOR_PASSWORD:-}@postgis-demo:5432/equipamientos
+    depends_on:
+      postgis-demo:
+        condition: service_healthy
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # Servidor MCP de SQL multi-BD: cada fuente con SU rol de solo lectura; el mismo validador
+  # estructural del núcleo corre aquí (packages/geo_sql_guard).
+  postgis-mcp:
+    profiles: ["connectors"]
+    build:
+      context: ..
+      dockerfile: services/postgis_mcp/Dockerfile
+    container_name: geo_copilot_postgis_mcp
+    restart: unless-stopped
+    environment:
+      - SQL_RESULTADOS_DIR=/resultados
+      - POSTGIS_MCP_PORT=9300
+      - POSTGIS_MCP_KEYS=${POSTGIS_MCP_KEYS:-[]}
+      # F2 del plan de calidad: UN camino por dato. El catastro es la BD interna (query_database);
+      # también publicado aquí, el agente elegía entre dos caminos al mismo dato y gastaba pasos
+      # (docs/validacion/F2_UN_CAMINO_2026-10-04.md). Aquí van las BD que NO son la interna.
+      - 'SQL_SOURCES=[{"id":"equipamientos","descripcion":"Sedes educativas de Cundinamarca (IGAC): nombre, municipio, zona, sector","dsn_env":"SQL_DSN_EQUIPAMIENTOS","esquemas":["educacion"]}]'
+      - SQL_DSN_EQUIPAMIENTOS=postgresql://lector:${DEMO_LECTOR_PASSWORD:-}@postgis-demo:5432/equipamientos
+    depends_on:
+      postgis-demo:
+        condition: service_healthy
+    tmpfs:
+      - /resultados:size=512m,uid=10003   # capas grandes como GeoJSON (TTL 1 h; el núcleo las baja al momento)
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G      # una capa de 200.000 elementos se arma en memoria
+
+  # ---------------------------------------------------------------------------
+  # F7 (S7.3): observabilidad — `--profile observabilidad`. Jaeger recibe las trazas (OTLP) y las
+  # muestra en http://127.0.0.1:16686; Prometheus lee /metrics de la app y evalúa los umbrales
+  # (docker/observabilidad/alertas.yml) en http://127.0.0.1:9090.
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: geo_copilot_jaeger
+    profiles: ["observabilidad"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      # F7 (auditoría): el almacén en memoria crecía con las trazas (un tope por NÚMERO de trazas
+      # no acota bytes: una sesión WebSocket es una sola traza con todos sus turnos) hasta el
+      # límite de memoria; el OOM lo mataba, sin `restart` no volvía y se perdían TODAS. En disco
+      # (badger), la memoria es la de sus cachés, no la del volumen de trazas; sobreviven a un
+      # reinicio y caducan a los 7 días. Para muestrear menos: OTEL_TRACES_SAMPLER(_ARG) en la app.
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      # bajo /tmp: es el VOLUME de la imagen (1777), escribible por su usuario 10001
+      BADGER_DIRECTORY_KEY: /tmp/badger/key
+      BADGER_DIRECTORY_VALUE: /tmp/badger/data
+      BADGER_SPAN_STORE_TTL: 168h
+      # que el GC de Go apriete antes de llegar al límite del contenedor
+      GOMEMLIMIT: 800MiB
+    volumes:
+      - jaeger_datos:/tmp
+    ports:
+      - "127.0.0.1:16686:16686"
+    networks:
+      - geo_network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { memory: 1g }
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: geo_copilot_prometheus
+    profiles: ["observabilidad"]
+    volumes:
+      - ./observabilidad/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observabilidad/alertas.yml:/etc/prometheus/alertas.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - geo_network
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+volumes:
+  postgis_demo_data:
+  # PG18+ volume (nueva convención: mount en /var/lib/postgresql).
+  # El volumen viejo `postgis_data` (PG15) queda huérfano — bórralo manual
+  # con `docker volume rm docker_postgis_data` si quieres limpiar.
+  postgis18_data:
+  redis_data:
+  # S2.4: GeoParquet de los datasets del workspace (app rw, sandbox ro).
+  ws_exports:
+  # F7 (auditoría): trazas de Jaeger (badger), perfil `observabilidad`
+  jaeger_datos:
+
+networks:
+  geo_network:
+    driver: bridge
+  # SBX-01 / RUN-01: red aislada entre `app` y el docker-socket-proxy. Ningún
+  # otro servicio la comparte, así que solo `app` puede hablar con el proxy.
+  docker_proxy:
+    driver: bridge
+    internal: true

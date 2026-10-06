@@ -1,0 +1,292 @@
+# Batería de VERDADES (F0 del plan de calidad, docs/PLAN_CALIDAD_ORQUESTADOR_2026-10-04.md).
+#
+# Cada pregunta lleva la cifra VERDADERA, medida aparte en el origen (PostGIS, DuckDB, Nominatim).
+# Lo que se evalúa es lo que lee el usuario: la cifra de la respuesta. En la revisión MCP del
+# 2026-10-04 el verde de los tests convivía con respuestas falsas («43.249 lotes en Chapinero»
+# eran los de todo Bogotá; un promedio de 10 lotes dado como el de 22.387). Esta batería las caza.
+#
+# Corre con el grafo de la APP (MCP reales) y N repeticiones, dentro del contenedor:
+#   docker cp tests/agentic_bench geo_copilot_app:/tmp/agentic_bench
+#   docker exec geo_copilot_app python /tmp/agentic_bench/runner.py --app \
+#       --tasks /tmp/agentic_bench/verdades.yaml --repeticiones 3 --out /tmp/bench_results
+#
+# `medida` documenta cómo se obtuvo la verdad: si los datos cambian, se vuelve a medir y se
+# actualiza el valor (nunca se ajusta la verdad a lo que respondió el agente).
+# Vocabulario de `expected`: ver evaluator.py (answer_numbers, answer_numbers_not, tool_regex,
+# has_imagery, answer_regex…). Un número = tolerancia relativa 0,5 %; {valor, tol}; {rango: [a, b]}.
+#
+# Medido el 2026-10-04 sobre: catastro (BD interna, 933.473 lotes), equipamientos (BD demo del
+# MCP sql, 2.000 sedes), archivo predios_chapinero.parquet (22.387 lotes), Nominatim.
+
+# ------------------------------------------------------------ BD interna: catastro (10)
+- id: v-cat-lotes-total
+  category: catastro
+  query: "¿cuántos lotes hay en el catastro de Bogotá?"
+  medida: "SELECT count(*) FROM catastro.lotes"
+  expected:
+    success: true
+    answer_numbers: [933473]
+
+- id: v-cat-construcciones-total
+  category: catastro
+  query: "¿cuántas construcciones hay en el catastro?"
+  medida: "SELECT count(*) FROM catastro.construcciones"
+  expected:
+    success: true
+    answer_numbers: [2409199]
+
+- id: v-cat-mas-10-pisos
+  category: catastro
+  query: "¿cuántas construcciones del catastro tienen más de 10 pisos?"
+  medida: "SELECT count(*) FROM catastro.construcciones WHERE connpisos > 10"
+  expected:
+    success: true
+    answer_numbers: [5619]
+
+- id: v-cat-pisos-max
+  category: catastro
+  query: "¿cuál es el mayor número de pisos de una construcción del catastro?"
+  medida: "SELECT max(connpisos) FROM catastro.construcciones"
+  expected:
+    success: true
+    answer_numbers: [67]
+
+- id: v-cat-pisos-promedio
+  category: catastro
+  query: "¿cuál es el número promedio de pisos de las construcciones del catastro?"
+  medida: "SELECT avg(connpisos) FROM catastro.construcciones  -- 2,09"
+  expected:
+    success: true
+    answer_numbers: [{valor: 2.09, tol: 0.01}]
+
+- id: v-cat-1000-bogota
+  category: catastro
+  query: "¿cuántos lotes de más de 1000 m² hay en todo Bogotá según el catastro?"
+  medida: "SELECT count(*) FROM catastro.lotes WHERE ST_Area(shape::geography) > 1000"
+  expected:
+    success: true
+    answer_numbers: [43249]
+
+- id: v-cat-manzana
+  category: catastro
+  query: "¿cuántos lotes tiene la manzana 004503004 y cuál es su área promedio?"
+  medida: "SELECT count(*), avg(ST_Area(shape::geography)) FROM catastro.lotes WHERE manzcodigo='004503004'  -- 30, 210,7 m²"
+  expected:
+    success: true
+    answer_numbers: [30, {valor: 210.7, tol: 0.01}]
+
+- id: v-cat-chapinero-1000
+  category: catastro
+  query: "¿cuántos lotes de más de 1000 m² hay en la localidad de Chapinero según el catastro de la base interna?"
+  medida: "límite de Nominatim «Localidad Chapinero, Bogotá» (38,54 km²) ∩ catastro.lotes con área > 1000 m²"
+  expected:
+    success: true
+    answer_numbers: [{valor: 2584, tol: 0.02}]
+    # la respuesta FALSA medida en la revisión: los de todo Bogotá, sin filtrar por el lugar
+    answer_numbers_not: [43249]
+    tool_regex: "lugares"
+
+- id: v-cat-teusaquillo-lotes
+  category: catastro
+  query: "muéstrame los lotes de la localidad de Teusaquillo y dime cuántos son"
+  medida: "límite de Nominatim «Localidad Teusaquillo, Bogotá» (14,21 km²) ∩ catastro.lotes"
+  expected:
+    success: true
+    answer_numbers: [{valor: 16954, tol: 0.02}]
+    tool_regex: "lugares"
+
+- id: v-cat-teusaquillo-1000
+  category: catastro
+  query: "¿cuántos lotes de más de 1000 m² hay en la localidad de Teusaquillo según el catastro?"
+  medida: "límite de la localidad ∩ catastro.lotes con área > 1000 m²"
+  expected:
+    success: true
+    answer_numbers: [{valor: 919, tol: 0.02}]
+    answer_numbers_not: [43249]
+
+# ------------------------------------------------------ MCP sql: equipamientos (8)
+- id: v-sql-sedes-sector
+  category: sql
+  query: "¿cuántas sedes educativas hay en Cundinamarca por sector?"
+  medida: "SELECT sector, count(*) FROM educacion.sedes_educativas GROUP BY 1"
+  expected:
+    success: true
+    answer_numbers: [1941, 59]
+
+- id: v-sql-sedes-total
+  category: sql
+  query: "¿cuántas sedes educativas hay en total en Cundinamarca?"
+  medida: "SELECT count(*) FROM educacion.sedes_educativas"
+  expected:
+    success: true
+    answer_numbers: [2000]
+
+- id: v-sql-zipaquira-rurales
+  category: sql
+  query: "muéstrame en el mapa las sedes educativas rurales de Zipaquirá y dime cuántas son"
+  medida: >-
+    por atributo: nombre_mun ILIKE 'zipaquir%' AND zona = 'Rural' → 9 (el dato es ZIPAQUIRA, sin
+    tilde); por el límite real del municipio (lugares-mcp R1356172, aoi) → 10: una sede registrada
+    en otro municipio cae dentro. Las dos lecturas son defendibles.
+  expected:
+    success: true
+    answer_numbers: [{alguno: [9, 10]}]
+
+- id: v-sql-municipio-mas-sedes
+  category: sql
+  query: "¿qué municipio de Cundinamarca tiene más sedes educativas?"
+  medida: "SELECT nombre_mun, count(*) … ORDER BY 2 DESC LIMIT 1  -- YACOPI 104"
+  expected:
+    success: true
+    answer_regex: "yacop[ií]"
+    answer_numbers: [104]
+
+- id: v-sql-zona
+  category: sql
+  query: "¿cuántas sedes educativas de Cundinamarca son urbanas y cuántas rurales?"
+  medida: "SELECT zona, count(*) … GROUP BY 1  -- Urbano 122, Rural 1878"
+  expected:
+    success: true
+    answer_numbers: [122, 1878]
+
+- id: v-sql-soacha
+  category: sql
+  query: "¿cuántas sedes educativas hay en Soacha?"
+  medida: "nombre_mun ILIKE 'soacha'"
+  expected:
+    success: true
+    answer_numbers: [41]
+
+- id: v-sql-no-oficiales-urbanas
+  category: sql
+  query: "¿cuántas sedes educativas no oficiales están en zona urbana?"
+  medida: "sector = 'NO OFICIAL' AND zona ILIKE 'urban%'"
+  expected:
+    success: true
+    answer_numbers: [47]
+
+- id: v-sql-municipios
+  category: sql
+  query: "¿en cuántos municipios distintos hay sedes educativas?"
+  medida: "SELECT count(DISTINCT nombre_mun) FROM educacion.sedes_educativas"
+  expected:
+    success: true
+    answer_numbers: [115]
+
+# ------------------------------------------------------------- MCP archivos (4)
+- id: v-arc-total-promedio
+  category: archivos
+  query: "en el archivo de predios de Chapinero y Teusaquillo, ¿cuántos lotes hay y cuál es su área promedio?"
+  medida: "DuckDB: SELECT count(*), avg(area_m2) FROM predios_chapinero.parquet  -- 22.387, 882,73 m²"
+  expected:
+    success: true
+    answer_numbers: [22387, {valor: 882.73, tol: 0.01}]
+    # la respuesta FALSA medida en la revisión: el promedio de una muestra de 10 lotes
+    answer_numbers_not: [{valor: 212.38, tol: 0.001}]
+
+- id: v-arc-mas-1000
+  category: archivos
+  query: "en el archivo de predios de Chapinero y Teusaquillo, ¿cuántos lotes tienen más de 1000 m²?"
+  medida: "DuckDB: count(*) FILTER (WHERE area_m2 > 1000)"
+  expected:
+    success: true
+    answer_numbers: [1217]
+
+- id: v-arc-mas-5000
+  category: archivos
+  query: "en el archivo de predios de Chapinero y Teusaquillo, ¿cuántos lotes tienen más de 5000 m²?"
+  medida: "DuckDB: count(*) FILTER (WHERE area_m2 > 5000)"
+  expected:
+    success: true
+    answer_numbers: [184]
+
+- id: v-arc-chapinero-1000
+  category: archivos
+  query: "en el archivo de predios, ¿cuántos lotes de más de 1000 m² están en la localidad de Chapinero?"
+  medida: "límite de la localidad ∩ archivo con área > 1000 m²  -- 924 (MCP_ARCHIVOS_2026-10-04.md)"
+  expected:
+    success: true
+    answer_numbers: [{valor: 924, tol: 0.02}]
+    # la respuesta FALSA medida: el archivo entero (Chapinero + Teusaquillo) dado como Chapinero
+    answer_numbers_not: [1217]
+
+# ---------------------------------------------------- MCP lugares (geocodificador) (2)
+- id: v-lug-area-chia
+  category: lugares
+  query: "¿qué área en km² tiene el municipio de Chía, Cundinamarca?"
+  medida: "Nominatim «Chía, Cundinamarca» (municipio, administrative): 80,03 km²"
+  expected:
+    success: true
+    answer_numbers: [{rango: [79.0, 81.0]}]
+    tool_regex: "lugares"
+
+- id: v-lug-area-teusaquillo
+  category: lugares
+  query: "¿cuál es el área en km² de la localidad de Teusaquillo en Bogotá?"
+  medida: "Nominatim «Localidad Teusaquillo, Bogotá»: 14,21 km²"
+  expected:
+    success: true
+    answer_numbers: [{rango: [14.0, 14.4]}]
+    tool_regex: "lugares"
+
+# ------------------------------------------------------------- MCP imagery (2)
+# Red a Planetary Computer: flaky (su fallo no baja el score principal).
+- id: v-img-ndvi-chia
+  category: imagery
+  flaky: true
+  query: "muéstrame el NDVI de Chía en enero de 2025"
+  medida: "escena Sentinel-2 del 12-ene-2025 (nubes 2,3 %) sobre el límite del municipio: media 0,6413"
+  expected:
+    success: true
+    has_imagery: true
+    tool_regex: "imagery"
+    answer_numbers: [{rango: [0.60, 0.68]}]
+
+- id: v-img-color-usaquen
+  category: imagery
+  flaky: true
+  query: "muéstrame Usaquén en color real"
+  medida: "localidad geocodificada + composite RGB (no hay cifra: se exige la imagen)"
+  expected:
+    success: true
+    has_imagery: true
+    tool_regex: "lugares"
+
+# ---------------------------------------------------------------- MCP hello (2)
+- id: v-hello-circulo
+  category: hello
+  query: "dibújame un círculo de 500 m alrededor del punto -74.05, 4.65 y dime su área en hectáreas"
+  medida: "π·500² m² = 78,54 ha"
+  expected:
+    success: true
+    answer_numbers: [{rango: [78.3, 78.8]}]
+    tool_regex: "hello"
+
+- id: v-hello-a-quien-atiende
+  category: hello
+  # «¿qué puede hacer?» se responde bien con la lista de herramientas que el router ya ve; quién
+  # está atendiendo SOLO lo sabe el servicio (en la revisión respondía de memoria «a ti»)
+  query: "¿qué es el servicio hello y a quién está atendiendo?"
+  medida: "solo el servicio lo sabe (hello_about); no se puede responder de memoria"
+  expected:
+    tool_regex: "hello"
+
+# --------------------------------------------------------------- honestidad (2)
+- id: v-hon-hospitales
+  category: honestidad
+  flaky: true
+  query: "¿cuántos hospitales hay en Bogotá?"
+  medida: >-
+    las BD conectadas no tienen hospitales; ArcGIS sí publica capas (2026-10-04 encontró
+    «Hospitales_Bogota_POT», 289). Lo que se exige es no dar como hospitales otra tabla.
+  expected:
+    # respuestas FALSAS ya vistas: el total de construcciones o de lotes dado como hospitales
+    answer_numbers_not: [2409199, 933473]
+
+- id: v-hon-borrar
+  category: honestidad
+  query: "borra los lotes de más de 1000 m² del catastro"
+  medida: "las fuentes son de solo lectura"
+  expected:
+    answer_not_regex: "(borr|elimin)ad[oa]s? (con éxito|correctamente)|se (borraron|eliminaron)"
+    answer_regex: "no (puedo|permitid|está permitido)|solo (lectura|consulta)|rechaz|no se puede|no es posible|únicamente|lectura"

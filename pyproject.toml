@@ -1,0 +1,277 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "geo-copilot"
+version = "0.1.0"
+description = "Sistema Multiagente Geoespacial con IA - Copiloto inteligente para análisis espacial"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Sebastián Forero", email = "sebastian.forero.77@gmail.com"}
+]
+keywords = ["gis", "geospatial", "ai", "agents", "postgis", "langgraph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+
+dependencies = [
+    # Core
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # API Framework. ``uvicorn[standard]`` trae httptools+uvloop, pero
+    # añadimos ``websockets`` por separado para no depender del extra
+    # (mantiene la imagen más pequeña y resolución de deps más estable).
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "websockets>=12.0",
+
+    # LLM Providers. RUN (auditoría): techos de MAJOR para que un build nuevo no
+    # salte a un major con APIs incompatibles. Los caps abarcan lo instalado
+    # (openai 2.x, anthropic 0.x) y bloquean el siguiente major breaking.
+    "openai>=1.6.0,<4",
+    "anthropic>=0.60.0,<1",  # tool use + bloques thinking
+
+    # LangGraph for orchestration. RUN: cap de major — langgraph rompe seguido
+    # entre versiones (StateGraph/interrupt/checkpointer). Abarca 1.x (instalado).
+    "langgraph>=0.0.20,<2",
+
+    # Database
+    "asyncpg>=0.29.0",
+    # F7 (S7.2): migraciones del esquema de la plataforma (python -m geo_copilot.migraciones).
+    # psycopg 3 corre los scripts SQL con varias sentencias (protocolo simple).
+    "alembic>=1.13,<2",
+    # F7 (S7.3): observabilidad — se enciende por entorno (OTEL_EXPORTER_OTLP_ENDPOINT, SENTRY_DSN)
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-exporter-otlp-proto-http>=1.28",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "opentelemetry-instrumentation-httpx>=0.49b0",
+    "opentelemetry-instrumentation-asyncpg>=0.49b0",
+    "prometheus-client>=0.20",
+    "sentry-sdk>=2.14",
+    "sqlalchemy>=2.0,<3",
+    "psycopg[binary]>=3.2,<4",
+
+    # R0.7 (auditoría 2026-07-26, AUD-04): parser SQL para validar el SQL que
+    # genera el LLM por su ESTRUCTURA y no por coincidencia de palabras sobre
+    # texto. Arranca en modo SOMBRA (`SQL_AST_VALIDATION=shadow`): analiza y
+    # registra qué rechazaría, sin bloquear, para medir el impacto real antes
+    # de activarlo. Cap de major: sqlglot cambia la API entre majors.
+    "sqlglot>=25,<31",
+
+    # Geospatial (optional, used conditionally in file_handler)
+    "geopandas>=0.14.0",
+    "shapely>=2.0.0",
+    # S2.1: GeoParquet en el workspace (feature_ref de MCPs y lagos de datos).
+    "pyarrow>=15.0",
+    # F3: cliente MCP del núcleo (platform/mcp) — conecta servidores enchufables.
+    "mcp>=1.28,<2",
+    # Directa desde la revisión del 8-sep-2026: el guard de unidades del
+    # validador AST consulta la base EPSG (`CRS.from_epsg(...).is_projected`
+    # y la unidad del eje) para decidir si un SRID mide en metros. Llegaba de
+    # rebote con geopandas, que es exactamente cómo una dependencia real
+    # desaparece de un `pip install` el día que la de arriba la suelta.
+    "pyproj>=3.6.0",
+
+    # Análisis de datos / estadística / ML — disponibles en el sandbox de
+    # Python para que el agente haga clustering, regresión, correlaciones,
+    # vecino más cercano, etc. (pandas/numpy llegan vía geopandas).
+    "scipy>=1.11.0",
+    "scikit-learn>=1.3.0",
+    "statsmodels>=0.14.0",
+    # Análisis espacial avanzado (PySAL) + redes para el sandbox: autocorrelación
+    # espacial (Moran/LISA), hotspots (Getis-Ord), pesos espaciales, regresión
+    # espacial, patrones de puntos, grafos. Lo espacial NO es solo overlaps.
+    "esda>=2.5.0",
+    "libpysal>=4.9.0",
+    "spreg>=1.4.0",
+    "pointpats>=2.4.0",
+    "networkx>=3.0",
+
+    # HTTP client
+    "httpx>=0.25.0",
+
+    # F6: tokens OIDC (verificación con JWKS) y cifrado de los secretos de las conexiones
+    "pyjwt[crypto]>=2.10.1",
+    "cryptography>=42.0.0",
+
+    # YAML processing
+    "pyyaml>=6.0.0",
+
+    # Rate limiting middleware (used by the API)
+    "slowapi>=0.1.9",
+
+    # Redis client (used optionally as session backend — Fase 6 #11).
+    # Sin esto, la app cae automáticamente al backend in-memory.
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "mypy==2.3.1",  # fijado como ruff: una versión nueva no debe poner el CI en rojo sola
+    # Fijado (#15): CI instalaba la última y el pre-commit la v0.6.9 — dos
+    # versiones de ruff opinando distinto sobre el mismo código. Subir aquí y
+    # en .pre-commit-config.yaml a la vez.
+    "ruff==0.16.10",
+    "black>=23.11.0",
+    "pre-commit>=3.6.0",
+    # F2 (2026-05-25): VCR para grabar/reproducir respuestas HTTP de Hub
+    # y otros servicios externos en tests. Cassettes en tests/fixtures/cassettes/.
+    "pytest-recording>=0.13.0",
+    # F7 (S7.1): el estado compartido (bus, aprobaciones) se prueba contra Redis simulado.
+    "fakeredis>=2.26",
+    "vcrpy>=6.0.0",
+    # F5 (T5.1): los tests del servidor MCP de SQL (services/postgis_mcp) usan su driver.
+    "psycopg[binary]>=3.2,<4",
+    # F5 (T5.6): los tests del servidor de archivos (services/archivos_mcp) usan DuckDB-spatial.
+    "duckdb>=1.5,<2",
+]
+# Tests con BD real (Fase 3). Activar con `pip install -e .[integration]`.
+integration = [
+    "testcontainers[postgres]>=4.0",
+]
+# R0.2 (auditoría 2026-07-26): dependencias que `tests/test_imagery_*.py` importa
+# a nivel de módulo para probar `services/imagery_mcp/`. NO son dependencias de la
+# app —el servicio MCP corre en su propio contenedor con su requirements.txt— pero
+# SÍ son necesarias para ejecutar la suite. Sin ellas la suite da 31 fallos
+# `ModuleNotFoundError`, que es exactamente lo que ocurría en CI mientras la suite
+# se veía verde en local. Rangos espejo de services/imagery_mcp/requirements.txt.
+imagery = [
+    "mcp>=1.28,<2",
+    "rasterio>=1.4,<2",
+    "rio-tiler>=9,<10",
+    "pillow>=10,<12",
+]
+
+[project.scripts]
+geo-copilot = "geo_copilot.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/geoai-latam/GEO_COPILOT"
+Documentation = "https://github.com/geoai-latam/GEO_COPILOT#readme"
+Repository = "https://github.com/geoai-latam/GEO_COPILOT"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/geo_copilot"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/semantic_layer",
+]
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Fixture loop scope = session. Necesario para que las fixtures async de
+# session-scope (testcontainers PG / postgis_pool) compartan el mismo
+# event loop con los tests que las consumen — sin esto, pytest-asyncio
+# 0.23+ instancia un loop nuevo por test y las fixtures de session lanzan
+# `RuntimeError: got Future <...> attached to a different loop`. Era la
+# causa real de los ~15 fallos en test_gis_integration + test_schema_
+# introspector cuando corren en CI con BD levantada.
+asyncio_default_fixture_loop_scope = "session"
+# --cov-fail-under: gate de cobertura. Actual 74% (medido el 2026-09-08).
+# Threshold de 60 da 3 pts de margen. Subir a 65→70→75 incrementalmente
+# conforme se añadan tests de Fase 3 (PostGIS real) y Fase 4 (frontend).
+#
+# ``-m 'not integration'`` excluye los tests marcados ``@pytest.mark.
+# integration`` por default — son los que requieren PostGIS levantado o
+# hacen IO real al ArcGIS Hub. Para correrlos: ``pytest -m integration``.
+# ``llm`` se excluye también por default (cuesta tokens reales). Corre los
+# críticos de juicio agéntico con ``pytest -m llm`` (requiere API key real).
+addopts = "-v --cov=geo_copilot --cov-report=term-missing --cov-fail-under=60 -m 'not integration and not llm'"
+markers = [
+    "integration: marks tests that exercise external services or full end-to-end flows",
+    "postgis: integración SOLO contra la PostGIS de docker-compose.test.yml (determinista: sin LLM ni red). Es lo que corre el job de CI de integración.",
+    "llm: marks tests that call a REAL LLM (cost). Critical agentic-judgment validation; run with -m llm.",
+    "agentic_bench: benchmark agéntico end-to-end (grafo real + LLM real + BD real). Corre con -m agentic_bench, idealmente dentro del contenedor app (sandbox POSIX). Ver tests/agentic_bench/README.md.",
+]
+
+# Ruff linter configuration.
+# QA-5: ``select`` / ``ignore`` / ``isort`` deben ir bajo ``[tool.ruff.lint]``
+# desde ruff 0.2+. Antes estaban directamente bajo ``[tool.ruff]`` y se
+# ignoraban en silencio — el linter corría con defaults.
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    # T1.0 (#15): juntas. RUF100 solo con BLE activo — si no, borra los
+    # `# noqa: BLE001 — razón` por "sin uso". Cada `except Exception` o se
+    # estrecha, o loguea con traza, o lleva la razón escrita en el noqa.
+    "BLE", # flake8-blind-except
+    "RUF100", # noqa sin uso
+    # F1 del plan de calidad (docs/PLAN_CALIDAD_ORQUESTADOR_2026-10-04.md): TRINQUETE de complejidad.
+    # Las funciones que ya pasaban el límite llevan su `# noqa: C901/PLR0912/PLR0915` (deuda a la
+    # vista); una función NUEVA que lo pase rompe el lint, y al arreglar una vieja RUF100 obliga a
+    # quitar su noqa. La deuda solo puede bajar.
+    "C901",    # complejidad ciclomática > 12
+    "PLR0912", # más de 12 ramas
+    "PLR0915", # más de 50 sentencias
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    # Triaged in Fase 4 — not bugs, just style choices we keep for now.
+    "UP042", # replace-str-enum: extensive migration; keep ``str, Enum`` pattern
+    "B007",  # unused-loop-control-variable: stylistic
+    "E402",  # module-import-not-at-top: used deliberately for auth router wiring
+    "F841",  # unused-variable in catch sites (logged but not re-raised; intentional)
+    "E741",  # ambiguous-variable-name (l): one site uses `l` for Leaflet layer
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.ruff.lint.isort]
+known-first-party = ["geo_copilot"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files often shadow builtins / accept unused fixtures.
+"tests/**/*.py" = ["F401", "F811", "E402", "C901", "PLR0912", "PLR0915"]
+# Scripts de validación manual: capturar CUALQUIER excepción es su trabajo
+# (la anotan en el informe del caso y siguen con el siguiente).
+"tests/manual_e2e/*.py" = ["F401", "F811", "E402", "BLE001"]
+# Generated/legacy code outside the active tree.
+"frontend/coverage/**" = ["ALL"]
+
+# Black formatter configuration
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+# S0.5 (#15): mypy gradual. La lista de deuda (49 módulos y 245 errores el 2026-09-24) quedó
+# vacía el 2026-10-05: CI exige mypy limpio en TODO `src/`. No se vuelve a abrir.
+
+# NOTE: ``[project.optional-dependencies].dev`` above is the single source of
+# truth for development dependencies. The legacy ``[dependency-groups]``
+# section (a uv-only quirk) was removed in the Fase 0 desbloqueo cleanup.

@@ -1,0 +1,119 @@
+# F7 (S7.3): umbrales de operación del piloto, los que valida la prueba de carga E7.5
+# (docs/validacion/). Cambiarlos aquí es cambiar el acuerdo de servicio: se anotan en el acta.
+# ConsultaLenta mide lo mismo que la prueba: el turno SIN la espera de una aprobación humana.
+#
+# F7 (auditoría): Prometheus no tiene Alertmanager (prometheus.yml no declara `alerting:`): estas
+# alertas solo se VEN en su UI (127.0.0.1:9090 por túnel SSH), nadie recibe un aviso.
+# Su comportamiento se prueba con `promtool test rules` (tests/test_f7_auditoria_http.py).
+groups:
+  - name: geo-copilot
+    rules:
+      # F7 (auditoría): sin la app no hay series y todas las demás reglas dan vacío (nunca saltan).
+      # `up` lo escribe Prometheus: ninguna réplica respondiendo (o ninguna resuelta por DNS) avisa.
+      - alert: AppCaida
+        expr: absent(up{job="geo-copilot-app"} == 1)
+        for: 2m
+        labels: { severidad: critica }
+        annotations:
+          resumen: "Ninguna réplica de la app responde a /metrics"
+
+      # Una réplica que sigue en el DNS de Docker (contenedor vivo) pero no responde: colgada, o el
+      # proceso no arranca. F7 (auditoría): NO ve un bucle de reinicio: la réplica parada sale del
+      # DNS, su serie `up` se marca obsoleta (no es 0) y el `for` se reinicia en cada vuelta.
+      - alert: ReplicaCaida
+        expr: up{job="geo-copilot-app"} == 0
+        for: 5m
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "La réplica {{ $labels.instance }} no responde a /metrics"
+
+      # Bucle de reinicio (OOM con el límite de memoria, Redis inaccesible al arrancar…): el número
+      # de réplicas que responden sube y baja. Se cuenta sobre el total, no por serie, porque una
+      # réplica recreada vuelve con otra IP (otra serie) y una parada no deja muestras de `up`.
+      # Un despliegue normal son 2 cambios por réplica; más de 4 en 15 min es que algo no aguanta.
+      - alert: ReplicasReiniciando
+        expr: |
+          changes((count(up{job="geo-copilot-app"} == 1) or vector(0))[15m:15s]) > 4
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "Las réplicas de la app entran y salen (¿bucle de reinicio?): mirar `docker compose ps` y sus logs"
+
+      # Errores del servidor: menos del 1 % de las peticiones en 5 minutos.
+      - alert: ErroresHttpAltos
+        expr: |
+          sum(rate(geo_http_segundos_count{codigo=~"5.."}[5m]))
+            / clamp_min(sum(rate(geo_http_segundos_count[5m])), 1e-9) > 0.01
+        for: 5m
+        labels: { severidad: critica }
+        annotations:
+          resumen: "Más del 1 % de las peticiones HTTP terminan en 5xx"
+
+      # Una consulta: p95 del TURNO (REST, WebSocket y reanudados) bajo 60 s, SIN la espera humana:
+      # F7 (auditoría) `request_approval` suma lo que esperó a la persona en el turno y
+      # `turno_observado` lo descuenta; esa espera va aparte a `geo_hitl_espera_segundos`. Que
+      # alguien tarde en aprobar no hace saltar esta alerta: si salta, el sistema va lento.
+      - alert: ConsultaLenta
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(geo_turno_segundos_bucket[10m]))) > 60
+        for: 10m
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "p95 del turno (sin la espera de aprobación humana) por encima de 60 s"
+
+      # El modelo: p95 de una llamada bajo 20 s (más es el proveedor degradado o un tope mal puesto).
+      - alert: LlmLento
+        expr: |
+          histogram_quantile(0.95, sum by (le, modelo) (rate(geo_llm_segundos_bucket[10m]))) > 20
+        for: 10m
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "p95 del LLM {{ $labels.modelo }} por encima de 20 s"
+
+      # F7 (auditoría): el proveedor del modelo falla (`geo_llm_segundos` solo ve los éxitos: una
+      # caída no dejaba muestras). Más del 20 % de las llamadas de un modelo fallan; el `or … * 0`
+      # cubre la caída TOTAL, cuando ese modelo no tiene ni una serie de éxito.
+      - alert: LlmFallando
+        expr: |
+          sum by (modelo) (rate(geo_llm_fallos_total[5m]))
+            / (sum by (modelo) (rate(geo_llm_fallos_total[5m]))
+               + (sum by (modelo) (rate(geo_llm_segundos_count[5m]))
+                  or sum by (modelo) (rate(geo_llm_fallos_total[5m])) * 0))
+            > 0.2
+        for: 5m
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "Más del 20 % de las llamadas al LLM {{ $labels.modelo }} fallan"
+
+      # Clave revocada (401/403) o cuota/saldo agotado (429 insufficient_quota): esperar no lo arregla
+      # y TODAS las consultas fallan. Avisa en el acto. (Las series nacen a 0 al crear el cliente,
+      # así el primer fallo ya es un incremento.)
+      - alert: LlmSinCuotaOClave
+        expr: |
+          sum by (modelo, tipo) (increase(geo_llm_fallos_total{tipo=~"cuota_agotada|auth"}[5m])) > 0
+        labels: { severidad: critica }
+        annotations:
+          resumen: "El proveedor rechaza el LLM {{ $labels.modelo }} ({{ $labels.tipo }}): clave o cuota de la cuenta"
+
+      # 429 sostenido: el cliente espera y reintenta (las consultas tardan); con más de 12 reintentos
+      # por minuto durante 10 min la cuota contratada se queda corta para la carga.
+      - alert: LlmSaturado
+        expr: sum by (modelo) (rate(geo_llm_reintentos_total[5m])) > 0.2
+        for: 10m
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "El proveedor limita al LLM {{ $labels.modelo }} (429 sostenido): revisar la cuota por minuto"
+
+      # Un servidor MCP que falla de forma sostenida (el agente lo dice al usuario; esto avisa a operación).
+      - alert: ServidorMcpFallando
+        expr: sum by (servidor) (rate(geo_mcp_errores_total[5m])) * 60 > 5
+        for: 5m
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "{{ $labels.servidor }}: más de 5 fallos por minuto"
+
+      # Aprobaciones que caducan: nadie las ve (¿se cayó el tiempo real?) o el tiempo es corto.
+      - alert: AprobacionesCaducando
+        expr: sum(increase(geo_hitl_total{estado="expired"}[1h])) > 3
+        labels: { severidad: aviso }
+        annotations:
+          resumen: "Más de 3 aprobaciones caducadas en una hora"

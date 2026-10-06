@@ -1,0 +1,3 @@
+# hello-geo — ejemplo de servidor GeoMCP (el kit se instala aparte en el Dockerfile)
+mcp>=1.28,<2
+uvicorn>=0.30

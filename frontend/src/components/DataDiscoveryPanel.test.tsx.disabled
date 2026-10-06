@@ -1,0 +1,211 @@
+/**
+ * Tests de render + interacción del DataDiscoveryPanel (F4.1 del roadmap).
+ *
+ * ⚠️ Archivo deshabilitado por extensión (.disabled) hasta que las deps
+ * de testing-library estén instaladas. Ver README.tests.md en este dir.
+ *
+ * Activar:
+ *
+ *     cd frontend
+ *     npm install
+ *     mv DataDiscoveryPanel.test.tsx.disabled DataDiscoveryPanel.test.tsx
+ *     npx vitest run src/components/DataDiscoveryPanel.test.tsx
+ *
+ * Estos tests cubren el GAP identificado en el diagnóstico 2026-05-24:
+ * el componente más complejo del frontend tenía 0% cobertura de render
+ * + interacción. Solo `discoveryPanel.helpers.ts` tenía tests unitarios.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Extiende `expect` con matchers DOM (toBeInTheDocument, toBeDisabled…).
+// Import a nivel de archivo de test (no en setup.ts global) para que el
+// setup global NO requiera tener la lib instalada.
+import '@testing-library/jest-dom/vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+
+import { discoveryApi } from '@/services/api'
+import { DataDiscoveryPanel } from './DataDiscoveryPanel'
+
+
+describe('DataDiscoveryPanel — render + interaction', () => {
+  beforeEach(() => {
+    // Mock de discoveryApi.search para no tocar red.
+    vi.spyOn(discoveryApi, 'search').mockResolvedValue({
+      items: [],
+      intent: 'exploratory',
+      authority_warning: false,
+      suggested_refinements: [],
+    } as any)
+    vi.spyOn(discoveryApi, 'load').mockResolvedValue({
+      type: 'geojson',
+      name: 'Test layer',
+      service_type: 'FeatureServer',
+      service_url: 'https://services.arcgis.com/X/Y/FeatureServer/0',
+      geojson: { type: 'FeatureCollection', features: [] },
+      feature_count: 0,
+    } as any)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renderiza el input de búsqueda y los chips de filtro', () => {
+    render(<DataDiscoveryPanel />)
+
+    const input = screen.getByPlaceholderText(/manzanas Bogotá/i)
+    expect(input).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: /Feature/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Map/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Image/i })).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: /Bogotá/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Cundinamarca/i })).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: /Oficial CO/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Global/i })).toBeInTheDocument()
+  })
+
+  it('click en chip de zona Bogotá dispara búsqueda con tags_any correctos', async () => {
+    const user = userEvent.setup()
+    render(<DataDiscoveryPanel />)
+
+    const bogotaChip = screen.getByRole('button', { name: /Bogotá/i })
+    await user.click(bogotaChip)
+
+    await waitFor(
+      () => {
+        expect(discoveryApi.search).toHaveBeenCalled()
+      },
+      { timeout: 2000 },
+    )
+
+    const lastCall = (discoveryApi.search as any).mock.calls.at(-1)
+    expect(lastCall).toBeDefined()
+    const [effectiveQuery, hints] = lastCall
+    expect(effectiveQuery).toBe('Bogotá Colombia')
+    expect(hints.tags_any).toEqual(
+      expect.arrayContaining(['bogota', 'bogotá', 'colombia']),
+    )
+    expect(hints.global_mode).toBeFalsy()
+  })
+
+  it('debounce: tipear texto NO dispara búsqueda inmediata', async () => {
+    const user = userEvent.setup({ delay: null })
+    render(<DataDiscoveryPanel />)
+
+    const input = screen.getByPlaceholderText(/manzanas Bogotá/i)
+    await user.type(input, 'cat')
+
+    // INMEDIATAMENTE después de tipear, no debió llamar API (debounce 400ms).
+    expect(discoveryApi.search).not.toHaveBeenCalled()
+
+    // Pero después de esperar el debounce, sí llama.
+    await waitFor(
+      () => {
+        expect(discoveryApi.search).toHaveBeenCalled()
+      },
+      { timeout: 1000 },
+    )
+  })
+
+  it('chip Global activa modo global y deshabilita Oficial CO', async () => {
+    const user = userEvent.setup()
+    render(<DataDiscoveryPanel />)
+
+    const globalChip = screen.getByRole('button', { name: /Global/i })
+    await user.click(globalChip)
+
+    await waitFor(() => expect(discoveryApi.search).toHaveBeenCalled())
+
+    const lastCall = (discoveryApi.search as any).mock.calls.at(-1)
+    const [, hints] = lastCall
+    expect(hints.global_mode).toBe(true)
+
+    const oficialChip = screen.getByRole('button', { name: /Oficial CO/i })
+    expect(oficialChip).toBeDisabled()
+  })
+
+  it('chip Feature filter envía service_types correcto', async () => {
+    const user = userEvent.setup()
+    render(<DataDiscoveryPanel />)
+
+    const featureChip = screen.getByRole('button', { name: /^Feature$/i })
+    await user.click(featureChip)
+
+    await waitFor(() => expect(discoveryApi.search).toHaveBeenCalled())
+
+    const lastCall = (discoveryApi.search as any).mock.calls.at(-1)
+    const [, hints] = lastCall
+    expect(hints.service_types).toEqual(['Feature Service'])
+  })
+
+  it('combinación múltiple: texto + chip Bogotá + chip Feature', async () => {
+    const user = userEvent.setup({ delay: null })
+    render(<DataDiscoveryPanel />)
+
+    await user.click(screen.getByRole('button', { name: /Bogotá/i }))
+    await user.click(screen.getByRole('button', { name: /^Feature$/i }))
+    await user.type(screen.getByPlaceholderText(/manzanas Bogotá/i), 'catastro')
+
+    await waitFor(
+      () => {
+        expect(discoveryApi.search).toHaveBeenCalled()
+      },
+      { timeout: 2000 },
+    )
+
+    const lastCall = (discoveryApi.search as any).mock.calls.at(-1)
+    const [effectiveQuery, hints] = lastCall
+    expect(effectiveQuery).toContain('catastro')
+    expect(effectiveQuery).toContain('Bogotá')
+    expect(effectiveQuery).toContain('Colombia')
+    expect(hints.tags_any).toContain('colombia')
+    expect(hints.service_types).toEqual(['Feature Service'])
+  })
+
+  it('estado vacío: 0 items + sugerencias renderiza CTA', async () => {
+    vi.mocked(discoveryApi.search).mockResolvedValue({
+      items: [],
+      intent: 'exploratory',
+      authority_warning: false,
+      suggested_refinements: [
+        { action: 'broaden', label: 'Quita filtros y busca por palabra libre' },
+      ],
+    } as any)
+
+    const user = userEvent.setup()
+    render(<DataDiscoveryPanel />)
+    await user.click(screen.getByRole('button', { name: /Bogotá/i }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/Sin resultados/i)).toBeInTheDocument(),
+    )
+    expect(
+      screen.getByText(/Quita filtros y busca por palabra libre/i),
+    ).toBeInTheDocument()
+  })
+
+  it('error de API muestra mensaje al usuario', async () => {
+    vi.mocked(discoveryApi.search).mockRejectedValue(
+      new Error('Network failed'),
+    )
+
+    const user = userEvent.setup()
+    render(<DataDiscoveryPanel />)
+    await user.click(screen.getByRole('button', { name: /Bogotá/i }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/Network failed/i)).toBeInTheDocument(),
+    )
+  })
+
+  it('sin filtros NI texto → NO llama API (estado idle)', async () => {
+    render(<DataDiscoveryPanel />)
+    // Esperar a que cualquier debounce inicial pase.
+    await new Promise((r) => setTimeout(r, 500))
+    expect(discoveryApi.search).not.toHaveBeenCalled()
+  })
+})

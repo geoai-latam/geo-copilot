@@ -1,0 +1,272 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+# Anchor to root so this only matches the Python distribution directory,
+# not arbitrary ``lib/`` folders deeper in the tree (e.g. frontend/src/lib/).
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.env.local
+.env.*.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+Thumbs.db
+.DS_Store
+.env.swp
+
+# Project specific
+.env
+.env.example.local
+semantic_layer/test_*.yaml
+temp/
+temp_*
+*.tmp
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Redis
+dump.rdb
+
+# Logs
+logs/
+*.log
+
+# Node (if using node for frontend)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Docker volumes
+data/
+postgres_data/
+redis_data/
+
+# Local testing files
+test_results/
+.coverage_html/
+
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
+
+# secrets
+secrets/
+*.pem
+*.key
+*.crt
+
+# temporary files
+.tmp/
+*.bak
+*.backup
+*~
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Conda/Virtual Env
+envs/
+.conda/
+
+# Mac
+.AppleDouble
+.LSOverride
+
+# Windows
+$RECYCLE.BIN/
+ehthumbs.db
+
+# Poetry
+poetry.lock
+
+# Dumps reales de la BD — pesados (~500MB), NO commitear.
+# El usuario los pone localmente en docker/init-db/ para cargar como seed
+# del compose principal. Ver docker/init-db/README.md.
+docker/init-db/*_real.sql
+docker/init-db/*_real.dump
+docker/init-db/*.dump
+docker/init-db/geocopilot.sql
+
+# Cassettes VCR temporales / sin commitear (las definitivas SÍ van al repo).
+tests/fixtures/cassettes/*.tmp.yaml
+
+# CA corporativa opcional para Dockerfile.frontend (TLS interceptor).
+# Si tu red corporativa rompe ``npm ci``, exporta tu CA aquí y el build
+# la inyectará como NODE_EXTRA_CA_CERTS. Nunca commitear.
+docker/corporate-ca.pem
+# F6: certificados TLS del frontend (el de desarrollo lo genera el contenedor)
+docker/certs/
+
+# Claude Code runtime state (locks, scheduled tasks, etc.) — local-only.
+.claude/scheduled_tasks.lock
+# Permisos/ajustes personales por-máquina (Claude Code los genera por usuario).
+.claude/settings.local.json
+# El directorio entero: `.claude/agents/*.md` son herramientas internas de
+# desarrollo, no parte del producto. Sin esta línea un `git add -A` las
+# publica sin que nadie lo decida.
+.claude/
+
+# F3: registro local de servidores MCP (dev); el del repo es config/mcp_servers.yaml
+config/mcp_servers.local.yaml
+tests/deixis_bench/ultimo_informe.json
+
+# F7: variables de producción (secretos). Se versiona solo la plantilla .env.production.example
+.env.production
+
+# F7 (auditoría): las corridas de la prueba de carga (scripts/prueba_carga.py) son locales; la
+# válida se copia como evidencia a docs/validacion/evidencia/fase-7/ y se cita en el acta. Así una
+# corrida inválida (p. ej. la interrumpida por la suspensión del equipo) no entra con un `git add -A`.
+bench_results/carga*.json
+
+# Material interno de trabajo: no se publica (queda en local).
+# Validaciones con capturas y trazas de sesiones, auditorías de seguridad, planes, backlog,
+# documentos archivados y resultados del banco agéntico (respuestas del modelo).
+docs/validacion/
+docs/archive/
+docs/AUDITORIA_*.md
+docs/PLAN_*.md
+docs/TAREAS_*.md
+docs/BACKLOG.md
+bench_results/
+.gitleaks-report.json

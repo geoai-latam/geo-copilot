@@ -1,0 +1,377 @@
+# Continuous integration — gates every PR.
+# Added in Fase 4 (QA-3). Before this the repo had zero automated checks.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    # F7 (S7.2): una etiqueta v* publica las imágenes de esa versión
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libgdal-dev libgeos-dev libproj-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,imagery]"
+          pip install -e packages/geo_mcp_kit
+          pip install -e packages/geo_sql_guard
+
+      - name: Ruff lint
+        # services/ se incorpora al gate en R0.1: tenía 8 errores que nadie
+        # gateaba. F7 (auditoría): scripts/ también — umbral_evals.py es la
+        # puerta de versión, y un error suyo no rompía el PR: salía en la
+        # evaluación nocturna o al etiquetar.
+        run: ruff check src/ tests/ services/ packages/ scripts/
+
+      - name: Mypy
+        # Gradual (S0.5): limpio en todo src/ salvo la lista de deuda de
+        # pyproject.toml ([[tool.mypy.overrides]]). Esa lista solo encoge.
+        run: mypy src
+
+      - name: Promtool (reglas de alertas)
+        # F7 (auditoría): sin promtool, el test de docker/observabilidad/alertas.yml se salta y
+        # las reglas no se prueban. Misma versión que prom/prometheus en docker-compose.yml; el
+        # sha256 es el de sha256sums.txt de esa versión.
+        env:
+          PROM_VERSION: "3.1.0"
+          PROM_SHA256: 9a9d1e115d1745826b13aec3f1409780b9fcf1d4206746cb4faee46ca5add70c
+        run: |
+          set -euo pipefail
+          archivo="prometheus-${PROM_VERSION}.linux-amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archivo" \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/$archivo"
+          echo "$PROM_SHA256  $RUNNER_TEMP/$archivo" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archivo" -C "$RUNNER_TEMP" --strip-components=1 \
+            "prometheus-${PROM_VERSION}.linux-amd64/promtool"
+          "$RUNNER_TEMP/promtool" --version
+          echo "PROMTOOL=$RUNNER_TEMP/promtool" >> "$GITHUB_ENV"
+
+      - name: Pytest
+        # REQUIRE_PROMTOOL=1: si el paso de arriba desaparece, el test de reglas FALLA en vez de saltarse.
+        env:
+          REQUIRE_PROMTOOL: "1"
+        run: pytest -q --tb=short
+
+  integration:
+    name: Integración (PostGIS real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y libgdal-dev libgeos-dev libproj-dev
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,imagery]"
+          pip install -e packages/geo_mcp_kit
+          pip install -e packages/geo_sql_guard
+
+      - name: Levantar PostGIS de tests
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
+      - name: Pytest -m postgis
+        # Solo los tests contra la BD de tests: deterministas, sin LLM ni red.
+        # REQUIRE_TEST_DB=1: si la BD no está, FALLA (antes se saltaban en
+        # silencio y el job saldría verde sin probar nada).
+        env:
+          REQUIRE_TEST_DB: "1"
+        run: pytest -m postgis -q --tb=short --no-cov
+
+      - name: Logs de PostGIS si falla
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs
+
+  # F7 (S7.4): una VERSIÓN (etiqueta v*) solo se publica si el juicio del agente con el LLM real
+  # está sobre el umbral. En main y en los PR no corre (cuesta tokens y minutos): va cada noche.
+  evals:
+    name: Evaluaciones LLM (puerta de versión)
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/evals.yml
+    secrets: inherit
+
+  # F0 del plan de calidad (docs/PLAN_CALIDAD_ORQUESTADOR_2026-10-04.md): un PR que toca el JUICIO
+  # del agente (prompts, orquestador, hub MCP, juez) corre un subconjunto con el LLM real. La
+  # regresión del prompt ReAct del 2026-10-04 (seleccionar → filtrar, 7/7 → 0/3) pasó el CI verde.
+  juicio-tocado:
+    name: ¿El PR toca el juicio del agente?
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      tocado: ${{ steps.diff.outputs.tocado }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Archivos cambiados
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --name-only "$BASE"...HEAD | grep -E \
+            '^src/geo_copilot/(orchestrator/|platform/mcp/|core/composition_judge\.py|core/llm_client\.py|agents/[a-z_]+/prompts|prompts/)|^config/mcp_servers\.yaml$'; then
+            echo "tocado=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tocado=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  evals-pr:
+    name: Evaluaciones LLM (juicio tocado)
+    needs: juicio-tocado
+    if: needs.juicio-tocado.outputs.tocado == 'true'
+    uses: ./.github/workflows/evals.yml
+    secrets: inherit
+    with:
+      # las decisiones que más se han roto: elección de camino, selección/filtro, juez, MCP
+      pruebas: >-
+        tests/test_llm_critical.py tests/test_llm_router.py tests/test_llm_fh2_seleccion.py
+        tests/test_llm_connected_service.py tests/test_llm_f5_fuentes.py tests/test_llm_frt04.py
+        tests/test_llm_fh1_mapa.py tests/test_llm_arcgis_eleccion.py tests/test_llm_mcp_escala.py
+        tests/test_llm_fh5_filtros.py tests/test_mcp_inyeccion.py
+
+  # F7 (auditoría): construir y escanear (sin escritura en el registro) va aparte de publicar.
+  # Corre en todo PR sin esperar a los tests: un Dockerfile roto rompe el PR, no el despliegue.
+  images:
+    name: Imágenes Docker (build + escaneo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      # la matriz de `publicar` repite estos nombres: si se añade una imagen, va en las dos
+      matrix:
+        include:
+          - name: app
+            context: .
+            dockerfile: docker/Dockerfile
+          - name: frontend
+            context: .
+            dockerfile: docker/Dockerfile.frontend
+          - name: sandbox
+            context: .
+            dockerfile: docker/Dockerfile.sandbox
+          - name: imagery-mcp
+            context: .
+            dockerfile: services/imagery_mcp/Dockerfile
+          - name: arcgis-mcp
+            context: .
+            dockerfile: services/arcgis_mcp/Dockerfile
+          - name: lugares-mcp
+            context: .
+            dockerfile: services/lugares_mcp/Dockerfile
+
+    env:
+      IMAGEN: ghcr.io/${{ github.repository_owner }}/geo-copilot-${{ matrix.name }}
+      PUBLICAR: ${{ github.event_name == 'push' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
+      - name: Etiquetas
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ env.IMAGEN }}
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Fecha de parches del SO
+        id: parches
+        run: echo "fecha=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Build ${{ matrix.name }}
+        # Único build: lo que se escanea es lo que se publica (antes `publicar` reconstruía).
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: ${{ env.IMAGEN }}:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          # la capa de upgrade del SO se rehace cada día (ARG PARCHES_SO en los Dockerfile)
+          build-args: PARCHES_SO=${{ steps.parches.outputs.fecha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Escaneo de vulnerabilidades (Trivy)
+        # Bloquea: CRÍTICA o ALTA con arreglo publicado. Las que no tienen arreglo no bloquean
+        # (no hay nada que hacer salvo cambiar de base) pero salen en el informe.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGEN }}:ci
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Empaquetar la imagen escaneada
+        if: env.PUBLICAR == 'true'
+        env:
+          ETIQUETAS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          mkdir -p imagen
+          docker save "$IMAGEN:ci" | gzip -1 > imagen/imagen.tar.gz
+          # las capas (diff ids) identifican el contenido escaneado; `publicar` las comprueba
+          docker image inspect --format '{{json .RootFS.Layers}}' "$IMAGEN:ci" > imagen/capas.json
+          printf '%s\n' "$ETIQUETAS" > imagen/etiquetas.txt
+
+      - name: Subir la imagen escaneada
+        if: env.PUBLICAR == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: imagen-${{ matrix.name }}
+          path: imagen/
+          if-no-files-found: error
+          compression-level: 0  # ya va en gzip
+          retention-days: 1
+
+  # F7 (auditoría): publicar exige TODO en verde — backend, integración, frontend, las imágenes
+  # escaneadas y, en una etiqueta v*, las evals (fuera de etiquetas `evals` se salta). `!cancelled()`
+  # y no `always()`: con cancel-in-progress, una ejecución vieja de main no debe pisar `:main`.
+  # Es el único job con packages:write y no usa acciones de terceros: carga la imagen escaneada,
+  # la etiqueta y la empuja con el CLI de docker.
+  publicar:
+    name: Publicar imágenes (GHCR)
+    needs: [backend, integration, frontend, evals, images]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push'
+      && needs.backend.result == 'success'
+      && needs.integration.result == 'success'
+      && needs.frontend.result == 'success'
+      && needs.images.result == 'success'
+      && (needs.evals.result == 'success' || needs.evals.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [app, frontend, sandbox, imagery-mcp, arcgis-mcp, lugares-mcp]
+
+    env:
+      IMAGEN: ghcr.io/${{ github.repository_owner }}/geo-copilot-${{ matrix.name }}
+
+    steps:
+      - name: Descargar la imagen escaneada
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: imagen-${{ matrix.name }}
+          path: imagen
+
+      - name: Publicar ${{ matrix.name }}
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USUARIO: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          docker load -i imagen/imagen.tar.gz
+          capas=$(docker image inspect --format '{{json .RootFS.Layers}}' "$IMAGEN:ci")
+          if [ "$capas" != "$(cat imagen/capas.json)" ]; then
+            echo "::error::la imagen cargada no tiene las capas que escaneó Trivy: no se publica"
+            exit 1
+          fi
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USUARIO" --password-stdin
+          while IFS= read -r etiqueta; do
+            [ -n "$etiqueta" ] || continue
+            case "$etiqueta" in
+              "$IMAGEN":*) ;;
+              *) echo "::error::etiqueta fuera de $IMAGEN: $etiqueta"; exit 1 ;;
+            esac
+            docker tag "$IMAGEN:ci" "$etiqueta"
+            docker push "$etiqueta"
+          done < imagen/etiquetas.txt
+
+  frontend:
+    name: Frontend (typecheck + tests + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20  # incluye instalar chromium y los E2E de Playwright
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: "22"  # la misma línea LTS que docker/Dockerfile.frontend
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Vitest
+        run: npm test -- --run
+
+      - name: Build
+        run: npm run build
+
+      - name: Playwright (E2E deterministas)
+        # Backend y WS simulados con page.route: sin LLM ni red. Hasta F0 estos
+        # ~30 tests solo corrían a mano; ahora un PR que rompe la UI queda rojo.
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Reporte de Playwright si falla
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: playwright-report
+          path: frontend/test-results
+          retention-days: 7

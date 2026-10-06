@@ -1,0 +1,84 @@
+# Servidores MCP que el núcleo conecta (plan §3.2, F3).
+#
+# Un servidor se enchufa aquí, sin tocar código: sus tools permitidas aparecen
+# como herramientas del agente (`<id>__<tool>`) al reiniciar la app (y se
+# revalidan cada MCP_REFRESH_S). La credencial va por REFERENCIA (env:VAR),
+# nunca el valor. Estado y re-aprobación de tools: GET /api/v1/connections.
+#
+# Campos: id · url · auth{type,secret_ref} · conformance G0|G1|G2 · trust (untrusted por defecto) ·
+# tools{allow,deny,agent} (allowlist obligatoria; `agent`: cuáles ve el LLM, por defecto todas) · policy{default_risk, hitl, timeout_s,
+# max_result_mb} · tiles{prefixes} · description · enabled.
+
+servers:
+  # Imagery satelital Sentinel-2/Landsat (servicio imagery-mcp del compose): índices
+  # (NDVI/NDWI/NDBI/NDMI), cambio entre fechas, índices por feature, color real/falso color. Primer servidor que
+  # entra por el hub genérico: el núcleo ya no tiene código propio de imagery.
+  - id: imagery
+    url: http://imagery-mcp:9100/mcp
+    description: "Imagery satelital Sentinel-2 / Landsat: índices espectrales de una zona o por feature (NDVI vegetación, NDWI agua superficial, NDBI construido o suelo desnudo, NDMI humedad), cambio entre fechas y composiciones de color."
+    auth: { type: bearer, secret_ref: env:IMAGERY_MCP_API_KEY }
+    conformance: G2
+    trust: trusted   # servicio propio del despliegue; los de terceros quedan `untrusted` (por defecto)
+    tools: { allow: ["imagery_*"] }
+    policy: { default_risk: compute, timeout_s: 120, max_result_mb: 20 }
+    tiles: { prefixes: ["/tiles/", "/tiles-diff/", "/tiles-rgb/"] }
+
+  # ArcGIS (F5, T5.2; servicio arcgis-mcp del compose): buscar en ArcGIS Hub, describir servicios y
+  # traer capas. Lo usa el PROPIO núcleo (panel de datos, búsqueda y carga por chat), que ya no
+  # tiene conectores de ArcGIS. `agent: []`: el LLM no llama estas tools directamente; busca y
+  # carga con search_external / load_external (con su control de procedencia de URLs).
+  - id: arcgis
+    url: http://arcgis-mcp:9400/mcp
+    description: Servicios ArcGIS públicos (catálogo de ArcGIS Hub, capas de FeatureServer/MapServer/ImageServer).
+    auth: { type: bearer, secret_ref: env:ARCGIS_MCP_APP_KEY }
+    conformance: G2
+    trust: trusted   # servicio propio; los datos que trae de ArcGIS son externos y así se marcan
+    tools: { allow: ["arcgis_*"], agent: [] }
+    recursos: { prefixes: ["/resultados/"] }   # capas grandes: GeoJSON servido por el propio servidor
+    policy: { default_risk: read, timeout_s: 180, max_result_mb: 150 }
+
+# Ejemplo (servidor de muestra; levantarlo con `docker compose --profile examples up -d hello-geo`):
+#
+#   - id: hello
+#     url: http://hello-geo:9200/mcp
+#     description: Círculos métricos alrededor de un punto (servidor de ejemplo).
+#     auth: { type: bearer, secret_ref: env:HELLO_GEO_APP_KEY }
+#     conformance: G1
+#     tools: { allow: ["hello_*"] }
+#     policy: { default_risk: compute, timeout_s: 20 }
+
+# F5 (T5.1) — SQL multi-BD sobre el kit (`docker compose --profile connectors up -d postgis-demo postgis-mcp`).
+# Cada fuente (SQL_SOURCES del compose) con SU rol de solo lectura; el validador estructural del
+# núcleo (packages/geo_sql_guard) corre también del lado del servidor.
+#
+#   - id: sql
+#     url: http://postgis-mcp:9300/mcp
+#     # nombra las fuentes (`source`) que publica el servidor: el LLM las usa tal cual
+#     description: "Bases de datos SQL conectadas, cada una una fuente (`source`) — «equipamientos» (sedes educativas de Cundinamarca). El catastro de Bogotá NO está aquí: es la BD interna."
+#     auth: { type: bearer, secret_ref: env:POSTGIS_MCP_APP_KEY }
+#     conformance: G1
+#     trust: trusted
+#     tools: { allow: ["sql_*"] }
+#     policy: { default_risk: read, timeout_s: 90, max_result_mb: 150 }
+#     recursos: { prefixes: ["/resultados/"] }   # capas grandes: GeoJSON servido por el propio servidor
+
+# F5 (T5.4) — MCP tabular de terceros (Snowflake, BigQuery…): devuelve FILAS. Con `adapter: tabular_geo`
+# el LLM declara qué columna del resultado es la geometría (argumento `geometria_resultado`) y el
+# núcleo la valida y la materializa. Prueba local: `--profile connectors up -d almacen-demo`.
+#
+#   - id: almacen
+#     url: http://almacen-demo:9500/mcp
+#     description: Almacén de datos corporativo (SQL) — sedes educativas de Cundinamarca.
+#     auth: { type: bearer, secret_ref: env:ALMACEN_MCP_APP_KEY }
+#     conformance: G0
+#     adapter: tabular_geo
+#     tools: { allow: ["list_tables", "run_query"] }
+#     policy: { default_risk: read, timeout_s: 45 }
+  - id: lugares
+    url: http://lugares-mcp:9700/mcp
+    description: Geocodificación — de un NOMBRE de lugar (municipio, ciudad, barrio, localidad, dirección) a sus candidatos y al límite (polígono) del elegido, para operar sobre ese lugar.
+    auth: { type: bearer, secret_ref: env:LUGARES_MCP_APP_KEY }
+    conformance: G1
+    trust: trusted   # servicio propio; los datos (OpenStreetMap) son externos
+    tools: { allow: ["lugares_*"] }
+    policy: { default_risk: read, timeout_s: 45, max_result_mb: 10 }

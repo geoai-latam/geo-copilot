@@ -1,0 +1,190 @@
+# FH.12 — bench de deixis espacial: estado del mapa FIJADO + frase → ¿el agente usó el ALCANCE
+# correcto? Se valida lo que pasó a las herramientas (sus argumentos), no el texto.
+#
+# Mapa base (ver test_llm_deixis_bench.py::MAPA): layer-1 «Lotes Manzana 008510017» (polígonos,
+# graduado ROJO por area_m2, filtro estrato = 3, 3 SELECCIONADOS por el usuario, dataset
+# ds_1111111111111111); layer-2 «Vías» (líneas, AZUL, ds_2222222222222222); layer-3 «Área 1»
+# (DIBUJO del usuario, ds_3333333333333333); layer-4 «NDVI 2026-03-14» (raster con fecha);
+# punto marcado en lon -74.0521, lat 4.7208.
+#
+# Cada caso: `usa` = alguno de estos debe aparecer en los argumentos de las herramientas;
+# `no_usa` = ninguno de estos debe aparecer (p. ej. la capa ENTERA cuando se habla de «estos»);
+# `mapa` = cambios al mapa base (opcional).
+
+- id: sel-1
+  frase: "¿cuántas hectáreas suman estos?"
+  usa: [seleccion]
+- id: sel-2
+  frase: "mide el área de los que seleccioné"
+  usa: [seleccion]
+- id: sel-3
+  frase: "haz un buffer de 20 metros a estos lotes"
+  usa: [seleccion]
+- id: sel-4
+  frase: "¿cuál es el más grande de los seleccionados?"
+  usa: [seleccion]
+- id: sel-5
+  frase: "el NDVI de estos tres lotes"
+  usa: [seleccion]
+- id: sel-6
+  frase: "¿qué área tiene lo que tengo seleccionado?"
+  usa: [seleccion]
+
+- id: aqui-1
+  frase: "¿qué lotes hay aquí?"
+  usa: [punto, "-74.052", "4.720"]
+- id: aqui-2
+  frase: "¿cuánto vale el NDVI en este punto?"
+  usa: [punto, "-74.052"]
+- id: aqui-3
+  frase: "haz un buffer de 100 m alrededor de aquí"
+  usa: [punto, "-74.052"]
+- id: aqui-4
+  frase: "¿qué hay a 200 metros del punto que marqué?"
+  usa: [punto, "-74.052", "4.720"]
+- id: aqui-5
+  frase: "acércate aquí"
+  usa: ["-74.05", "4.72", punto]
+# V5 EH.9 (TH.16): SIN punto marcado, «aquí» no tiene lugar: se pide en el mapa (o, si hay un
+# dibujo, vale el dibujo). Y sin «aquí» no se pide nada (control contra preguntar de más).
+- id: aqui-sin-punto-1
+  frase: "¿qué construcciones hay cerca de aquí?"
+  mapa: {sin_punto: true, sin_dibujo: true, sin_seleccion: true}
+  herramienta: [request_map_input]
+- id: aqui-sin-punto-2
+  frase: "¿cuánto vale el NDVI aquí?"
+  mapa: {sin_punto: true, sin_dibujo: true, sin_seleccion: true}
+  herramienta: [request_map_input]
+- id: aqui-sin-punto-3
+  frase: "¿qué lotes hay aquí?"
+  mapa: {sin_punto: true, sin_seleccion: true}
+  usa: [request_map_input, pick_point, draw_area, layer-3, dibujo, ds_3333333333333333]
+- id: control-sin-punto
+  frase: "¿cuántas vías hay en total?"
+  mapa: {sin_punto: true, sin_seleccion: true}
+  no_usa: [pick_point, draw_area]
+  sin_herramientas_ok: true
+
+- id: color-1
+  frase: "colorea la capa roja por estrato"
+  usa: [layer-1]
+  no_usa: [layer-2]
+- id: color-2
+  frase: "oculta la azul"
+  usa: [layer-2]
+  no_usa: [layer-1]
+- id: color-3
+  frase: "¿cuánto mide en total la capa azul?"
+  usa: [layer-2, ds_2222222222222222]
+  no_usa: [layer-1, ds_1111111111111111]
+- id: color-4
+  frase: "pon la capa roja semitransparente"
+  usa: [layer-1]
+- id: color-5
+  frase: "pon la azul encima de la roja"
+  usa: [layer-2]
+
+- id: dibujo-1
+  frase: "¿cuántas hectáreas tiene lo que dibujé?"
+  usa: [layer-3, ds_3333333333333333, dibujo]
+- id: dibujo-2
+  frase: "el NDVI de mi dibujo"
+  usa: [layer-3, ds_3333333333333333, dibujo]
+- id: dibujo-3
+  frase: "¿qué vías cruzan el área que dibujé?"
+  usa: [layer-3, ds_3333333333333333, dibujo]
+- id: dibujo-4
+  frase: "haz un buffer de 50 m al polígono que tracé"
+  usa: [layer-3, ds_3333333333333333, dibujo]
+- id: dibujo-5
+  frase: "¿cuántos lotes caen dentro de Área 1?"
+  usa: [layer-3, ds_3333333333333333, dibujo]
+
+- id: filtro-1
+  frase: "¿cuántos lotes se ven?"
+  usa: [layer-1, ds_1111111111111111, activa]
+  no_usa: [seleccion]
+  sin_herramientas_ok: true   # «FILTRADA: 3 de 27» es un hecho del mapa: puede responderlo directo
+  # revisión (TH.15): con el chip «3 seleccionados» puesto, usar la selección era defendible
+  # (FH.4: estaba en el alcance del mensaje); el caso mide el FILTRO, así que va sin selección
+  mapa: {sin_seleccion: true}
+- id: filtro-2
+  frase: "suma el área de los lotes que se ven en el mapa"
+  usa: [layer-1, ds_1111111111111111, activa]
+  no_usa: [seleccion]
+  mapa: {sin_seleccion: true}
+- id: filtro-3
+  frase: "quita el filtro de los lotes"
+  usa: [layer-1]
+- id: filtro-4
+  frase: "deja solo los de estrato 2"
+  usa: [layer-1]
+
+- id: mencion-1
+  frase: "@Vías buffer de 100 m"
+  usa: [layer-2, ds_2222222222222222]
+  no_usa: [layer-1]
+  mapa: {menciones: [{tipo: capa, layer_id: layer-2, texto: "@Vías"}]}
+- id: mencion-2
+  frase: "¿cuánto mide @Vías?"
+  usa: [layer-2, ds_2222222222222222]
+  mapa: {menciones: [{tipo: capa, layer_id: layer-2, texto: "@Vías"}]}
+- id: mencion-3
+  frase: "colorea @Lotes por @Lotes.estrato"
+  usa: [layer-1]
+  mapa: {menciones: [{tipo: capa, layer_id: layer-1, texto: "@Lotes"}, {tipo: campo, layer_id: layer-1, texto: "@Lotes.estrato", campo: estrato}]}
+
+- id: excl-1
+  frase: "¿cuántas hectáreas suman los lotes?"
+  usa: [layer-1, ds_1111111111111111, activa]
+  no_usa: [seleccion]
+  mapa: {sin_seleccion: true}
+- id: excl-2
+  frase: "mide todos los lotes, no solo los seleccionados"
+  usa: [layer-1, ds_1111111111111111]
+  no_usa: [seleccion]
+
+- id: estilo-1
+  frase: "igual que antes pero con 5 clases"
+  usa: ["5"]
+  herramienta: [apply_symbology]
+- id: estilo-2
+  frase: "clasifícalos en 7 clases"
+  usa: ["7"]
+  herramienta: [apply_symbology]
+- id: estilo-3
+  frase: "cámbiale la rampa a azules a la capa roja"
+  usa: [layer-1, Blues, azul]
+  herramienta: [apply_symbology, map_command]
+
+- id: raster-1
+  frase: "oculta el NDVI"
+  usa: [layer-4, activa]  # layer-4 es la ACTIVA del mapa
+- id: raster-2
+  frase: "¿de qué fecha es el NDVI que tengo?"
+  usa: []
+  sin_herramientas_ok: true
+- id: raster-3
+  frase: "pon el NDVI por debajo de los lotes"
+  usa: [layer-4, activa]  # layer-4 es la ACTIVA del mapa
+
+- id: vista-1
+  frase: "guarda esta vista como Centro"
+  usa: [Centro]
+  herramienta: [map_command]
+- id: vista-2
+  frase: "vuelve a la vista Finca"
+  usa: ["-74.06"]
+  mapa: {vistas: [{nombre: Finca, bbox: [-74.0612, 4.7101, -74.0405, 4.7302]}]}
+
+- id: activa-1
+  frase: "encuadra la última capa que agregué"
+  usa: [layer-4, activa]
+- id: activa-2
+  frase: "etiqueta los lotes con su código"
+  usa: [layer-1]
+  herramienta: [map_command]
+- id: zona-1
+  frase: "¿cuántas vías hay en la zona visible?"
+  # revisión (TH.15): antes bastaba nombrar las vías; contarlas TODAS no es «la zona visible»
+  usa: [viewport, "-74.08", "-74.02"]

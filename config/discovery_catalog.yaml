@@ -1,0 +1,209 @@
+# =============================================================================
+# Discovery Catalog — multi-región
+# =============================================================================
+# Catálogo de entidades oficiales, publicadores y zonas usado por el
+# DiscoveryAgent para mapear menciones en lenguaje natural a filtros de
+# búsqueda en ArcGIS Hub (`filter[source]`, `filter[owner]`, `filter[tags]`).
+#
+# Estructura:
+#   default_region: <key>          # qué región se usa cuando el usuario no
+#                                    especifica país/región explícita
+#   regions:
+#     <region_key>:
+#       label: <nombre legible>
+#       country_bbox: [minLon, minLat, maxLon, maxLat]  # opcional
+#       entities:                  # organizaciones oficiales
+#         <ENTITY_KEY>:
+#           aliases: [...]         # variantes coloquiales para detección NL
+#           owners: [...]          # cuentas AGOL/Hub conocidas
+#           sources: [...]         # texto en el campo `source` de Hub items
+#           tags: [...]            # tags institucionales que esos items llevan
+#       publishers: [...]          # publicadores adicionales del país que
+#                                    no mapean a una entidad pero son fuentes
+#                                    de datos oficiales/semi-oficiales
+#       zones:                     # áreas geográficas (ciudades/regiones)
+#         <ZONE_KEY>:
+#           label: <nombre>
+#           bbox: [minLon, minLat, maxLon, maxLat]
+#           aliases: [...]         # variantes para detección NL
+#           tags: [...]            # tags que Hub publishers usan para esa zona
+#
+# Cómo añadir un nuevo país:
+#   Solo edita este archivo. No requiere cambio de código.
+#
+# Cómo cambiar el país por defecto del producto:
+#   Cambia `default_region` a la key correspondiente.
+#
+# Para soporte "global" (sin sesgo regional):
+#   Pasa `region: null` o `global_mode: true` en los hints del DiscoveryAgent.
+# =============================================================================
+
+default_region: colombia
+
+regions:
+  # ---------------------------------------------------------------------------
+  # COLOMBIA
+  # ---------------------------------------------------------------------------
+  colombia:
+    label: Colombia
+    country_bbox: [-81.85, -4.23, -66.85, 13.41]
+
+    entities:
+      IGAC:
+        aliases: [igac, codazzi, instituto geografico, instituto geográfico]
+        owners:
+          - IGAC.Comunicaciones
+          - igac_oit
+          - IGAC_Geoportal
+          - IGAC_Cartografia
+        sources:
+          - Instituto Geográfico Agustín Codazzi
+          - IGAC - Instituto Geográfico Agustín Codazzi
+        tags: [IGAC, Instituto Geográfico Agustín Codazzi, Codazzi]
+
+      DANE:
+        aliases: [dane]
+        owners: [DANE_Colombia, DANEColombia]
+        sources: [Departamento Administrativo Nacional de Estadística]
+        tags: [DANE, Censo, Censo 2018, Censo Agropecuario]
+
+      IDEAM:
+        aliases: [ideam]
+        owners: [IDEAMColombia, ideam_oficial]
+        sources: ["Instituto de Hidrología, Meteorología y Estudios Ambientales"]
+        tags: [IDEAM, Hidrología, Meteorología]
+
+      MADS:
+        aliases: [minambiente, ministerio de ambiente, mads]
+        owners: [MinAmbienteCO, minambiente_co]
+        sources: [Ministerio de Ambiente y Desarrollo Sostenible]
+        tags: [MinAmbiente, MADS]
+
+      UNGRD:
+        aliases: [ungrd, unidad nacional]
+        owners: [UNGRD_Colombia]
+        sources: [Unidad Nacional para la Gestión del Riesgo de Desastres]
+        tags: [UNGRD, Gestión del Riesgo]
+
+      Parques:
+        aliases: [parques nacionales]
+        owners: [ParquesNacionalesCO]
+        sources: [Parques Nacionales Naturales de Colombia]
+        tags: [Parques Nacionales, Áreas Protegidas, PNN]
+
+      ANLA:
+        aliases: [anla]
+        owners: [ANLA_Colombia]
+        sources: [Autoridad Nacional de Licencias Ambientales]
+        tags: [ANLA, Licencias Ambientales]
+
+      SGC:
+        aliases: [sgc, servicio geologico, servicio geológico]
+        owners: [SGC_Colombia, ServicioGeologicoColombiano]
+        sources: [Servicio Geológico Colombiano]
+        tags: [Servicio Geológico, SGC, Geología]
+
+      DPS:
+        aliases: [prosperidad social, dps]
+        owners: [ProsperidadSocial, dps_colombia]
+        sources: []
+        tags: [Prosperidad Social, DPS]
+
+      Policia:
+        aliases: [policia nacional, policía nacional]
+        owners: []
+        sources: [Policía Nacional de Colombia]
+        tags: [Policía Nacional, Seguridad]
+
+    publishers:
+      - Esri Colombia
+      - Infraestructura de Datos Espaciales Cundinamarca IDEC
+      - Infraestructura de Datos Espaciales de Cundinamarca
+      - Alcaldía de Mosquera
+      - Alcaldía de Funza
+      - Universidad Distrital Francisco Jose de Caldas
+      - Distrito Especial de Medellín
+      - Catastro Distrital de Bogotá
+      - Secretaria Distrital de Movilidad
+      - Camacol Bogotá y Cundinamarca
+
+    zones:
+      colombia:
+        label: Colombia
+        bbox: [-81.85, -4.23, -66.85, 13.41]
+        aliases: [colombia]
+        tags: [colombia]
+      bogota:
+        label: Bogotá
+        bbox: [-74.22, 4.47, -73.99, 4.83]
+        aliases: [bogota, bogotá, bogota d.c., bogotá d.c.]
+        tags: [bogota, bogotá, colombia]
+      cundinamarca:
+        label: Cundinamarca
+        bbox: [-74.91, 3.69, -73.04, 5.83]
+        aliases: [cundinamarca]
+        tags: [cundinamarca, colombia]
+      medellin:
+        label: Medellín
+        bbox: [-75.65, 6.15, -75.43, 6.36]
+        aliases: [medellin, medellín]
+        tags: [medellin, medellín, antioquia, colombia]
+      antioquia:
+        label: Antioquia
+        bbox: [-77.13, 5.42, -73.86, 8.88]
+        aliases: [antioquia]
+        tags: [antioquia, colombia]
+      cali:
+        label: Cali
+        bbox: [-76.59, 3.31, -76.42, 3.55]
+        aliases: [cali, santiago de cali]
+        tags: [cali, valle del cauca, colombia]
+      valle:
+        label: Valle del Cauca
+        bbox: [-77.55, 3.05, -75.69, 5.10]
+        aliases: [valle, valle del cauca]
+        tags: [valle del cauca, colombia]
+      barranquilla:
+        label: Barranquilla
+        bbox: [-74.86, 10.93, -74.74, 11.05]
+        aliases: [barranquilla]
+        tags: [barranquilla, atlántico, colombia]
+      cartagena:
+        label: Cartagena
+        bbox: [-75.58, 10.32, -75.43, 10.50]
+        aliases: [cartagena]
+        tags: [cartagena, bolívar, colombia]
+      bucaramanga:
+        label: Bucaramanga
+        bbox: [-73.16, 7.06, -73.06, 7.18]
+        aliases: [bucaramanga]
+        tags: [bucaramanga, santander, colombia]
+      santander:
+        label: Santander
+        bbox: [-74.55, 5.69, -72.45, 8.36]
+        aliases: [santander]
+        tags: [santander, colombia]
+      manizales:
+        label: Manizales
+        bbox: [-75.55, 5.02, -75.45, 5.10]
+        aliases: [manizales]
+        tags: [manizales, caldas, colombia]
+      pereira:
+        label: Pereira
+        bbox: [-75.75, 4.77, -75.65, 4.86]
+        aliases: [pereira]
+        tags: [pereira, risaralda, colombia]
+      amazonas:
+        label: Amazonas
+        bbox: [-74.16, -4.23, -69.45, -0.65]
+        aliases: [amazonas]
+        tags: [amazonas, colombia]
+
+  # ---------------------------------------------------------------------------
+  # GLOBAL — placeholder para búsqueda sin sesgo regional
+  # ---------------------------------------------------------------------------
+  global:
+    label: Global
+    entities: {}
+    publishers: []
+    zones: {}

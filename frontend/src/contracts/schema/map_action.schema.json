@@ -1,0 +1,84 @@
+{
+  "$id": "geo-copilot/map_action/1.8.0",
+  "additionalProperties": false,
+  "description": "Una operación del registro, como la ve el agente en el turno siguiente.\n\nNo lleva el estado completo (la capa ya está descrita en `map_context.layers`):\nlleva QUIÉN hizo QUÉ sobre CUÁL capa y si luego se deshizo.",
+  "properties": {
+    "args": {
+      "additionalProperties": true,
+      "title": "Args",
+      "type": "object"
+    },
+    "at": {
+      "format": "date-time",
+      "title": "At",
+      "type": "string"
+    },
+    "author": {
+      "default": "user",
+      "enum": [
+        "user",
+        "agent"
+      ],
+      "title": "Author",
+      "type": "string"
+    },
+    "layer_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Layer Id"
+    },
+    "layer_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Layer Name"
+    },
+    "op": {
+      "enum": [
+        "add_layer",
+        "remove_layer",
+        "set_style",
+        "set_visibility",
+        "set_opacity",
+        "reorder",
+        "set_label",
+        "zoom_to",
+        "select",
+        "clear_selection",
+        "rename_layer",
+        "edit_geometry",
+        "set_filter",
+        "save_view",
+        "compare",
+        "end_compare",
+        "set_time"
+      ],
+      "title": "Op",
+      "type": "string"
+    },
+    "undone": {
+      "default": false,
+      "title": "Undone",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "op",
+    "at"
+  ],
+  "title": "MapAction",
+  "type": "object"
+}

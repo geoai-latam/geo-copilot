@@ -1,0 +1,43 @@
+# Stack dedicado para tests de integración (Fase 3 del roadmap).
+#
+# Uso local (corre los tests con BD real en cualquier momento):
+#
+#     docker compose -f docker-compose.test.yml up -d
+#     pip install -e .[dev,integration]
+#     pytest -m integration
+#     docker compose -f docker-compose.test.yml down -v
+#
+# En CI: el job `integration` de `.github/workflows/ci.yml` corre `pytest -m postgis`
+# con REQUIRE_TEST_DB=1 (la BD ausente falla en vez de saltar).
+#
+# Los tests se conectan como `gc_reader` (solo lectura, ver tests/fixtures/test_roles.sql),
+# no como el superusuario `gc_test` que crea la imagen.
+#
+# El seed (`tests/fixtures/seed_catastro.sql`) tiene el schema EXACTO del
+# dump real del usuario (catastro.construcciones / catastro.lotes), con
+# ~20 construcciones y ~5 lotes — suficiente para validar SQL ejecutado
+# sin pesar 499 MB.
+
+services:
+  postgis_test:
+    image: postgis/postgis:15-3.3
+    container_name: geocopilot_postgis_test
+    environment:
+      POSTGRES_DB: geocopilot_test
+      POSTGRES_USER: gc_test
+      POSTGRES_PASSWORD: gc_test_pw
+    ports:
+      - "5434:5432"  # RUN: 5434 — el postgis de dev usa 5433, no 5432; con 5433 chocaban al levantar dev+test a la vez
+    volumes:
+      - ./tests/fixtures/seed_catastro.sql:/docker-entrypoint-initdb.d/01_seed.sql:ro
+      # El workspace (S2.1) es el MISMO script que en producción, no una copia.
+      - ./docker/init-db/07_srid_colombia.sql:/docker-entrypoint-initdb.d/02_srid.sql:ro
+      - ./docker/init-db/06_workspace.sql:/docker-entrypoint-initdb.d/02b_workspace.sql:ro
+      # F6: sesiones con dueño, conexiones por organización y auditoría (antes de los roles de test).
+      - ./docker/init-db/10_plataforma.sql:/docker-entrypoint-initdb.d/02c_plataforma.sql:ro
+      - ./tests/fixtures/test_roles.sql:/docker-entrypoint-initdb.d/03_roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gc_test -d geocopilot_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20

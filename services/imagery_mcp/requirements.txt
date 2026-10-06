@@ -1,0 +1,9 @@
+# imagery-mcp — dependencias propias (NO entran al contenedor de la app)
+mcp>=1.28,<2
+rasterio>=1.4,<2
+numpy>=1.26,<3
+httpx>=0.27,<1
+anyio>=4,<5
+pillow>=12.3,<13  # F7: <12 dejaba CVEs HIGH con arreglo (Trivy)
+uvicorn>=0.30,<1
+rio-tiler>=9,<10
