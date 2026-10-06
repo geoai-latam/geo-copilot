@@ -151,7 +151,7 @@ imagery = [
     "mcp>=1.28,<2",
     "rasterio>=1.4,<2",
     "rio-tiler>=9,<10",
-    "pillow>=10,<12",
+    "pillow>=10,<13",
 ]
 
 [project.scripts]
