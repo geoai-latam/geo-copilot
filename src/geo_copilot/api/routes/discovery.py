@@ -10,7 +10,7 @@ GET  /api/v1/discovery/health → smoke test
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -220,13 +220,30 @@ def _build_layer_url(item_url: str, service_type: str, layer_id: int | None) -> 
     summary="Prepare an ArcGIS Hub item for the map viewer",
 )
 @limiter.limit("30/minute")
-async def load(  # noqa: C901, PLR0912, PLR0915
+async def load(
     request: Request,
     body: LoadRequest,
     llm_client=Depends(get_llm_client),
     agent_graph: GeoAgentGraph | None = Depends(get_agent_graph),
     conversation_manager: ConversationManager = Depends(get_conversation_manager),
 ) -> LoadResponse:
+    item = body.item
+    url, nombre = await _validar_y_url(body)
+
+    if item.service_type == "FeatureServer":
+        return await _cargar_feature_server(body, url, nombre, llm_client, agent_graph, conversation_manager)
+
+    if item.service_type in ("MapServer", "ImageServer"):
+        return await _cargar_imagen(item)
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported service_type: {item.service_type}",
+    )
+
+
+async def _validar_y_url(body: LoadRequest) -> tuple[str, str]:
+    """(URL de la capa a cargar, nombre servicio · capa), validando la sesión y la URL."""
     item = body.item
     # Ownership: si el cliente declara una sesión, debe tener formato válido.
     # El despacho de pending_operations (más abajo) sólo corre sobre una sesión
@@ -256,154 +273,171 @@ async def load(  # noqa: C901, PLR0912, PLR0915
     # El nombre de lo que se carga: servicio · capa. V5: con solo el título del servicio, el agente de
     # simbología tituló «Red vial Guaduas» la capa de DRENAJE elegida de la cartografía de Guaduas.
     nombre = f"{item.title} · {body.layer_name}" if body.layer_name else item.title
+    return url, nombre
 
-    if item.service_type == "FeatureServer":
-        # T5.2: la capa la trae el servidor MCP de ArcGIS (paginada, en EPSG:4326, con su total)
+
+async def _cargar_feature_server(body: LoadRequest, url: str, nombre: str, llm_client: Any,
+                                 agent_graph: GeoAgentGraph | None,
+                                 conversation_manager: ConversationManager) -> LoadResponse:
+    """Una capa vectorial: al workspace, con simbología y, si había un plan pausado, reanudado."""
+    geojson, hechos = await _traer(body, url, conversation_manager)
+
+    # V5: al workspace de la sesión ANTES de todo lo demás: el estilo, el plan pendiente y
+    # el mapa usan la versión del workspace (la misma que ven las herramientas ws_*).
+    total = hechos.get("total_en_servicio")
+    total = int(total) if isinstance(total, (int, float)) and total > 0 else None
+    cargados = len(geojson.get("features") or [])
+    en_ws = await _al_workspace(body.session_id, conversation_manager, nombre, url, geojson, total)
+    dataset_id = None
+    tiles: dict[str, Any] | None = None
+    para_estilo = geojson
+    if en_ws:
+        layer_ref, tiles, inline, para_estilo = en_ws
+        dataset_id = layer_ref.get("id")
+        if inline is not None:
+            geojson = inline
+
+    symbology_dict = await _simbologia(llm_client, nombre, para_estilo)
+    geojson_out: dict[str, Any] | None = None if tiles is not None else geojson
+    if body.session_id and agent_graph and geojson:
+        geojson_out, tiles, symbology_dict = await _reanudar_plan(
+            body, agent_graph, conversation_manager, nombre, geojson, geojson_out, tiles, symbology_dict)
+
+    if tiles is not None and dataset_id and body.session_id:
+        # el estilo se diseñó sobre una muestra: la leyenda cuenta sobre la capa entera
+        from geo_copilot.api.dependencies import get_app_state
+        from geo_copilot.platform.workspace.clases import recontar_clases
+
+        symbology_dict = await recontar_clases(get_app_state().dataset_store, body.session_id, dataset_id,
+                                               symbology_dict)
+
+    return LoadResponse(
+        type="geojson",
+        name=nombre,
+        service_type="FeatureServer",
+        service_url=url,
+        dataset_id=dataset_id,
+        # solo si NO vino todo (hecho del servidor): la malla vial trajo 136.956 de 136.957 porque
+        # uno no tiene geometría, y el mensaje decía «es una muestra»
+        total_available=total if hechos.get("completo") is False else None,
+        geojson=geojson_out,
+        tiles=tiles,
+        feature_count=(len(geojson_out.get("features", [])) if isinstance(geojson_out, dict) else cargados),
+        symbology=symbology_dict,
+    )
+
+
+async def _traer(body: LoadRequest, url: str, conversation_manager: ConversationManager) -> tuple[dict, dict]:
+    """T5.2: la capa la trae el servidor MCP de ArcGIS (paginada, en EPSG:4326, con su total)."""
+    try:
+        ajustes = get_settings()
+        # Completa (paginada por el servidor MCP) si hay workspace donde dejarla y servirla
+        # por teselas; sin él, lo que cabe inline — y se dice que es una muestra.
+        tope = body.limit or ajustes.max_external_features
+        if not _hay_workspace(body.session_id, conversation_manager):
+            tope = min(tope, ajustes.workspace_inline_max_features)
+        return await servicio_arcgis.consultar_capa(url, max_features=tope)
+    except ArcGISNoDisponible as exc:
+        raise HTTPException(status_code=502, detail=f"ArcGIS error: {exc}") from exc
+
+
+async def _simbologia(llm_client: Any, nombre: str, para_estilo: dict | None) -> dict[str, Any] | None:
+    """Pasar la capa al SymbologyAgent para que genere estilos basados en el
+    contenido (geometry type, distribución, campos detectados). Best-effort:
+    si el agente falla, devolvemos la capa sin simbología y el frontend
+    cae al color por defecto del MapStore."""
+    if llm_client and para_estilo:
         try:
-            ajustes = get_settings()
-            # Completa (paginada por el servidor MCP) si hay workspace donde dejarla y servirla
-            # por teselas; sin él, lo que cabe inline — y se dice que es una muestra.
-            tope = body.limit or ajustes.max_external_features
-            if not _hay_workspace(body.session_id, conversation_manager):
-                tope = min(tope, ajustes.workspace_inline_max_features)
-            geojson, hechos = await servicio_arcgis.consultar_capa(url, max_features=tope)
-        except ArcGISNoDisponible as exc:
-            raise HTTPException(status_code=502, detail=f"ArcGIS error: {exc}") from exc
+            agent = SymbologyAgent(llm_client=llm_client)
+            resp = await agent.process(
+                query=nombre,
+                context={"geojson": para_estilo},
+            )
+            if resp.success and resp.data:
+                return cast(dict[str, Any], resp.data)
+        except Exception as exc:  # simbología best-effort (LLM); sin ella la capa carga con el color por defecto
+            logger.warning(f"SymbologyAgent failed for {nombre}: {exc}", exc_info=True)
+    return None
 
-        # V5: al workspace de la sesión ANTES de todo lo demás: el estilo, el plan pendiente y
-        # el mapa usan la versión del workspace (la misma que ven las herramientas ws_*).
-        total = hechos.get("total_en_servicio")
-        total = int(total) if isinstance(total, (int, float)) and total > 0 else None
-        cargados = len(geojson.get("features") or [])
-        en_ws = await _al_workspace(body.session_id, conversation_manager, nombre, url, geojson, total)
-        dataset_id = None
-        tiles: dict[str, Any] | None = None
-        para_estilo = geojson
-        if en_ws:
-            layer_ref, tiles, inline, para_estilo = en_ws
-            dataset_id = layer_ref.get("id")
-            if inline is not None:
-                geojson = inline
 
-        # Pasar la capa al SymbologyAgent para que genere estilos basados en el
-        # contenido (geometry type, distribución, campos detectados). Best-effort:
-        # si el agente falla, devolvemos la capa sin simbología y el frontend
-        # cae al color por defecto del MapStore.
-        symbology_dict: dict[str, Any] | None = None
-        if llm_client and para_estilo:
-            try:
-                agent = SymbologyAgent(llm_client=llm_client)
-                resp = await agent.process(
-                    query=nombre,
-                    context={"geojson": para_estilo},
-                )
-                if resp.success and resp.data:
-                    symbology_dict = resp.data
-            except Exception as exc:  # simbología best-effort (LLM); sin ella la capa carga con el color por defecto
-                logger.warning(f"SymbologyAgent failed for {nombre}: {exc}", exc_info=True)
-
-        # #35 (audit Docker 2026-06): reanudar plan PAUSADO. Si esta carga viene
-        # de una cadena "busca X, cárgalas y píntalas de rojo", el plan se pausó
-        # en el paso de búsqueda y dejó las operaciones siguientes (ej. el
-        # pintado) en ``pending_operations`` de la sesión. El usuario carga
-        # clicando una card → resolvemos por IDENTIDAD (la URL del item, NO un
-        # ordinal contra found_services de sesión que podría ser de otra
-        # búsqueda — E3 intacto) y despachamos las pendientes POR EL GRAFO sobre
-        # la capa recién cargada. Best-effort: si falla, devolvemos la capa con
-        # la simbología por defecto.
-        geojson_out: dict[str, Any] | None = None if tiles is not None else geojson
-        if body.session_id and agent_graph and geojson:
-            try:
-                # get_session (NO get_or_create): sólo reanudamos un plan sobre
-                # una sesión existente. Sesión desconocida → ctx None → skip.
-                ctx = conversation_manager.get_session(body.session_id)
-                pending = ctx.get_variable("pending_operations") if ctx else None
-                pending_queries = [
-                    op.get("query", "")
-                    for op in (pending or [])
-                    if isinstance(op, dict) and op.get("query")
-                ]
-                if pending_queries and ctx is not None:  # (sin sesión no hay pendientes)
-                    pending_query = ", ".join(pending_queries)
-                    logger.info(
-                        f"[discovery/load] Reanudando plan pausado (sesión "
-                        f"{body.session_id}) sobre '{nombre}': '{pending_query}'"
-                    )
-                    dispatched = await agent_graph.process(
-                        query=pending_query,
-                        session_id=body.session_id,
-                        external_geojson=geojson,
-                        external_source_name=nombre,
-                        has_external_data=True,
-                        active_data_source="external",
-                        active_source_name=nombre,
-                        conversation_history=ctx.get_messages_for_llm(max_messages=10),
-                    )
-                    if dispatched.get("symbology"):
-                        symbology_dict = dispatched["symbology"]
-                    # Operaciones espaciales (buffer/centroide) cambian la geometría.
-                    nueva = dispatched.get("geojson") or dispatched.get("external_geojson")
-                    if nueva is not None and nueva is not geojson:
-                        geojson_out, tiles = nueva, None
-                    # Consumidas: limpiar pending + found_services para no
-                    # re-aplicarlas ni operar sobre cards viejas.
-                    ctx.set_variable("pending_operations", None)
-                    ctx.set_variable("found_services", None)
-                    conversation_manager.save_session(ctx)  # Redis no ve la mutación
-            except Exception as exc:  # reanudar el plan pasa por el grafo completo; best-effort, la capa se devuelve igual
-                logger.warning(
-                    f"[discovery/load] Falló el despacho de pending_operations: {exc}",
-                    exc_info=True,
-                )
-                geojson_out = None if tiles is not None else geojson
-
-        if tiles is not None and dataset_id and body.session_id:
-            # el estilo se diseñó sobre una muestra: la leyenda cuenta sobre la capa entera
-            from geo_copilot.api.dependencies import get_app_state
-            from geo_copilot.platform.workspace.clases import recontar_clases
-
-            symbology_dict = await recontar_clases(get_app_state().dataset_store, body.session_id, dataset_id,
-                                                   symbology_dict)
-
-        return LoadResponse(
-            type="geojson",
-            name=nombre,
-            service_type="FeatureServer",
-            service_url=url,
-            dataset_id=dataset_id,
-            # solo si NO vino todo (hecho del servidor): la malla vial trajo 136.956 de 136.957 porque
-            # uno no tiene geometría, y el mensaje decía «es una muestra»
-            total_available=total if hechos.get("completo") is False else None,
-            geojson=geojson_out,
-            tiles=tiles,
-            feature_count=(len(geojson_out.get("features", [])) if isinstance(geojson_out, dict) else cargados),
-            symbology=symbology_dict,
+async def _reanudar_plan(body: LoadRequest, agent_graph: GeoAgentGraph, conversation_manager: ConversationManager,
+                         nombre: str, geojson: dict, geojson_out: dict[str, Any] | None,
+                         tiles: dict[str, Any] | None, symbology_dict: dict[str, Any] | None,
+                         ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+    """#35 (audit Docker 2026-06): reanudar plan PAUSADO. Si esta carga viene
+    de una cadena "busca X, cárgalas y píntalas de rojo", el plan se pausó
+    en el paso de búsqueda y dejó las operaciones siguientes (ej. el
+    pintado) en ``pending_operations`` de la sesión. El usuario carga
+    clicando una card → resolvemos por IDENTIDAD (la URL del item, NO un
+    ordinal contra found_services de sesión que podría ser de otra
+    búsqueda — E3 intacto) y despachamos las pendientes POR EL GRAFO sobre
+    la capa recién cargada. Best-effort: si falla, devolvemos la capa con
+    la simbología por defecto."""
+    try:
+        # get_session (NO get_or_create): sólo reanudamos un plan sobre
+        # una sesión existente. Sesión desconocida → ctx None → skip.
+        ctx = conversation_manager.get_session(body.session_id or "")
+        pending = ctx.get_variable("pending_operations") if ctx else None
+        pending_queries = [
+            op.get("query", "")
+            for op in (pending or [])
+            if isinstance(op, dict) and op.get("query")
+        ]
+        if pending_queries and ctx is not None:  # (sin sesión no hay pendientes)
+            pending_query = ", ".join(pending_queries)
+            logger.info(
+                f"[discovery/load] Reanudando plan pausado (sesión "
+                f"{body.session_id}) sobre '{nombre}': '{pending_query}'"
+            )
+            dispatched = await agent_graph.process(
+                query=pending_query,
+                session_id=body.session_id or "",  # solo se llama con sesión
+                external_geojson=geojson,
+                external_source_name=nombre,
+                has_external_data=True,
+                active_data_source="external",
+                active_source_name=nombre,
+                conversation_history=ctx.get_messages_for_llm(max_messages=10),
+            )
+            if dispatched.get("symbology"):
+                symbology_dict = dispatched["symbology"]
+            # Operaciones espaciales (buffer/centroide) cambian la geometría.
+            nueva = dispatched.get("geojson") or dispatched.get("external_geojson")
+            if nueva is not None and nueva is not geojson:
+                geojson_out, tiles = nueva, None
+            # Consumidas: limpiar pending + found_services para no
+            # re-aplicarlas ni operar sobre cards viejas.
+            ctx.set_variable("pending_operations", None)
+            ctx.set_variable("found_services", None)
+            conversation_manager.save_session(ctx)  # Redis no ve la mutación
+    except Exception as exc:  # reanudar el plan pasa por el grafo completo; best-effort, la capa se devuelve igual
+        logger.warning(
+            f"[discovery/load] Falló el despacho de pending_operations: {exc}",
+            exc_info=True,
         )
+        geojson_out = None if tiles is not None else geojson
+    return geojson_out, tiles, symbology_dict
 
-    if item.service_type in ("MapServer", "ImageServer"):
-        # Imagen servida por el propio ArcGIS: el servidor MCP la describe (extensión reproyectada
-        # a EPSG:4326 y el descriptor que el mapa monta).
-        try:
-            d = await servicio_arcgis.describir(item.service_url)
-        except ArcGISNoDisponible as exc:
-            raise HTTPException(status_code=502, detail=f"ArcGIS error: {exc}") from exc
-        caja = d.get("extent_4326") or _extent_del_hub(item.extent)
-        extent = ({"xmin": caja[0], "ymin": caja[1], "xmax": caja[2], "ymax": caja[3]} if caja else None)
-        imagery = dict(d.get("imagen") or {"type": "imagery", "service_url": item.service_url.rstrip("/"),
-                                           "export_url": None})
-        imagery["extent"] = extent
-        return LoadResponse(
-            type="imagery",
-            name=item.title,
-            service_type=item.service_type,
-            service_url=item.service_url,
-            imagery=imagery,
-            extent=extent,
-        )
 
-    raise HTTPException(
-        status_code=400,
-        detail=f"Unsupported service_type: {item.service_type}",
+async def _cargar_imagen(item: Any) -> LoadResponse:
+    """Imagen servida por el propio ArcGIS: el servidor MCP la describe (extensión reproyectada
+    a EPSG:4326 y el descriptor que el mapa monta)."""
+    try:
+        d = await servicio_arcgis.describir(item.service_url)
+    except ArcGISNoDisponible as exc:
+        raise HTTPException(status_code=502, detail=f"ArcGIS error: {exc}") from exc
+    caja = d.get("extent_4326") or _extent_del_hub(item.extent)
+    extent = ({"xmin": caja[0], "ymin": caja[1], "xmax": caja[2], "ymax": caja[3]} if caja else None)
+    imagery = dict(d.get("imagen") or {"type": "imagery", "service_url": item.service_url.rstrip("/"),
+                                       "export_url": None})
+    imagery["extent"] = extent
+    return LoadResponse(
+        type="imagery",
+        name=item.title,
+        service_type=item.service_type,
+        service_url=item.service_url,
+        imagery=imagery,
+        extent=extent,
     )
 
 
