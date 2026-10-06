@@ -10,7 +10,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ErrorBoundary } from './ErrorBoundary'
 
-function Boom(): JSX.Element {
+function Boom(): React.JSX.Element { // React 19: ya no hay namespace JSX global
   throw new Error('zona rota')
 }
 

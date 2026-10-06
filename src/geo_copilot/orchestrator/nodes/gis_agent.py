@@ -74,6 +74,24 @@ def _msg(content: str, *, success: bool, data: dict | None = None) -> dict:
     return {"agent": "gis_agent", "content": content, "data": data, "success": success}
 
 
+def _capas_en_memoria(state: Any) -> str:
+    """Hecho para el bucle cuando no hay BD: qué capas del mapa tiene el turno EN MEMORIA.
+
+    fh5 (2026-10-06): sin BD, el bucle respondía «no puedo acceder a la base de datos» aunque la
+    capa filtrada (10 lotes) estaba en el turno; el desglose por uso que pedía el usuario se
+    podía hacer sobre ella. Es un dato, no una orden: el modelo decide qué hacer con él.
+    """
+    capas = []
+    for lid, capa in (state.get("map_layers") or {}).items():
+        datos = (capa or {}).get("data") if isinstance(capa, dict) else None
+        n = len(datos.get("features") or []) if isinstance(datos, dict) else 0
+        if n:
+            capas.append(f"«{(capa.get('name') or lid)}» ({n} elementos)")
+    if not capas:
+        return ""
+    return ". Capas del mapa en memoria en este turno (se pueden analizar sin la BD): " + "; ".join(capas[:3])
+
+
 def _otras_fuentes() -> str:
     """Las otras fuentes conectadas (resumen del hub), para el generador de SQL de la BD interna."""
     if not _hay_servicios_conectados():
@@ -317,7 +335,7 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:
     if not graph.db_pool:
         return {
             "current_agent": "gis_agent",
-            "error": "No database connection",
+            "error": "No database connection" + _capas_en_memoria(state),
             "messages": [_msg("No hay conexión a BD", success=False)],
         }
 
