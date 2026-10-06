@@ -12,7 +12,7 @@ preferimos no servir resultados sesgados desde una heurística determinista.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from geo_copilot.core.llm_client import LLMClient, LLMMessage
 from geo_copilot.core.logging import get_logger
@@ -74,7 +74,7 @@ class DiscoveryAgent:
     def __init__(self, llm_client: LLMClient | None = None):
         self.llm = llm_client
 
-    async def discover(  # noqa: C901, PLR0912, PLR0915
+    async def discover(
         self,
         query: str,
         *,
@@ -105,20 +105,7 @@ class DiscoveryAgent:
                 "porque las heurísticas deterministas inducían sesgo regional."
             )
 
-        active_region = _resolve_region(hints)
-
-        # #6 (audit 2026-06-13): si el usuario NO pasó región por API y el default
-        # está activo, ver si menciona OTRA región en el TEXTO. Colombia sigue
-        # siendo prioridad: solo se anula si la nombra explícitamente.
-        if hints.region is None and not hints.global_mode:
-            from .catalogo_regiones import REGIONS
-            detected = await _extract_region_from_query(query, self.llm, list(REGIONS))
-            if detected and detected != active_region:
-                active_region = detected if detected in REGIONS else "global"
-                logger.info(
-                    f"[discovery] región explícita en el texto: '{detected}' "
-                    f"→ búsqueda en '{active_region}'"
-                )
+        active_region = await self._region(query, hints)
 
         # El LLM construye el plan completo de Hub: text_query + filtros +
         # alternativas + place_focus. No hay builder determinista — el LLM
@@ -134,8 +121,6 @@ class DiscoveryAgent:
             )
 
         params = _plan_to_search_params(hub_plan["primary"], hints=hints)
-        alternatives = hub_plan.get("alternatives", []) or []
-        place_focus_from_plan = hub_plan.get("place_focus")
         intent = hub_plan.get("intent_label", "exploratory")
 
         skip_search = not any(
@@ -166,36 +151,8 @@ class DiscoveryAgent:
                 debug.setdefault("avisos_hub", []).extend(avisos)
             return encontrados
 
-        items = await search_hub(**params)
-
-        # Si la primaria devolvió 0, recorremos las alternativas del LLM
-        # (1-3 queries de respaldo) en orden. El LLM las pensó para este
-        # query específico — no hay heurísticas de "quitar bbox" o "subir
-        # a tags_any" porque el LLM ya las incluye si tienen sentido.
-        if not items and alternatives:
-            for alt in alternatives[:3]:
-                alt_params = _plan_to_search_params(alt, hints=hints)
-                if not any(
-                    alt_params.get(k) for k in (
-                        "text_query", "tags_any", "service_types",
-                        "source_any", "owner_any",
-                    )
-                ):
-                    continue
-                alt_items = await search_hub(**alt_params)
-                if alt_items:
-                    items = alt_items
-                    debug.setdefault("llm_alternatives_used", []).append({
-                        "params": alt_params,
-                        "reason": alt.get("reason"),
-                        "found": len(alt_items),
-                    })
-                    break
-                debug.setdefault("llm_alternatives_tried", []).append({
-                    "params": alt_params,
-                    "reason": alt.get("reason"),
-                    "found": 0,
-                })
+        items = await _buscar_con_alternativas(search_hub, params, hub_plan.get("alternatives", []) or [],
+                                               hints, debug)
 
         # place_focus dispara dos cosas:
         # 1. Bonus de score para items que mencionen el lugar.
@@ -203,39 +160,41 @@ class DiscoveryAgent:
         #    query refinada (ej. Zipaquirá → "Cundinamarca ortofoto"). Si
         #    el retry trae items que SÍ matchean, los preferimos sobre los
         #    engañosos.
-        place_name = place_focus_from_plan
-        # E4 (audit 2026-06-13): bbox de la región activa para penalizar en el
-        # ranking items con extent fuera de ella (NO descarte). 'global' → None.
-        from .catalogo_regiones import get_region
-        _region_bbox = (
-            get_region(active_region).country_bbox
-            if active_region and active_region != "global" else None
-        )
-        # #4 (audit 2026-06-14): términos del TEMA (no del lugar/país) para
-        # bonificar relevancia temática en el ranking; sin esto "hospitales" traía
-        # genéricos de país ("Carnavales Colombia").
-        # DAT-04 (auditoría E2E): los términos temáticos los produce el LLM como
-        # parte del plan de discovery (mismo plan que place_focus/intent_label),
-        # no una heurística. Antes se derivaban con split + stopwords ES
-        # hardcoded + len>=4, que descartaba acrónimos institucionales cortos y
-        # muy relevantes del catálogo (SGC, PNN, IDF, MDT, río) y asumía español.
-        # El LLM ya ve el catálogo → decide el tema sin esos sesgos (LLM-pilar).
-        _theme_keywords = [
-            str(w).strip()
-            for w in (hub_plan.get("theme_keywords") or [])
-            if str(w).strip()
-        ]
+        place_name = hub_plan.get("place_focus")
+        region_bbox, theme_keywords = _contexto_de_ranking(hub_plan, active_region)
         ranked = rank_results(
-            items, place=place_name, region_bbox=_region_bbox,
-            theme_keywords=_theme_keywords,
+            items, place=place_name, region_bbox=region_bbox,
+            theme_keywords=theme_keywords,
         )
-        matches = count_place_matches(ranked, place_name)
-        place_mismatch = bool(place_name) and matches == 0 and bool(ranked)
+        ranked, criterio, otras, relevantes = await self._juzgar_y_rebuscar(
+            query, place_name, ranked, params, search_hub, region_bbox, theme_keywords, debug)
+        return _respuesta_final(query, ranked, intent, place_name, debug, criterio, otras, relevantes)
 
-        # El LLM JUZGA los candidatos viendo sus hechos (lo que el código no sabe: si «Velocidades
-        # Bitcarrier» sirve para «vías de Bogotá»). Ordena los que sirven y, si ninguno sirve bien,
-        # pide OTRA búsqueda (término técnico, sinónimo, lugar): se busca y se vuelve a juzgar sobre
-        # todo lo encontrado. Sin juicio (el LLM falló), queda el orden por hechos y se dice.
+    async def _region(self, query: str, hints: DiscoveryHints) -> str | None:
+        """La región de búsqueda: la de las pistas o, si no hay, la que el usuario nombra en el texto."""
+        active_region = _resolve_region(hints)
+
+        # #6 (audit 2026-06-13): si el usuario NO pasó región por API y el default
+        # está activo, ver si menciona OTRA región en el TEXTO. Colombia sigue
+        # siendo prioridad: solo se anula si la nombra explícitamente.
+        if hints.region is None and not hints.global_mode:
+            from .catalogo_regiones import REGIONS
+            detected = await _extract_region_from_query(query, cast(LLMClient, self.llm), list(REGIONS))
+            if detected and detected != active_region:
+                active_region = detected if detected in REGIONS else "global"
+                logger.info(
+                    f"[discovery] región explícita en el texto: '{detected}' "
+                    f"→ búsqueda en '{active_region}'"
+                )
+        return active_region
+
+    async def _juzgar_y_rebuscar(self, query: str, place_name: str | None, ranked: list[HubItem],
+                                 params: dict, search_hub: Any, region_bbox: Any, theme_keywords: list[str],
+                                 debug: dict[str, Any]) -> tuple[list[HubItem], str | None, list[str], int | None]:
+        """El LLM JUZGA los candidatos viendo sus hechos (lo que el código no sabe: si «Velocidades
+        Bitcarrier» sirve para «vías de Bogotá»). Ordena los que sirven y, si ninguno sirve bien,
+        pide OTRA búsqueda (término técnico, sinónimo, lugar): se busca y se vuelve a juzgar sobre
+        todo lo encontrado. Sin juicio (el LLM falló), queda el orden por hechos y se dice."""
         criterio: str | None = None
         otras: list[str] = []
         relevantes: int | None = None
@@ -256,51 +215,9 @@ class DiscoveryAgent:
             vistos = {it.id for it in ranked}
             ranked = rank_results(
                 ranked + [it for it in nuevos if it.id not in vistos], place=place_name,
-                region_bbox=_region_bbox, theme_keywords=_theme_keywords,
+                region_bbox=region_bbox, theme_keywords=theme_keywords,
             )
-        matches = count_place_matches(ranked, place_name)
-        place_mismatch = bool(place_name) and matches == 0 and bool(ranked)
-
-        top = ranked[0] if ranked else None
-        # Se avisa cuando el primero no trae NADA que diga de quién es: ni cuenta institucional conocida
-        # ni créditos declarados. Con créditos («Secretaría Distrital de Movilidad») la tarjeta los
-        # muestra y juzga quien la lee; la lista fija de cuentas no puede conocer todas las entidades.
-        authority_warning = bool(
-            top and not (
-                (top.owner and any(top.owner in v for v in OFFICIAL_OWNERS_CO.values()))
-                or (top.credits or "").strip()
-            )
-        )
-
-        suggestions: list[dict[str, Any]] = []
-        if not ranked:
-            suggestions = [
-                {"action": "official_co", "label": "Limitar a cuentas oficiales CO"},
-                {"action": "drop_bbox", "label": "Quitar filtro de zona"},
-                {"action": "free_text", "label": f"Buscar libre: '{query}'"} if query else
-                {"action": "type_query", "label": "Escribe un tema, entidad o zona"},
-            ]
-        elif place_mismatch:
-            suggestions = [
-                {
-                    "action": "broaden_to_region",
-                    "label": f"Buscar en la región (no hay datos específicos de '{place_name}')",
-                },
-                {"action": "free_text", "label": f"Buscar libre: '{place_name}'"},
-            ]
-
-        return DiscoveryResponse(
-            items=ranked,
-            intent=intent,
-            authority_warning=authority_warning,
-            place_mismatch=place_mismatch,
-            place_queried=place_name,
-            suggested_refinements=suggestions,
-            debug=debug,
-            criterio=criterio,
-            otras_busquedas=otras,
-            relevantes=relevantes,
-        )
+        return ranked, criterio, otras, relevantes
 
     async def _juzgar(self, query: str, lugar: str | None, candidatos: list[HubItem],
                       ya_buscado: list[str]) -> dict[str, Any] | None:
@@ -334,6 +251,117 @@ class DiscoveryAgent:
         otra = datos.get("otra_busqueda")
         return {"relevantes": indices, "otra_busqueda": otra.strip() if isinstance(otra, str) else None,
                 "razon": str(datos.get("razon") or "")[:300]}
+
+
+async def _buscar_con_alternativas(search_hub: Any, params: dict, alternatives: list, hints: DiscoveryHints,
+                                   debug: dict[str, Any]) -> list[HubItem]:
+    """La búsqueda primaria y, si devolvió 0, las alternativas del LLM en orden.
+
+    Recorremos las alternativas del LLM (1-3 queries de respaldo) en orden. El LLM las pensó para
+    este query específico — no hay heurísticas de "quitar bbox" o "subir a tags_any" porque el LLM
+    ya las incluye si tienen sentido.
+    """
+    items: list[HubItem] = await search_hub(**params)
+    if not items and alternatives:
+        for alt in alternatives[:3]:
+            alt_params = _plan_to_search_params(alt, hints=hints)
+            if not any(
+                alt_params.get(k) for k in (
+                    "text_query", "tags_any", "service_types",
+                    "source_any", "owner_any",
+                )
+            ):
+                continue
+            alt_items = await search_hub(**alt_params)
+            if alt_items:
+                items = alt_items
+                debug.setdefault("llm_alternatives_used", []).append({
+                    "params": alt_params,
+                    "reason": alt.get("reason"),
+                    "found": len(alt_items),
+                })
+                break
+            debug.setdefault("llm_alternatives_tried", []).append({
+                "params": alt_params,
+                "reason": alt.get("reason"),
+                "found": 0,
+            })
+    return items
+
+
+def _contexto_de_ranking(hub_plan: dict, active_region: str | None) -> tuple[Any, list[str]]:
+    """(bbox de la región, términos del tema) con que se ordenan los resultados."""
+    # E4 (audit 2026-06-13): bbox de la región activa para penalizar en el
+    # ranking items con extent fuera de ella (NO descarte). 'global' → None.
+    from .catalogo_regiones import get_region
+    region_bbox = (
+        get_region(active_region).country_bbox
+        if active_region and active_region != "global" else None
+    )
+    # #4 (audit 2026-06-14): términos del TEMA (no del lugar/país) para
+    # bonificar relevancia temática en el ranking; sin esto "hospitales" traía
+    # genéricos de país ("Carnavales Colombia").
+    # DAT-04 (auditoría E2E): los términos temáticos los produce el LLM como
+    # parte del plan de discovery (mismo plan que place_focus/intent_label),
+    # no una heurística. Antes se derivaban con split + stopwords ES
+    # hardcoded + len>=4, que descartaba acrónimos institucionales cortos y
+    # muy relevantes del catálogo (SGC, PNN, IDF, MDT, río) y asumía español.
+    # El LLM ya ve el catálogo → decide el tema sin esos sesgos (LLM-pilar).
+    theme_keywords = [
+        str(w).strip()
+        for w in (hub_plan.get("theme_keywords") or [])
+        if str(w).strip()
+    ]
+    return region_bbox, theme_keywords
+
+
+def _respuesta_final(query: str, ranked: list[HubItem], intent: Intent, place_name: str | None,
+                     debug: dict[str, Any], criterio: str | None, otras: list[str],
+                     relevantes: int | None) -> DiscoveryResponse:
+    """La respuesta con el aviso de autoridad, el desajuste de lugar y las sugerencias."""
+    matches = count_place_matches(ranked, place_name)
+    place_mismatch = bool(place_name) and matches == 0 and bool(ranked)
+
+    top = ranked[0] if ranked else None
+    # Se avisa cuando el primero no trae NADA que diga de quién es: ni cuenta institucional conocida
+    # ni créditos declarados. Con créditos («Secretaría Distrital de Movilidad») la tarjeta los
+    # muestra y juzga quien la lee; la lista fija de cuentas no puede conocer todas las entidades.
+    authority_warning = bool(
+        top and not (
+            (top.owner and any(top.owner in v for v in OFFICIAL_OWNERS_CO.values()))
+            or (top.credits or "").strip()
+        )
+    )
+
+    suggestions: list[dict[str, Any]] = []
+    if not ranked:
+        suggestions = [
+            {"action": "official_co", "label": "Limitar a cuentas oficiales CO"},
+            {"action": "drop_bbox", "label": "Quitar filtro de zona"},
+            {"action": "free_text", "label": f"Buscar libre: '{query}'"} if query else
+            {"action": "type_query", "label": "Escribe un tema, entidad o zona"},
+        ]
+    elif place_mismatch:
+        suggestions = [
+            {
+                "action": "broaden_to_region",
+                "label": f"Buscar en la región (no hay datos específicos de '{place_name}')",
+            },
+            {"action": "free_text", "label": f"Buscar libre: '{place_name}'"},
+        ]
+
+    return DiscoveryResponse(
+        items=ranked,
+        intent=intent,
+        authority_warning=authority_warning,
+        place_mismatch=place_mismatch,
+        place_queried=place_name,
+        suggested_refinements=suggestions,
+        debug=debug,
+        criterio=criterio,
+        otras_busquedas=otras,
+        relevantes=relevantes,
+    )
 
 
 __all__ = ["DiscoveryAgent", "DiscoveryHints", "DiscoveryResponse"]

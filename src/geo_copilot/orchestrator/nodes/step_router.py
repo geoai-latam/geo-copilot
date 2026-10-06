@@ -94,7 +94,7 @@ def _select_service_failure(idx: int, step_id: str, description: str, msg: str) 
     }
 
 
-async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, PLR0912, PLR0915
+async def run(graph: GeoAgentGraph, state: GraphState) -> dict:
     """Preparar el estado para el step actual del plan multi-paso.
 
     Lee ``state.execution_plan[state.current_step_index]`` y configura
@@ -123,21 +123,7 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
         return {"current_agent": "step_router"}
 
     step = plan[idx]
-    # Normalizar el step: el planner puede devolver dataclass PlanStep o dict.
-    # R2.5: sin default 'general' — un action_type ausente se trata igual que
-    # uno desconocido (paso fallido honesto más abajo).
-    if isinstance(step, dict):
-        step_id = step.get("step_id", f"step_{idx + 1}")
-        query_fragment = step.get("query_fragment", "")
-        action_type = step.get("action_type")
-        description = step.get("description", "")
-        numero_decidido = step.get("service_number")
-    else:
-        step_id = getattr(step, "step_id", f"step_{idx + 1}")
-        query_fragment = getattr(step, "query_fragment", "")
-        action_type = getattr(step, "action_type", None)
-        description = getattr(step, "description", "")
-        numero_decidido = getattr(step, "service_number", None)
+    step_id, query_fragment, action_type, description, numero_decidido = _campos_del_paso(step, idx)
 
     # F3.1: ¿alguna dependencia de este step falló/se saltó? Si sí, NO lo
     # ejecutamos sobre datos obsoletos: lo dejamos pasar a step_finalizer, que
@@ -161,20 +147,7 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
         f"[StepRouter] step_id={step_id}, action_type={action_type}, "
         f"query_fragment={query_fragment[:80]!r}"
     )
-
-    # WS: notificar inicio del step.
-    try:
-        from geo_copilot.platform import events
-        if session_id:
-            await events.sink().step_progress(
-                session_id=session_id,
-                step_index=idx,
-                total_steps=len(plan),
-                action=description or query_fragment[:50],
-                status="started",
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(f"[StepRouter] WS notify failed: {exc}")
+    await _notificar_inicio(session_id, idx, len(plan), description or query_fragment[:50])
 
     # Preparar el state para que el agente downstream actúe sobre este
     # step. La query del step PISA la query original del turno.
@@ -200,76 +173,16 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
                 f"{action_type!r} (paso '{description or step_id}')"
             ),
         }
-    # A5: `ask_user` es TERMINAL — la pregunta va al usuario y el plan se
-    # PAUSA aquí (mismo mecanismo que pending_selection: plan_paused +
-    # pending_operations con los pasos restantes; el responder entrega la
-    # pregunta tal cual, sin narrar fallos).
     if intent == "clarify":
-        remaining = plan[idx + 1:]
-        pending_operations = [
-            {
-                "step_id": (s.get("step_id") if isinstance(s, dict)
-                            else getattr(s, "step_id", None)),
-                "description": (s.get("description") if isinstance(s, dict)
-                                else getattr(s, "description", "")),
-                "query": (s.get("query_fragment") if isinstance(s, dict)
-                          else getattr(s, "query_fragment", "")),
-            }
-            for s in remaining
-        ]
-        logger.info(
-            f"[StepRouter] step {step_id} ask_user — plan pausado con pregunta "
-            f"({len(pending_operations)} pasos pendientes)"
-        )
-        return {
-            "current_agent": "step_router",
-            "current_step_index": idx,
-            "intent": "clarify",
-            "final_response": query_fragment or description,
-            "plan_paused": True,
-            "pending_operations": pending_operations or None,
-            "error": None,
-        }
+        return _pausa_con_pregunta(plan, idx, step_id, query_fragment, description)
 
-    # ORQ-04: select_service dentro de un plan multi-paso. El router single-step
-    # y el bucle ReAct resuelven el número→URL antes de despachar a data_agent;
-    # aquí, sin esa resolución, data_agent.run(intent=select_service) no recibía
-    # external_url y caía a "validar la conexión de BD" en silencio (paso marcado
-    # como ok SIN cargar nada → los pasos dependientes del geojson se saltaban).
-    # Resolvemos el número contra found_services y despachamos como load_external
-    # (que data_agent SÍ maneja) — misma semántica que ReAct.
     external_url_override: str | None = None
     if intent == "select_service":
-        services = state.get("found_services") or []
-        if not services:
-            return _select_service_failure(
-                idx, step_id, description,
-                "No hay una lista de servicios de una búsqueda previa para "
-                "seleccionar en este paso")
-        # El número lo decide el planner (campo estructurado); el texto solo si no lo dio (planes
-        # antiguos guardados en sesión).
-        num = (numero_decidido if isinstance(numero_decidido, int) and not isinstance(numero_decidido, bool)
-               else _extract_service_number(query_fragment, len(services)))
-        if num is None:
-            return _select_service_failure(
-                idx, step_id, description,
-                f"No identifiqué el número del servicio a cargar en "
-                f"'{query_fragment[:60]}'")
-        if not (1 <= num <= len(services)):
-            return _select_service_failure(
-                idx, step_id, description,
-                f"El número {num} excede los {len(services)} servicios "
-                f"encontrados (elige entre 1 y {len(services)})")
-        url = (services[num - 1] or {}).get("url")
-        if not url:
-            return _select_service_failure(
-                idx, step_id, description,
-                f"El servicio #{num} no tiene una URL cargable")
-        external_url_override = url
+        external_url_override, fallo = _resolver_seleccion(state, idx, step_id, description, query_fragment,
+                                                           numero_decidido)
+        if fallo:
+            return fallo
         intent = "load_external"  # data_agent carga por URL
-        logger.info(
-            f"[StepRouter] select_service #{num} → load_external {url}"
-        )
 
     updates: dict = {
         "current_agent": "step_router",
@@ -281,7 +194,122 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
     }
     if external_url_override:
         updates["external_url"] = external_url_override
+    _limpiar_para_el_paso(updates, action_type, state)
 
+    logger.info(
+        f"[StepRouter] step {step_id} → intent={intent}, "
+        f"active_source={updates.get('active_data_source', state.get('active_data_source'))}"
+    )
+    return updates
+
+
+def _campos_del_paso(step: object, idx: int) -> tuple:
+    """(step_id, query_fragment, action_type, description, service_number) del paso.
+
+    Normalizar el step: el planner puede devolver dataclass PlanStep o dict.
+    R2.5: sin default 'general' — un action_type ausente se trata igual que
+    uno desconocido (paso fallido honesto).
+    """
+    if isinstance(step, dict):
+        return (step.get("step_id", f"step_{idx + 1}"), step.get("query_fragment", ""),
+                step.get("action_type"), step.get("description", ""), step.get("service_number"))
+    return (getattr(step, "step_id", f"step_{idx + 1}"), getattr(step, "query_fragment", ""),
+            getattr(step, "action_type", None), getattr(step, "description", ""),
+            getattr(step, "service_number", None))
+
+
+async def _notificar_inicio(session_id: str, idx: int, total: int, action: str) -> None:
+    """WS: notificar inicio del step (si falla, el plan sigue)."""
+    try:
+        from geo_copilot.platform import events
+        if session_id:
+            await events.sink().step_progress(
+                session_id=session_id,
+                step_index=idx,
+                total_steps=total,
+                action=action,
+                status="started",
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(f"[StepRouter] WS notify failed: {exc}")
+
+
+def _pausa_con_pregunta(plan: list, idx: int, step_id: str, query_fragment: str, description: str) -> dict:
+    """A5: `ask_user` es TERMINAL — la pregunta va al usuario y el plan se
+    PAUSA aquí (mismo mecanismo que pending_selection: plan_paused +
+    pending_operations con los pasos restantes; el responder entrega la
+    pregunta tal cual, sin narrar fallos)."""
+    remaining = plan[idx + 1:]
+    pending_operations = [
+        {
+            "step_id": (s.get("step_id") if isinstance(s, dict)
+                        else getattr(s, "step_id", None)),
+            "description": (s.get("description") if isinstance(s, dict)
+                            else getattr(s, "description", "")),
+            "query": (s.get("query_fragment") if isinstance(s, dict)
+                      else getattr(s, "query_fragment", "")),
+        }
+        for s in remaining
+    ]
+    logger.info(
+        f"[StepRouter] step {step_id} ask_user — plan pausado con pregunta "
+        f"({len(pending_operations)} pasos pendientes)"
+    )
+    return {
+        "current_agent": "step_router",
+        "current_step_index": idx,
+        "intent": "clarify",
+        "final_response": query_fragment or description,
+        "plan_paused": True,
+        "pending_operations": pending_operations or None,
+        "error": None,
+    }
+
+
+def _resolver_seleccion(state: GraphState, idx: int, step_id: str, description: str, query_fragment: str,
+                        numero_decidido: object) -> tuple[str | None, dict | None]:
+    """(URL del servicio elegido, fallo honesto) de un select_service dentro del plan.
+
+    ORQ-04: el router single-step y el bucle ReAct resuelven el número→URL antes de despachar a
+    data_agent; aquí, sin esa resolución, data_agent.run(intent=select_service) no recibía
+    external_url y caía a "validar la conexión de BD" en silencio (paso marcado como ok SIN cargar
+    nada → los pasos dependientes del geojson se saltaban). Resolvemos el número contra
+    found_services y despachamos como load_external (que data_agent SÍ maneja) — misma semántica
+    que ReAct.
+    """
+    services = state.get("found_services") or []
+    if not services:
+        return None, _select_service_failure(
+            idx, step_id, description,
+            "No hay una lista de servicios de una búsqueda previa para "
+            "seleccionar en este paso")
+    # El número lo decide el planner (campo estructurado); el texto solo si no lo dio (planes
+    # antiguos guardados en sesión).
+    num = (numero_decidido if isinstance(numero_decidido, int) and not isinstance(numero_decidido, bool)
+           else _extract_service_number(query_fragment, len(services)))
+    if num is None:
+        return None, _select_service_failure(
+            idx, step_id, description,
+            f"No identifiqué el número del servicio a cargar en "
+            f"'{query_fragment[:60]}'")
+    if not (1 <= num <= len(services)):
+        return None, _select_service_failure(
+            idx, step_id, description,
+            f"El número {num} excede los {len(services)} servicios "
+            f"encontrados (elige entre 1 y {len(services)})")
+    url = (services[num - 1] or {}).get("url")
+    if not url:
+        return None, _select_service_failure(
+            idx, step_id, description,
+            f"El servicio #{num} no tiene una URL cargable")
+    logger.info(
+        f"[StepRouter] select_service #{num} → load_external {url}"
+    )
+    return url, None
+
+
+def _limpiar_para_el_paso(updates: dict, action_type: object, state: GraphState) -> None:
+    """Lo que cada tipo de paso empieza limpio (o aislado)."""
     # F3.1 (revisión adversarial): los pasos que GENERAN datos frescos
     # (query/search/select) empiezan con pizarra limpia de OUTPUT. Sin esto, el
     # geojson/raw_data de un paso anterior persistía y step_finalizer lo contaba
@@ -326,12 +354,6 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
     # fuente activa es interna, dejamos el geojson del state intacto;
     # si es externa, dejamos external_geojson intacto. El python_agent
     # node sabe leer ambos.
-
-    logger.info(
-        f"[StepRouter] step {step_id} → intent={intent}, "
-        f"active_source={updates.get('active_data_source', state.get('active_data_source'))}"
-    )
-    return updates
 
 
 def route_from_step_router(state: GraphState) -> str:

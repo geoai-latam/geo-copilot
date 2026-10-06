@@ -8,6 +8,11 @@ Implementa el patrón Supervisor de LangGraph.
 import json
 
 from geo_copilot.agents.base import AgentResponse, BaseAgent
+from geo_copilot.agents.router_agent.esquema import (
+    _ESQUEMA_ROUTE,
+    _VALID_INTENTS,
+    _respuesta_de_error,
+)
 from geo_copilot.core.config import settings
 from geo_copilot.core.formatters import (
     format_active_layer_context,
@@ -76,7 +81,7 @@ class RouterAgent(BaseAgent):
             ]
         }
 
-    async def process(  # noqa: C901, PLR0912, PLR0915
+    async def process(
         self,
         query: str,
         context: dict | None = None
@@ -94,262 +99,175 @@ class RouterAgent(BaseAgent):
         context = context or {}
 
         try:
-            # Construir contexto de conversación
-            conversation_context = self._build_conversation_context(context)
-
-            # Construir información de servicios encontrados
-            services_context = self._format_found_services(
-                context.get("found_services", [])
-            )
-
-            # Construir información de datos externos cargados
-            external_data_context = self._format_external_data_context(context)
-
-            # Fase A: añadir el estado REAL del mapa que reporta el frontend
-            # (capas cargadas incl. Discovery, feature seleccionada, viewport).
-            from geo_copilot.core.formatters import (
-                format_map_context,
-                format_platform_capabilities,
-            )
-            map_block = format_map_context(context.get("map_context"))
-            if map_block:
-                external_data_context = (
-                    f"{external_data_context}\n\n{map_block}".strip()
-                )
-
-            # F1.1/C3: autoconocimiento — qué NO puede hacer esta plataforma
-            # (sandbox POSIX; qué servicios MCP hay enchufados).
-            plat_block = format_platform_capabilities(
-                context.get("sandbox_available", True),
-                servicios_conectados=context.get("connected_services"),
-            )
-            if plat_block:
-                external_data_context = (
-                    f"{external_data_context}\n\n{plat_block}".strip()
-                )
-
-            # Obtener schema summary si está disponible
-            schema_info = context.get("schema_info", "")
-
-            # Construir prompt del sistema
-            system_prompt = self._build_system_prompt(
-                schema_info=schema_info,
-                conversation_context=conversation_context,
-                services_context=services_context,
-                external_data_context=external_data_context,
-                session_region=context.get("session_region"),  # F2.2
-            )
-
-            # Construir prompt del usuario. Con la fecha de hoy (hecho): V5 «NDVI de Chía en enero de
-            # 2025» → el router dijo «es una fecha futura» (la de su entrenamiento) y lo mandó a buscar
-            # en portales; el bucle ReAct ya la tenía (react_system_prompt).
-            from datetime import date
-
-            user_prompt = f'Hoy es {date.today().isoformat()}.\nMENSAJE DEL USUARIO: "{query}"'
-
-            valid_intents = {
-                "direct_response", "query_data", "follow_up",
-                "search_external", "select_service", "load_external",
-                "spatial_operation", "analyze",
-                # Smart Router (2026-05-31): intents para "skip inteligente"
-                # cuando el usuario tiene una capa cargada y solo quiere
-                # ajustarla. Evita roundtrip por data_agent/gis_agent.
-                "apply_symbology",
-                # A5 (Fase 4): el agente PREGUNTA cuando la ambigüedad es real
-                # (la pregunta va en `response`); el turno termina limpio.
-                "clarify",
-                # F3: lo resuelve una herramienta de un servicio MCP enchufado
-                # (imagery satelital, geocodificación, …) — va al bucle ReAct.
-                "connected_service",
-                # FH.1: operar el mapa compartido (encuadrar, ocultar, opacidad,
-                # orden, etiquetas, quitar) — va al bucle ReAct (map_command).
-                "map_control",
-            }
-
+            system_prompt, user_prompt = self._prompts(query, context)
             # A3 (structured outputs): el LLM responde LLAMANDO la función
             # `route` con schema — el JSON llega validado por el proveedor y
             # el brace-slicing (parse_json_from_llm + default) desaparece.
             # La validación SEMÁNTICA (whitelist) sigue abajo, intacta.
-            from geo_copilot.core.structured_output import structured_call
-
             mensajes = [
                 LLMMessage(role="system", content=system_prompt),
                 LLMMessage(role="user", content=user_prompt),
             ]
-            # el mismo esquema para la llamada y para el reintento de corrección
-            esquema_route: dict = {
-                    "type": "object",
-                    "properties": {
-                        "intent": {"type": "string", "enum": sorted(valid_intents)},
-                        "reasoning": {
-                            "type": "string",
-                            "description": "Por qué elegiste este intent.",
-                        },
-                        "response": {
-                            "type": ["string", "null"],
-                            "description": "Respuesta natural (intent=direct_response) "
-                            "o pregunta aclaratoria (intent=clarify).",
-                        },
-                        "entities": {
-                            "type": "array", "items": {"type": "string"},
-                            "description": "Entidades/tablas mencionadas.",
-                        },
-                        "selected_service_number": {
-                            "type": ["integer", "null"],
-                            "description": "Número (1..N) si intent=select_service.",
-                        },
-                        "external_url": {
-                            "type": ["string", "null"],
-                            "description": "URL si el usuario proporcionó una (intent=load_external).",
-                        },
-                        # FRT-04. Sin esta propiedad, `additionalProperties:
-                        # False` impedía al proveedor devolverla y el router
-                        # cableado nunca dirigía la acción a la capa nombrada.
-                        # El nodo router la valida contra map_layers.
-                        "target_layer_id": {
-                            "type": ["string", "null"],
-                            "description": "[id] EXACTO de la capa de "
-                            "'CAPAS EN EL MAPA' que el usuario nombró; null si "
-                            "no nombró ninguna o es ambiguo.",
-                        },
-                        "is_multi_step": {"type": "boolean"},
-                        "additional_operations": {
-                            "type": "array", "items": {"type": "string"},
-                            "description": "Operaciones adicionales detectadas en la consulta.",
-                        },
-                    },
-                    "required": ["intent", "reasoning"],
-                    "additionalProperties": False,
-                }
-            result = await structured_call(
-                self.llm_client,
-                mensajes,
-                name="route",
-                description=(
-                    "Reporta la decisión de enrutamiento de la consulta "
-                    "geoespacial del usuario."
-                ),
-                parameters=esquema_route,
-            )
-
-            intent = result.get("intent")
-            if intent not in valid_intents:
-                # V5 (hello): «dibújame un círculo de 500 m…» → intent «hello__circle» (el nombre de una
-                # herramienta, que el proveedor no impidió pese al enum) y el usuario recibía «No pude
-                # procesar tu consulta» 2 de cada 3 veces. Un reintento con el hecho; decide el LLM.
-                logger.warning(f"[Router] intent inválido {intent!r}: se le pide corregir una vez")
-                result = await structured_call(
-                    self.llm_client,
-                    [*mensajes, LLMMessage(role="user", content=(
-                        f"«{intent}» no es un intent: los intents válidos son {sorted(valid_intents)}. Si lo "
-                        "pedido lo hace una herramienta de un servicio de \"SERVICIOS MCP CONECTADOS\", el intent "
-                        "es `connected_service` (el agente elige la herramienta). Vuelve a llamar `route`."))],
-                    name="route",
-                    description="Reporta la decisión de enrutamiento de la consulta geoespacial del usuario.",
-                    parameters=esquema_route,
-                )
-                intent = result.get("intent")
-            if intent not in valid_intents:
-                raise ValueError(
-                    f"Router LLM devolvió intent inválido: {intent!r}. "
-                    f"Válidos: {sorted(valid_intents)}"
-                )
-            # A5: clarify SIN pregunta es inservible — fallo honesto (no
-            # entregamos un turno vacío).
-            if intent == "clarify" and not str(result.get("response") or "").strip():
-                raise ValueError("Router LLM eligió clarify sin la pregunta en `response`.")
-
-            reasoning = result.get("reasoning", "")
-            direct_response = result.get("response")
-            entities = result.get("entities", [])
-            external_url = result.get("external_url")
-            selected_service_number = result.get("selected_service_number")
-            target_layer_id = result.get("target_layer_id")  # FRT-04: capa nombrada
-            is_multi_step = bool(result.get("is_multi_step", False))
-            additional_operations = result.get("additional_operations", [])
-
-            # Si hay operaciones adicionales, garantizamos multi-step.
-            if additional_operations:
-                is_multi_step = True
-                logger.info(
-                    f"[RouterAgent] Detected additional operations: {additional_operations}"
-                )
-
-            # Procesar selección de servicio: si el número está fuera de
-            # rango devolvemos error específico (antes era "no hay servicios
-            # disponibles" — mensaje engañoso).
-            if intent == "select_service":
-                resolved_url, error_msg = self._resolve_service_selection(
-                    selected_service_number=selected_service_number,
-                    found_services=context.get("found_services", []),
-                )
-                if error_msg:
-                    intent = "direct_response"
-                    direct_response = error_msg
-                else:
-                    external_url = resolved_url
-
-            logger.info(
-                f"[RouterAgent] Intent: {intent}, MultiStep: {is_multi_step}"
-            )
-
-            return AgentResponse(
-                success=True,
-                message=f"Routed to: {intent}",
-                data={
-                    "intent": intent,
-                    "reasoning": reasoning,
-                    "entities": entities,
-                    "direct_response": direct_response,
-                    "external_url": external_url,
-                    "selected_service_number": selected_service_number,
-                    "target_layer_id": target_layer_id,  # FRT-04
-                    "is_complex_query": is_multi_step,
-                    "additional_operations": additional_operations,
-                }
-            )
+            result = await self._decidir(mensajes)
+            return self._respuesta(result, context)
 
         except Exception as e:  # captura amplia a propósito: frontera del router (LLM + parseo); se responde con fallo claro, sin adivinar intent
             logger.error(f"RouterAgent error: {e}", exc_info=True)
+            return _respuesta_de_error(e)
 
-            # No adivinamos el intent por keywords. Antes había una
-            # _analyze_error_for_hints que mapeaba palabras como "buffer",
-            # "lotes", "busca" → intents specíficos — eso enviaba la query
-            # por un camino que el usuario nunca pidió. Ahora respondemos
-            # con un fallo claro y dejamos que el usuario reformule.
-            err_type = type(e).__name__
-            suggestion = "Intenta reformular tu consulta de manera más específica."
-            from geo_copilot.core.llm_client import mensaje_fallo_llm
+    def _prompts(self, query: str, context: dict) -> tuple[str, str]:
+        """El prompt del sistema (conversación, servicios, datos, mapa, plataforma, esquema) y el
+        del usuario."""
+        # Construir contexto de conversación
+        conversation_context = self._build_conversation_context(context)
 
-            # Saturación o cuota agotada del proveedor: el mensaje honesto de cada caso (no «reformula»)
-            if mensaje := mensaje_fallo_llm(e):
-                suggestion = mensaje
-            elif "timeout" in err_type.lower() or "timeout" in str(e).lower():
-                suggestion = (
-                    "La operación tardó demasiado. Intenta con una consulta más simple."
-                )
-            elif "json" in err_type.lower():
-                suggestion = (
-                    "Hubo un problema interpretando la respuesta. "
-                    "Reformula tu pregunta o reintenta."
-                )
+        # Construir información de servicios encontrados
+        services_context = self._format_found_services(
+            context.get("found_services", [])
+        )
 
-            return AgentResponse(
-                success=False,
-                message=f"No pude procesar tu consulta. {suggestion}",
-                data={
-                    "intent": "direct_response",
-                    "action": "respond_directly",
-                    "direct_response": f"Error: {suggestion}",
-                    "entities": [],
-                    "is_complex_query": False,
-                    "additional_operations": [],
-                    "error_context": {
-                        "original_error": str(e)[:100],
-                        "error_type": err_type,
-                    },
-                }
+        # Construir información de datos externos cargados
+        external_data_context = self._format_external_data_context(context)
+
+        # Fase A: añadir el estado REAL del mapa que reporta el frontend
+        # (capas cargadas incl. Discovery, feature seleccionada, viewport).
+        from geo_copilot.core.formatters import (
+            format_map_context,
+            format_platform_capabilities,
+        )
+        map_block = format_map_context(context.get("map_context"))
+        if map_block:
+            external_data_context = (
+                f"{external_data_context}\n\n{map_block}".strip()
             )
+
+        # F1.1/C3: autoconocimiento — qué NO puede hacer esta plataforma
+        # (sandbox POSIX; qué servicios MCP hay enchufados).
+        plat_block = format_platform_capabilities(
+            context.get("sandbox_available", True),
+            servicios_conectados=context.get("connected_services"),
+        )
+        if plat_block:
+            external_data_context = (
+                f"{external_data_context}\n\n{plat_block}".strip()
+            )
+
+        # Obtener schema summary si está disponible
+        schema_info = context.get("schema_info", "")
+
+        # Construir prompt del sistema
+        system_prompt = self._build_system_prompt(
+            schema_info=schema_info,
+            conversation_context=conversation_context,
+            services_context=services_context,
+            external_data_context=external_data_context,
+            session_region=context.get("session_region"),  # F2.2
+        )
+
+        # Construir prompt del usuario. Con la fecha de hoy (hecho): V5 «NDVI de Chía en enero de
+        # 2025» → el router dijo «es una fecha futura» (la de su entrenamiento) y lo mandó a buscar
+        # en portales; el bucle ReAct ya la tenía (react_system_prompt).
+        from datetime import date
+
+        user_prompt = f'Hoy es {date.today().isoformat()}.\nMENSAJE DEL USUARIO: "{query}"'
+        return system_prompt, user_prompt
+
+    async def _decidir(self, mensajes: list[LLMMessage]) -> dict:
+        """La llamada `route` validada: intent dentro del whitelist (un reintento con el hecho) y
+        clarify con su pregunta."""
+        from geo_copilot.core.structured_output import structured_call
+
+        result = await structured_call(
+            self.llm_client,
+            mensajes,
+            name="route",
+            description=(
+                "Reporta la decisión de enrutamiento de la consulta "
+                "geoespacial del usuario."
+            ),
+            parameters=_ESQUEMA_ROUTE,
+        )
+
+        intent = result.get("intent")
+        if intent not in _VALID_INTENTS:
+            # V5 (hello): «dibújame un círculo de 500 m…» → intent «hello__circle» (el nombre de una
+            # herramienta, que el proveedor no impidió pese al enum) y el usuario recibía «No pude
+            # procesar tu consulta» 2 de cada 3 veces. Un reintento con el hecho; decide el LLM.
+            logger.warning(f"[Router] intent inválido {intent!r}: se le pide corregir una vez")
+            result = await structured_call(
+                self.llm_client,
+                [*mensajes, LLMMessage(role="user", content=(
+                    f"«{intent}» no es un intent: los intents válidos son {sorted(_VALID_INTENTS)}. Si lo "
+                    "pedido lo hace una herramienta de un servicio de \"SERVICIOS MCP CONECTADOS\", el intent "
+                    "es `connected_service` (el agente elige la herramienta). Vuelve a llamar `route`."))],
+                name="route",
+                description="Reporta la decisión de enrutamiento de la consulta geoespacial del usuario.",
+                parameters=_ESQUEMA_ROUTE,
+            )
+            intent = result.get("intent")
+        if intent not in _VALID_INTENTS:
+            raise ValueError(
+                f"Router LLM devolvió intent inválido: {intent!r}. "
+                f"Válidos: {sorted(_VALID_INTENTS)}"
+            )
+        # A5: clarify SIN pregunta es inservible — fallo honesto (no
+        # entregamos un turno vacío).
+        if intent == "clarify" and not str(result.get("response") or "").strip():
+            raise ValueError("Router LLM eligió clarify sin la pregunta en `response`.")
+        return dict(result)
+
+    def _respuesta(self, result: dict, context: dict) -> AgentResponse:
+        """La decisión de enrutamiento, con la selección de servicio ya resuelta."""
+        intent = result.get("intent")
+        reasoning = result.get("reasoning", "")
+        direct_response = result.get("response")
+        entities = result.get("entities", [])
+        external_url = result.get("external_url")
+        selected_service_number = result.get("selected_service_number")
+        target_layer_id = result.get("target_layer_id")  # FRT-04: capa nombrada
+        is_multi_step = bool(result.get("is_multi_step", False))
+        additional_operations = result.get("additional_operations", [])
+
+        # Si hay operaciones adicionales, garantizamos multi-step.
+        if additional_operations:
+            is_multi_step = True
+            logger.info(
+                f"[RouterAgent] Detected additional operations: {additional_operations}"
+            )
+
+        # Procesar selección de servicio: si el número está fuera de
+        # rango devolvemos error específico (antes era "no hay servicios
+        # disponibles" — mensaje engañoso).
+        if intent == "select_service":
+            resolved_url, error_msg = self._resolve_service_selection(
+                selected_service_number=selected_service_number,
+                found_services=context.get("found_services", []),
+            )
+            if error_msg:
+                intent = "direct_response"
+                direct_response = error_msg
+            else:
+                external_url = resolved_url
+
+        logger.info(
+            f"[RouterAgent] Intent: {intent}, MultiStep: {is_multi_step}"
+        )
+
+        return AgentResponse(
+            success=True,
+            message=f"Routed to: {intent}",
+            data={
+                "intent": intent,
+                "reasoning": reasoning,
+                "entities": entities,
+                "direct_response": direct_response,
+                "external_url": external_url,
+                "selected_service_number": selected_service_number,
+                "target_layer_id": target_layer_id,  # FRT-04
+                "is_complex_query": is_multi_step,
+                "additional_operations": additional_operations,
+            }
+        )
 
     def _build_system_prompt(
         self,
