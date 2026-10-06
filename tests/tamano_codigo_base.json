@@ -50,7 +50,6 @@
   "src/geo_copilot/agents/python_agent/agent.py::PythonAgent.process": 76,
   "src/geo_copilot/agents/python_agent/code_corrector.py::CodeCorrector.analyze_error": 61,
   "src/geo_copilot/agents/python_agent/code_corrector.py::CodeCorrector.correct_code": 99,
-  "src/geo_copilot/agents/router_agent/agent.py::RouterAgent.process": 274,
   "src/geo_copilot/agents/symbology_agent/agent.py::SymbologyAgent.process": 79,
   "src/geo_copilot/api/app.py::create_app": 242,
   "src/geo_copilot/api/ciclo_vida.py::CicloVidaMixin.shutdown": 71,
