@@ -63,7 +63,6 @@
   "src/geo_copilot/orchestrator/capabilities_mapa.py::_map_command": 101,
   "src/geo_copilot/orchestrator/conversation.py::ConversationContext.from_dict": 81,
   "src/geo_copilot/orchestrator/graph.py::GeoAgentGraph.__init__": 96,
-  "src/geo_copilot/orchestrator/graph.py::GeoAgentGraph._build_graph": 133,
   "src/geo_copilot/orchestrator/graph.py::GeoAgentGraph.process": 66,
   "src/geo_copilot/orchestrator/nodes/data_agent.py::run": 69,
   "src/geo_copilot/orchestrator/nodes/data_agent_url.py::_handle_external_url": 67,
