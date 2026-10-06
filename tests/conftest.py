@@ -244,6 +244,18 @@ async def get_real_llm_or_skip():
         if os.environ.get("LLM_REQUIRED") == "1" or not _REAL_LLM_CACHE.get("saltable"):
             pytest.fail(msg)
         pytest.skip(msg)
+    # Cada test corre en su propio event loop y el cliente HTTP del SDK queda atado al loop en que
+    # se creó: reusarlo en el siguiente daba «Event loop is closed» (30 de 68 fallos, ninguno del
+    # juicio del modelo). Un cliente por loop; el ping de arriba ya dijo que el LLM responde.
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    if _REAL_LLM_CACHE.get("loop") is not loop:
+        if "loop" in _REAL_LLM_CACHE:
+            from geo_copilot.core.config import get_settings
+            from geo_copilot.core.llm_client import LLMClient
+            _REAL_LLM_CACHE["client"] = LLMClient.from_settings(get_settings())
+        _REAL_LLM_CACHE["loop"] = loop
     return _REAL_LLM_CACHE["client"]
 
 
