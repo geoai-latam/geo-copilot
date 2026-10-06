@@ -65,7 +65,6 @@
   "src/geo_copilot/orchestrator/graph.py::GeoAgentGraph.process": 66,
   "src/geo_copilot/orchestrator/nodes/data_agent.py::run": 69,
   "src/geo_copilot/orchestrator/nodes/data_agent_url.py::_handle_external_url": 67,
-  "src/geo_copilot/orchestrator/nodes/gis_agent.py::_preflight_entities": 130,
   "src/geo_copilot/orchestrator/nodes/gis_agent.py::run": 71,
   "src/geo_copilot/orchestrator/nodes/insights.py::narrate_result": 100,
   "src/geo_copilot/orchestrator/nodes/insights.py::run": 119,
