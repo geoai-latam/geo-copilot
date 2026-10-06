@@ -71,12 +71,34 @@ class AppState(CicloVidaMixin):
                 return
             await self._do_initialize()
 
-    async def _do_initialize(self) -> None:  # noqa: C901, PLR0912, PLR0915
+    async def _do_initialize(self) -> None:
         logger.info("Initializing GEO_COPILOT components...")
 
         # Configuración
         self._config = get_settings()
+        await self._crear_pool()
+        self._crear_llm()
+        await self._cargar_capa_semantica()
+        await self._estado_y_gestores()
+        self._crear_grafo()
 
+        # Antes inicializábamos un catálogo ArcGIS local con 412 servicios
+        # pre-indexados. Lo eliminamos: ahora todo el discovery usa
+        # ArcGIS Hub Open Data global (opendata.arcgis.com/api/v3/search)
+        # vía DiscoveryAgent, que es tiempo-real y mucho más amplio.
+        self._exigir_criticos()
+        ident = await self._identidad_y_auditoria()
+        self._iniciar_workspace()
+
+        await self._iniciar_mcp()
+        self._iniciar_conexiones_org(ident)
+
+        self._initialized = True
+
+        logger.info("GEO_COPILOT initialized successfully")
+
+    async def _crear_pool(self) -> None:
+        """El pool de PostGIS; si falla queda None y la criticidad se decide después (S9)."""
         # Database Pool (requerido para schema discovery). Pool sizes y
         # timeout vienen del config, no hardcodeados (API-14).
         try:
@@ -98,6 +120,8 @@ class AppState(CicloVidaMixin):
             logger.error(f"Database pool FAILED: {e}", exc_info=True)
             self._db_pool = None
 
+    def _crear_llm(self) -> None:
+        """El cliente LLM; si falla queda None y el arranque aborta después (S9)."""
         # LLM Client (requerido para agentes)
         try:
             self._llm_client = LLMClient.from_settings(self._config)
@@ -108,6 +132,8 @@ class AppState(CicloVidaMixin):
             logger.error(f"LLM client FAILED: {e}", exc_info=True)
             self._llm_client = None
 
+    async def _cargar_capa_semantica(self) -> None:
+        """La capa semántica: el YAML como overrides, hidratada con las tablas reales de la BD."""
         # Semantic Layer — el YAML actúa como OVERRIDES, no como fuente
         # primaria. Después de cargarlo intentamos hidratar desde la BD
         # real (introspector) para que el sistema conozca las tablas
@@ -145,6 +171,8 @@ class AppState(CicloVidaMixin):
             logger.warning(f"Semantic layer not loaded: {e}", exc_info=True)
             self._semantic_layer = None
 
+    async def _estado_y_gestores(self) -> None:
+        """Estado compartido (Redis), sesiones, HITL y el bus del WebSocket."""
         # F7 (S7.1): estado compartido. En producción Redis es OBLIGATORIO (aborta si falta);
         # en desarrollo, si no está, todo queda en la memoria del proceso (un solo worker).
         from geo_copilot.api import estado as estado_compartido
@@ -169,6 +197,8 @@ class AppState(CicloVidaMixin):
 
         connection_manager.conectar_bus(self._redis)
 
+    def _crear_grafo(self) -> None:
+        """El orquestador (LangGraph); requiere el cliente LLM."""
         # GeoAgentGraph (LangGraph A2A orchestrator)
         if self._llm_client:
             try:
@@ -188,11 +218,8 @@ class AppState(CicloVidaMixin):
             logger.warning("GeoAgentGraph not available (requires LLM client)")
             self._agent_graph = None
 
-        # Antes inicializábamos un catálogo ArcGIS local con 412 servicios
-        # pre-indexados. Lo eliminamos: ahora todo el discovery usa
-        # ArcGIS Hub Open Data global (opendata.arcgis.com/api/v3/search)
-        # vía DiscoveryAgent, que es tiempo-real y mucho más amplio.
-
+    def _exigir_criticos(self) -> None:
+        """S9: sin LLM (o sin BD en producción) la app NO arranca en vez de bootear «sana» rota."""
         # S9: no marcar inicializado si un componente CRÍTICO falló. El
         # cliente LLM es la pieza central (sin él no hay agentes ni grafo);
         # antes se tragaba el fallo, se dejaba en None y se marcaba
@@ -217,6 +244,8 @@ class AppState(CicloVidaMixin):
                 "datos. Verifica DATABASE_URL y la conectividad a PostGIS."
             )
 
+    async def _identidad_y_auditoria(self) -> Any:
+        """F6: identidad (OIDC, tickets del WS, dueños de sesión) y el registro de auditoría."""
         # F6: identidad (validador OIDC, tickets del WS y dueño de las sesiones en PostGIS).
         from geo_copilot.platform.identidad import servicio as identidad
 
@@ -237,7 +266,10 @@ class AppState(CicloVidaMixin):
 
         esquema = self._db_pool is not None and isinstance(ident.propiedad, identidad.PropiedadEnPostgres)
         auditoria.instalar(auditoria.AuditoriaEnPostgres(self._db_pool) if esquema else auditoria.AuditoriaEnMemoria())
+        return ident
 
+    def _iniciar_workspace(self) -> None:
+        """S2.1: el workspace de la sesión y su purga periódica (sin BD no hay workspace)."""
         # S2.1: workspace de la sesión. Sin BD no hay workspace (la app sigue
         # funcionando con GeoJSON en memoria, como antes de F2).
         if self._db_pool is not None:
@@ -247,13 +279,6 @@ class AppState(CicloVidaMixin):
             self._dataset_store = DatasetStore(self._db_pool)
             instalar_store(self._dataset_store)
             self._purga_task = asyncio.create_task(self._purgar_periodicamente())
-
-        await self._iniciar_mcp()
-        self._iniciar_conexiones_org(ident)
-
-        self._initialized = True
-
-        logger.info("GEO_COPILOT initialized successfully")
 
 
 
