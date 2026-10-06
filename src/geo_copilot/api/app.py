@@ -95,7 +95,9 @@ _METODOS_HTTP = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "
 
 
 #: Ver create_app: la telemetría nativa de FastAPI, apagada entera (la lleva platform/observabilidad).
-TELEMETRIA_FASTAPI_APAGADA = {"auto_configure": False, "tracing": False, "metrics": False, "logs": False,
+# `Any` y no dict[str, bool]: desde FastAPI 0.142 el argumento se tipa con su TypedDict TelemetryConfig
+# (que las versiones viejas no tienen); como literal suelto, mypy lo ve incompatible.
+TELEMETRIA_FASTAPI_APAGADA: Any = {"auto_configure": False, "tracing": False, "metrics": False, "logs": False,
                               "operation_spans": False}
 
 
