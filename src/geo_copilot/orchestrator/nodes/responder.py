@@ -11,7 +11,7 @@ aquí (success y la mayoría de errores).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from geo_copilot.core.colors import log_agent
 from geo_copilot.core.logging import get_logger
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, PLR0912, PLR0915
+async def run(graph: GeoAgentGraph, state: GraphState) -> dict:
     """Compilar la respuesta final del grafo."""
     raw_data = state.get("raw_data") or []
     geojson = state.get("geojson")
@@ -33,28 +33,8 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
     )
     logger.info("[Responder] Compiling final response...")
 
-    # Canal analítico (intent 'analyze'): si el nodo python_agent YA decidió la
-    # visualización (chart/table/stats del sandbox), respétala — NO re-inferir
-    # desde raw_data (que en analítica es []), que borraba el gráfico/tabla real
-    # y además gastaba una llamada LLM inútil. Para el resto (query_data / geo)
-    # el InsightsAgent decide qué visualización casa con los datos.
     node_visualization = state.get("visualization")
-    if node_visualization:
-        visualization = node_visualization
-    else:
-        # R4.6: el responder es el nodo TERMINAL — un hiccup del LLM aquí no
-        # puede tumbar TODA la respuesta (datos + mapa ya listos). Sin
-        # visualization se degrada a None y el cliente usa su default.
-        try:
-            visualization = await graph.insights_agent.infer_visualization_type(
-                query=state.get("query"),
-                data=raw_data,
-                geojson=geojson,
-                sql=state.get("sql"),
-            )
-        except Exception as exc:  # noqa: BLE001 — best-effort en nodo terminal
-            logger.warning(f"[Responder] infer_visualization_type falló: {exc}")
-            visualization = None
+    visualization = await _visualizacion(graph, state, raw_data, geojson)
 
     final_data = {
         "sql": state.get("sql"),
@@ -69,6 +49,69 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
         "empty_result_verdict": state.get("empty_result_verdict"),
     }
 
+    plan_partial_failure, plan_message_override, fallidos, pasos = await _desenlace_del_plan(
+        graph, state, has_output=bool(geojson or raw_data or node_visualization))
+    response = await _respuesta(graph, state, plan_message_override)
+
+    # Degradación honesta de 'analyze' sin capa (marcada por el router node):
+    # el intent era analítico pero no había capa que analizar, así que se
+    # trajeron los datos. Avisamos en vez de mostrarlos como si fueran el
+    # análisis pedido.
+    if state.get("analyze_degraded_no_layer") and not state.get("error"):
+        response = (
+            "No había una capa activa para analizar, así que traje los datos. "
+            "Pídeme ahora el análisis sobre esta capa (p. ej. «agrupa en "
+            "clusters», «correlación entre X e Y», «distribución de áreas»).\n\n"
+            + (response or "")
+        )
+
+    if visualization:
+        logger.debug(f"[Responder] Visualization type: {visualization.get('type')}")
+
+    if plan_partial_failure:
+        logger.warning(
+            f"[Responder] Plan finalizó con fallos: "
+            f"{fallidos}/{pasos} pasos fallaron"
+        )
+
+    return {
+        "current_agent": "responder",
+        "final_response": response,
+        "final_data": final_data,
+        "plan_partial_failure": plan_partial_failure,
+        "messages": [],
+    }
+
+
+async def _visualizacion(graph: GeoAgentGraph, state: GraphState, raw_data: list, geojson: dict | None,
+                         ) -> dict | None:
+    """La visualización: la que ya decidió el nodo analítico o la que infiere el InsightsAgent."""
+    # Canal analítico (intent 'analyze'): si el nodo python_agent YA decidió la
+    # visualización (chart/table/stats del sandbox), respétala — NO re-inferir
+    # desde raw_data (que en analítica es []), que borraba el gráfico/tabla real
+    # y además gastaba una llamada LLM inútil. Para el resto (query_data / geo)
+    # el InsightsAgent decide qué visualización casa con los datos.
+    node_visualization = state.get("visualization")
+    if node_visualization:
+        return cast(dict, node_visualization)
+    # R4.6: el responder es el nodo TERMINAL — un hiccup del LLM aquí no
+    # puede tumbar TODA la respuesta (datos + mapa ya listos). Sin
+    # visualization se degrada a None y el cliente usa su default.
+    try:
+        return await graph.insights_agent.infer_visualization_type(
+            query=state.get("query"),
+            data=raw_data,
+            geojson=geojson,
+            sql=state.get("sql"),
+        )
+    except Exception as exc:  # noqa: BLE001 — best-effort en nodo terminal
+        logger.warning(f"[Responder] infer_visualization_type falló: {exc}")
+        return None
+
+
+async def _desenlace_del_plan(graph: GeoAgentGraph, state: GraphState, has_output: bool,
+                              ) -> tuple[bool, str | None, int, int]:
+    """(fallo parcial, mensaje que lo narra, pasos fallidos, pasos) de un plan multi-paso."""
     # Detectar fallo parcial / total de un plan multi-paso. Antes el
     # responder ignoraba ``step_results``: si un paso intermedio fallaba
     # pero el paso anterior dejó ``geojson`` en el estado, el grafo
@@ -95,7 +138,6 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
         # Narración VERSÁTIL del desenlace con el LLM (en vez del mensaje
         # técnico "falló N paso(s)..."): lidera con lo que sí se logró y sugiere
         # un siguiente paso. has_output = hubo algo mostrable.
-        has_output = bool(geojson or raw_data or node_visualization)
         try:
             from geo_copilot.orchestrator.nodes.insights import narrate_plan_outcome
             plan_message_override = await narrate_plan_outcome(
@@ -113,7 +155,14 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
                 if has_output
                 else "No pude completar esta operación; ¿probamos otro enfoque?"
             )
+    return plan_partial_failure, plan_message_override, len(failed_steps), len(step_results)
 
+
+async def _respuesta(graph: GeoAgentGraph, state: GraphState, plan_message_override: str | None) -> str | None:
+    """El texto de la respuesta: el error saneado, el desenlace del plan o el resultado narrado."""
+    raw_data = state.get("raw_data") or []
+    geojson = state.get("geojson")
+    node_visualization = state.get("visualization")
     if state.get("error"):
         # SEC-ERROR-LEAK: NO mostrar state['error'] crudo (puede traer nombres
         # de tablas/columnas PostGIS o tracebacks). Los mensajes honestos ya
@@ -149,32 +198,4 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:  # noqa: C901, P
                 except Exception as exc:  # noqa: BLE001 — narrar es best-effort
                     logger.warning(f"[Responder] narración de análisis falló: {exc}")
             response = response or "Consulta procesada."
-
-    # Degradación honesta de 'analyze' sin capa (marcada por el router node):
-    # el intent era analítico pero no había capa que analizar, así que se
-    # trajeron los datos. Avisamos en vez de mostrarlos como si fueran el
-    # análisis pedido.
-    if state.get("analyze_degraded_no_layer") and not state.get("error"):
-        response = (
-            "No había una capa activa para analizar, así que traje los datos. "
-            "Pídeme ahora el análisis sobre esta capa (p. ej. «agrupa en "
-            "clusters», «correlación entre X e Y», «distribución de áreas»).\n\n"
-            + (response or "")
-        )
-
-    if visualization:
-        logger.debug(f"[Responder] Visualization type: {visualization.get('type')}")
-
-    if plan_partial_failure:
-        logger.warning(
-            f"[Responder] Plan finalizó con fallos: "
-            f"{len(failed_steps)}/{len(step_results)} pasos fallaron"
-        )
-
-    return {
-        "current_agent": "responder",
-        "final_response": response,
-        "final_data": final_data,
-        "plan_partial_failure": plan_partial_failure,
-        "messages": [],
-    }
+    return response
