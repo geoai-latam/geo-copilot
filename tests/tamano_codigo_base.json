@@ -11,7 +11,6 @@
   "services/imagery_mcp/imagery_mcp/server.py::_rutas_de_teselas": 69,
   "services/imagery_mcp/imagery_mcp/tiles_render.py::TilesRenderMixin._read_scene_ndvi": 96,
   "services/postgis_mcp/postgis_mcp/server.py::_consultar": 73,
-  "src/geo_copilot/agents/data_agent/agent.py::DataAgent._process_impl": 125,
   "src/geo_copilot/agents/data_agent/catalogo.py::CatalogoMixin.profile_dataset": 61,
   "src/geo_copilot/agents/data_agent/discovery.py::DiscoveryAgent.discover": 95,
   "src/geo_copilot/agents/data_agent/entidades.py::EntidadesMixin.list_available_entities": 71,
