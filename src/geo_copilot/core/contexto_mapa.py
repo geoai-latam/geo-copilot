@@ -168,7 +168,7 @@ def _respuesta_mapa(resp: dict, layers: list[dict], pt: dict | None) -> str:
             "continúa con esa respuesta.")
 
 
-def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912, PLR0915
+def format_map_context(map_context: dict | None) -> str:
     """Formato del estado del MAPA que el usuario tiene en pantalla (Fase A).
 
     A diferencia de ``format_active_layer_context`` (que se reconstruye
@@ -184,8 +184,21 @@ def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912,
     if not map_context:
         return ""
 
-    lines: list[str] = []
     layers = map_context.get("layers") or []
+    lines = _lineas_de_capas(layers)
+    from geo_copilot.core.alcance import alcance_del_mensaje
+
+    lines.extend(alcance_del_mensaje(map_context, layers))
+    lines += _menciones_y_acciones(map_context, layers)
+    lines += _lo_senalado(map_context, layers)
+    lines += _vistas_y_zona(map_context, layers)
+    lines += _avisos(layers, hay_contexto=bool(lines))
+    return "\n".join(lines)
+
+
+def _lineas_de_capas(layers: list[dict]) -> list[str]:
+    """Las capas del mapa (todas; con detalle hasta un tope) y la selección como una capa más."""
+    lines: list[str] = []
     if layers:
         lines.append("CAPAS EN EL MAPA (el usuario las tiene cargadas AHORA; en orden de dibujo, "
                      "la primera queda ABAJO y la última ENCIMA):")
@@ -237,11 +250,12 @@ def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912,
             f"elemento(s) SELECCIONADOS por el usuario en [{lyr.get('id')}] (por {sel.get('origin', '?')}); "
             f"{lyr.get('geometry_type') or '?'}; mismos campos.")
         break
+    return lines
 
-    from geo_copilot.core.alcance import alcance_del_mensaje
 
-    lines.extend(alcance_del_mensaje(map_context, layers))
-
+def _menciones_y_acciones(map_context: dict, layers: list[dict]) -> list[str]:
+    """Lo que el usuario mencionó con @ y lo que se hizo en el mapa desde la última respuesta."""
+    lines: list[str] = []
     menciones = [m for m in (map_context.get("menciones") or []) if isinstance(m, dict)]
     if menciones:
         # FH.4: el usuario ELIGIÓ estas referencias de una lista (`@`): no hay nada que
@@ -260,7 +274,12 @@ def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912,
         if len(acciones) > 15:
             lines.append(f"  (… {len(acciones) - 15} acciones anteriores no se listan; estas son las últimas 15)")
         lines.extend(_accion(a) for a in acciones[-15:])
+    return lines
 
+
+def _lo_senalado(map_context: dict, layers: list[dict]) -> list[str]:
+    """La feature seleccionada, el punto marcado y lo que el usuario respondió en el mapa."""
+    lines: list[str] = []
     sel = map_context.get("selected_feature")
     if sel and sel.get("properties"):
         props = sel["properties"]
@@ -275,13 +294,15 @@ def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912,
             f"PUNTO MARCADO por el usuario en el mapa (su «aquí»): "
             f"lon {pt['lon']:.6f}, lat {pt['lat']:.6f} (EPSG:4326)"
         )
-
-
     resp = map_context.get("respuesta_mapa")
     if isinstance(resp, dict):
         lines.append(_respuesta_mapa(resp, layers, pt))
+    return lines
 
-    # FH.10: vistas guardadas, comparación con cortina y control de tiempo (lo que el usuario ve)
+
+def _vistas_y_zona(map_context: dict, layers: list[dict]) -> list[str]:
+    """FH.10: vistas guardadas, comparación con cortina, control de tiempo; y la zona visible."""
+    lines: list[str] = []
     vistas = [v for v in (map_context.get("vistas") or []) if isinstance(v, dict)]
     if vistas:
         lines.append("VISTAS GUARDADAS (marcadores del usuario; para ir a una: zoom_to con su bbox): " + "; ".join(
@@ -305,7 +326,12 @@ def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912,
             f"ZONA VISIBLE (bbox {vp.get('crs', 'EPSG:4326')}): "
             f"[{', '.join(f'{x:.4f}' for x in b)}]"
         )
+    return lines
 
+
+def _avisos(layers: list[dict], hay_contexto: bool) -> list[str]:
+    """Hechos que el modelo no puede deducir: no ve píxeles, y cómo resolver «esta capa», «aquí»…"""
+    lines: list[str] = []
     if any(str(lyr.get("kind") or "").startswith(("raster", "arcgis", "wms")) for lyr in layers[:10]):
         # Un HECHO que el modelo no puede deducir: ve la descripción de la capa,
         # no sus píxeles (V5 F4: «el NDVI aquí» respondido con la media de la zona).
@@ -314,11 +340,11 @@ def format_map_context(map_context: dict | None) -> str:  # noqa: C901, PLR0912,
             "Su valor en un punto o en una zona solo se conoce MIDIÉNDOLO con una "
             "herramienta (la que lo produjo, según su origen)."
         )
-    if lines:
+    if hay_contexto or lines:
         lines.append(
             "  - IMPORTANTE: cuando el usuario diga \"esta capa\", \"esto\", "
             "\"el predio\", \"en esta zona\" / \"en la zona visible\" (el área que se ve), \"aquí\" (el punto marcado), "
             "\"lo que dibujé\" (una capa DIBUJADA por el usuario), resuélvelo contra lo de arriba; "
             "no vuelvas a la BD ni busques fuera si ya está cargado."
         )
-    return "\n".join(lines)
+    return lines

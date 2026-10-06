@@ -6,7 +6,7 @@ Salió de `nodes/data_agent.py` (F4 del plan de calidad: data_agent.py tenía 63
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from geo_copilot.core.error_sanitizer import sanitize_error
 from geo_copilot.core.logging import get_logger
@@ -94,6 +94,47 @@ async def _handle_external_search(
     conversation_history: list[dict] | None = None,
 ) -> dict:
     """Búsqueda en fuentes externas (ArcGIS / Socrata catalog)."""
+    response, fallo = await _buscar(graph, query, session_id, session_region, conversation_history)
+    if fallo is not None:
+        return fallo
+
+    if not (response.success and response.data):
+        return {
+            "current_agent": "data_agent",
+            "error": response.message or "Error en búsqueda externa",
+            "messages": [_msg(f"Error: {response.message}", success=False)],
+        }
+
+    search_results = response.data.get("search_results", {})
+    status = search_results.get("status", "")
+
+    if status == "service_selected":
+        elegido = await _servicio_elegido(search_results)
+        if elegido is not None:
+            return elegido
+
+    sin_servicios = _sin_servicios(status, search_results, query)
+    if sin_servicios is not None:
+        return sin_servicios
+
+    # ``services_found`` (con o sin HITL todavía sin respuesta).
+    if status == "services_found" or search_results.get("services"):
+        return await _servicios_encontrados(graph, query, search_results)
+
+    # Fallback.
+    return {
+        "current_agent": "data_agent",
+        "final_response": (
+            f"Búsqueda completada: "
+            f"{search_results.get('message', 'Sin resultados específicos')}"
+        ),
+        "messages": [_msg("Búsqueda completada", success=True, data=search_results)],
+    }
+
+
+async def _buscar(graph: GeoAgentGraph, query: str, session_id: str, session_region: str | None,
+                  conversation_history: list[dict] | None) -> tuple[Any, dict | None]:
+    """(respuesta del DataAgent, None) o (None, el estado de error si la búsqueda ni se pudo hacer)."""
     try:
         response = await graph.data_agent.process(
             query=query,
@@ -117,70 +158,66 @@ async def _handle_external_search(
             # diciendo «no hay vías de Bogotá en los portales» cuando la búsqueda ni se había hecho.
             logger.warning(f"[DataAgent] búsqueda en ArcGIS no disponible: {exc}")
             msg = (f"La búsqueda en ArcGIS no se pudo hacer (no es que no haya resultados): {exc}")
-            return {"current_agent": "data_agent", "error": msg, "messages": [_msg(msg, success=False)]}
+            return None, {"current_agent": "data_agent", "error": msg, "messages": [_msg(msg, success=False)]}
         msg = sanitize_error(
             exc, context="data_agent.external_search",
             user_message="No se pudo completar la búsqueda externa. Inténtalo de nuevo.")
-        return {
+        return None, {
             "current_agent": "data_agent",
             "error": msg,
             "messages": [_msg(msg, success=False)],
         }
+    return response, None
 
-    if not (response.success and response.data):
-        return {
-            "current_agent": "data_agent",
-            "error": response.message or "Error en búsqueda externa",
-            "messages": [_msg(f"Error: {response.message}", success=False)],
-        }
 
-    search_results = response.data.get("search_results", {})
-    status = search_results.get("status", "")
+async def _servicio_elegido(search_results: dict) -> dict | None:
+    """Servicio seleccionado vía HITL → fetch automático (None si no trae URL)."""
+    selected_service = search_results.get("selected_service", {})
+    service_url = search_results.get("url") or selected_service.get("url")
+    if service_url:
+        service_name = selected_service.get("name", "servicio")
+        # MapServer / ImageServer → capa imagery (no GeoJSON).
+        kind = _is_imagery_url(service_url)
+        if kind:
+            return await _build_imagery_state(service_url, service_name, kind)
 
-    # Servicio seleccionado vía HITL → fetch automático.
-    if status == "service_selected":
-        selected_service = search_results.get("selected_service", {})
-        service_url = search_results.get("url") or selected_service.get("url")
-        if service_url:
+        geojson, hechos, error_msg = await _traer_capa(service_url)
+        if geojson is not None:
+            feature_count = len(geojson.get("features", []))
             service_name = selected_service.get("name", "servicio")
-            # MapServer / ImageServer → capa imagery (no GeoJSON).
-            kind = _is_imagery_url(service_url)
-            if kind:
-                return await _build_imagery_state(service_url, service_name, kind)
-
-            geojson, hechos, error_msg = await _traer_capa(service_url)
-            if geojson is not None:
-                feature_count = len(geojson.get("features", []))
-                service_name = selected_service.get("name", "servicio")
-                logger.info(f"[DataAgent] Data fetched: {feature_count} features")
-                return {
-                    "current_agent": "data_agent",
-                    "raw_data": geojson.get("features", []),
-                    "geojson": geojson,
-                    "external_geojson": geojson,
-                    "external_source_url": service_url,
-                    "external_source_name": service_name,
-                    "has_external_data": True,
-                    # Limpiar found_services: la selección ya se consumió.
-                    "found_services": None,
-                    "messages": [_msg(
-                        f"Datos obtenidos de {service_name}: {_resumen(feature_count, hechos)}",
-                        success=True,
-                        data={
-                            "source": service_url,
-                            "service_name": service_name,
-                            "feature_count": feature_count,
-                            "total_en_servicio": hechos.get("total_en_servicio"),
-                            "external": True,
-                        },
-                    )],
-                }
+            logger.info(f"[DataAgent] Data fetched: {feature_count} features")
             return {
                 "current_agent": "data_agent",
-                "final_response": f"Error al obtener datos del servicio: {error_msg}",
-                "messages": [_msg(f"Error: {error_msg}", success=False)],
+                "raw_data": geojson.get("features", []),
+                "geojson": geojson,
+                "external_geojson": geojson,
+                "external_source_url": service_url,
+                "external_source_name": service_name,
+                "has_external_data": True,
+                # Limpiar found_services: la selección ya se consumió.
+                "found_services": None,
+                "messages": [_msg(
+                    f"Datos obtenidos de {service_name}: {_resumen(feature_count, hechos)}",
+                    success=True,
+                    data={
+                        "source": service_url,
+                        "service_name": service_name,
+                        "feature_count": feature_count,
+                        "total_en_servicio": hechos.get("total_en_servicio"),
+                        "external": True,
+                    },
+                )],
             }
+        return {
+            "current_agent": "data_agent",
+            "final_response": f"Error al obtener datos del servicio: {error_msg}",
+            "messages": [_msg(f"Error: {error_msg}", success=False)],
+        }
+    return None
 
+
+def _sin_servicios(status: str, search_results: dict, query: str) -> dict | None:
+    """Catálogo vacío, sin resultados o búsqueda cancelada: lo que se dice en cada caso."""
     if status == "catalog_empty":
         return {
             "current_agent": "data_agent",
@@ -214,46 +251,38 @@ async def _handle_external_search(
                                else "Búsqueda cancelada por el usuario."),
             "messages": [_msg("Cancelado", success=True, data={"search_query": query})],
         }
+    return None
 
-    # ``services_found`` (con o sin HITL todavía sin respuesta).
-    if status == "services_found" or search_results.get("services"):
-        services = search_results.get("services", [])
-        formatted_results = [
-            {
-                "name": svc.get("name", "Sin nombre"),
-                "description": (svc.get("description") or "")[:150],
-                "url": svc.get("url", ""),
-                "type": svc.get("type", "ArcGIS"),
-                "layer_count": svc.get("layer_count", 0),
-                # rama arcgis-busqueda: sin estos hechos el LLM elegía «el 1» a ciegas
-                **{k: svc.get(k) for k in ("owner", "org", "credits", "views", "completeness",
-                                           "single_layer", "layer_id", "modified") if svc.get(k) not in (None, "")},
-            }
-            for svc in services[:10]
-        ]
-        return {
-            "current_agent": "data_agent",
-            "final_response": await juzgar_busqueda(graph, query, formatted_results, format_search_results(
-                query,
-                formatted_results,
-                place_mismatch=bool(search_results.get("place_mismatch")),
-                place_queried=search_results.get("place_queried"),
-            )),
-            "found_services": formatted_results,
-            "new_search_executed": True,
-            "messages": [_msg(
-                f"Encontrados {len(services)} servicios",
-                success=True,
-                data={"search_query": query, "results": formatted_results, "total": len(services)},
-            )],
+
+async def _servicios_encontrados(graph: GeoAgentGraph, query: str, search_results: dict) -> dict:
+    """Los servicios hallados (con sus hechos) y el juicio del LLM sobre ellos."""
+    services = search_results.get("services", [])
+    formatted_results = [
+        {
+            "name": svc.get("name", "Sin nombre"),
+            "description": (svc.get("description") or "")[:150],
+            "url": svc.get("url", ""),
+            "type": svc.get("type", "ArcGIS"),
+            "layer_count": svc.get("layer_count", 0),
+            # rama arcgis-busqueda: sin estos hechos el LLM elegía «el 1» a ciegas
+            **{k: svc.get(k) for k in ("owner", "org", "credits", "views", "completeness",
+                                       "single_layer", "layer_id", "modified") if svc.get(k) not in (None, "")},
         }
-
-    # Fallback.
+        for svc in services[:10]
+    ]
     return {
         "current_agent": "data_agent",
-        "final_response": (
-            f"Búsqueda completada: "
-            f"{search_results.get('message', 'Sin resultados específicos')}"
-        ),
-        "messages": [_msg("Búsqueda completada", success=True, data=search_results)],
+        "final_response": await juzgar_busqueda(graph, query, formatted_results, format_search_results(
+            query,
+            formatted_results,
+            place_mismatch=bool(search_results.get("place_mismatch")),
+            place_queried=search_results.get("place_queried"),
+        )),
+        "found_services": formatted_results,
+        "new_search_executed": True,
+        "messages": [_msg(
+            f"Encontrados {len(services)} servicios",
+            success=True,
+            data={"search_query": query, "results": formatted_results, "total": len(services)},
+        )],
     }

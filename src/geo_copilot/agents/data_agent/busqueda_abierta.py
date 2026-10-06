@@ -37,7 +37,7 @@ class BusquedaAbiertaMixin:
         llm_client: LLMClient
         hitl_manager: HITLManager
 
-    async def search_open_data(  # noqa: C901
+    async def search_open_data(
         self, search_query: str, region: str | None = None,
         conversation_history: list[dict] | None = None,
     ) -> dict[str, Any]:
@@ -70,114 +70,17 @@ class BusquedaAbiertaMixin:
             conversation_history=conversation_history,
         )
 
-        # Si el catálogo está vacío, informar
-        if search_results.get("catalog_empty"):
-            return {
-                "status": "catalog_empty",
-                "message": "El catálogo ArcGIS está vacío. Se debe ejecutar la indexación primero.",
-                "action_required": "refresh_catalog"
-            }
-
-        # Si no hay resultados
-        if not search_results.get("services"):
-            return {
-                "status": "no_results",
-                "message": f"No se encontraron servicios para: '{search_query}'",
-                "search_query": search_query
-            }
+        sin_resultados = _sin_resultados(search_query, search_results)
+        if sin_resultados is not None:
+            return sin_resultados
 
         # Presentar opciones al usuario vía HITL
         services = search_results["services"]
 
-        # Formatear opciones para mostrar al usuario
-        options_text = "\n".join([
-            f"  {svc['id']}. {svc['name']} ({svc['type']}) - {svc['layer_count']} capas"
-            for svc in services
-        ])
-
         if _agente().settings.hitl_enabled and self.hitl_manager:
-            # Transparentar QUE se buscó: la query efectiva (limpia) y los
-            # filtros que el agente derivó. Antes el HITL solo mostraba el
-            # texto crudo del usuario y no se entendía por qué los resultados
-            # eran los que eran.
-            hub_query_info = search_results.get("query", {}) or {}
-            effective_q = hub_query_info.get("text_query") or search_query
-            hub_params = hub_query_info.get("hub_params") or {}
-            param_summary_parts = [f"q='{effective_q}'"]
-            if hub_params.get("tags_any"):
-                param_summary_parts.append(f"tags={hub_params['tags_any']}")
-            if hub_params.get("service_types"):
-                param_summary_parts.append(f"tipo={hub_params['service_types']}")
-            if hub_params.get("owner_any"):
-                param_summary_parts.append(f"owner={len(hub_params['owner_any'])} cuentas")
-            if hub_params.get("bbox"):
-                param_summary_parts.append("bbox=sí")
-            param_summary = " | ".join(param_summary_parts)
-
-            description = (
-                f"Búsqueda en ArcGIS (Hub y ArcGIS Online): {param_summary}. "
-                f"Encontré {len(services)} servicio(s)."
-            )
-
-            # Rama arcgis-busqueda (V5): el panel salía vacío («0 caracteres») y se aprobaba sin ver qué
-            # se había encontrado. Lo que se muestra es la lista con lo que permite juzgarla.
-            def _linea(svc: dict) -> str:
-                quien = svc.get("credits") or svc.get("org") or svc.get("owner") or "organización desconocida"
-                extra = [str(svc.get("type") or "")]
-                if isinstance(svc.get("views"), int):
-                    extra.append(f"{svc['views']:,} vistas".replace(",", "."))
-                if svc.get("modified"):
-                    extra.append(str(svc["modified"])[:10])
-                return f"{svc['id']}. {svc['name']}\n   {quien} · " + " · ".join(e for e in extra if e)
-
-            vista = "\n".join(_linea(svc) for svc in services)
-
-            hitl_response = await self.hitl_manager.request_approval(
-                action_type=HITLActionType.EXTERNAL_API,
-                title=f"ArcGIS · {len(services)} resultados",
-                description=description,
-                preview=vista,
-                details={
-                    "options": options_text,
-                    "services": services,
-                    "search_query_original": search_query,
-                    "search_query_effective": effective_q,
-                    "search_params": hub_params,
-                    "instruction": "Ingrese el número del servicio a cargar (ej: 1) o 'cancelar'",
-                },
-                risks=[
-                    "Se realizará una consulta al servicio seleccionado",
-                ],
-                session_id=_session_id_ctx.get()
-            )
-
-            if hitl_response.status not in (HITLStatus.APPROVED, HITLStatus.MODIFIED):
-                caducada = hitl_response.status == HITLStatus.EXPIRED
-                return {
-                    "status": "cancelled",
-                    "caducada": caducada,
-                    "message": ("La aprobación de la búsqueda caducó sin respuesta" if caducada
-                                else "Búsqueda cancelada por el usuario"),
-                    "services_found": services
-                }
-
-            # Obtener selección del usuario desde el feedback
-            selection = hitl_response.feedback
-            if selection and selection.isdigit():
-                selected_idx = int(selection) - 1
-                if 0 <= selected_idx < len(services):
-                    selected_service = services[selected_idx]
-
-                    # Cargar el servicio seleccionado
-                    logger.info(f"Usuario seleccionó: {selected_service['name']}")
-
-                    return {
-                        "status": "service_selected",
-                        "selected_service": selected_service,
-                        "message": f"Servicio seleccionado: {selected_service['name']}",
-                        "next_action": "fetch_data",
-                        "url": selected_service["url"]
-                    }
+            elegido = await self._elegir_con_hitl(search_query, search_results, services)
+            if elegido is not None:
+                return elegido
 
         # Sin HITL, retornar lista de servicios
         logger.info(f"Search completed for query: '{search_query}', found {len(services)} services")
@@ -193,6 +96,51 @@ class BusquedaAbiertaMixin:
             "place_mismatch": search_results.get("place_mismatch", False),
             "place_queried": search_results.get("place_queried"),
         }
+
+    async def _elegir_con_hitl(self, search_query: str, search_results: dict[str, Any],
+                               services: list[dict]) -> dict[str, Any] | None:
+        """La persona ve lo encontrado y elige (o cancela); None si aprobó sin elegir uno válido."""
+        # Formatear opciones para mostrar al usuario
+        options_text = "\n".join([
+            f"  {svc['id']}. {svc['name']} ({svc['type']}) - {svc['layer_count']} capas"
+            for svc in services
+        ])
+
+        effective_q, hub_params, description = _resumen_de_busqueda(search_query, search_results, len(services))
+        # Rama arcgis-busqueda (V5): el panel salía vacío («0 caracteres») y se aprobaba sin ver qué
+        # se había encontrado. Lo que se muestra es la lista con lo que permite juzgarla.
+        vista = "\n".join(_linea(svc) for svc in services)
+
+        hitl_response = await self.hitl_manager.request_approval(
+            action_type=HITLActionType.EXTERNAL_API,
+            title=f"ArcGIS · {len(services)} resultados",
+            description=description,
+            preview=vista,
+            details={
+                "options": options_text,
+                "services": services,
+                "search_query_original": search_query,
+                "search_query_effective": effective_q,
+                "search_params": hub_params,
+                "instruction": "Ingrese el número del servicio a cargar (ej: 1) o 'cancelar'",
+            },
+            risks=[
+                "Se realizará una consulta al servicio seleccionado",
+            ],
+            session_id=_session_id_ctx.get()
+        )
+
+        if hitl_response.status not in (HITLStatus.APPROVED, HITLStatus.MODIFIED):
+            caducada = hitl_response.status == HITLStatus.EXPIRED
+            return {
+                "status": "cancelled",
+                "caducada": caducada,
+                "message": ("La aprobación de la búsqueda caducó sin respuesta" if caducada
+                            else "Búsqueda cancelada por el usuario"),
+                "services_found": services
+            }
+
+        return _servicio_elegido(hitl_response.feedback, services)
 
     def format_search_results(self, search_query: str, results: list[dict]) -> str:
         """
@@ -252,3 +200,83 @@ class BusquedaAbiertaMixin:
                 return url
 
         return None
+
+
+def _sin_resultados(search_query: str, search_results: dict[str, Any]) -> dict[str, Any] | None:
+    """Catálogo vacío o búsqueda sin servicios: lo que se responde; None si hubo servicios."""
+    # Si el catálogo está vacío, informar
+    if search_results.get("catalog_empty"):
+        return {
+            "status": "catalog_empty",
+            "message": "El catálogo ArcGIS está vacío. Se debe ejecutar la indexación primero.",
+            "action_required": "refresh_catalog"
+        }
+
+    # Si no hay resultados
+    if not search_results.get("services"):
+        return {
+            "status": "no_results",
+            "message": f"No se encontraron servicios para: '{search_query}'",
+            "search_query": search_query
+        }
+    return None
+
+
+def _resumen_de_busqueda(search_query: str, search_results: dict[str, Any], n: int,
+                         ) -> tuple[str, dict, str]:
+    """(query efectiva, filtros del Hub, descripción) de lo que se buscó."""
+    # Transparentar QUE se buscó: la query efectiva (limpia) y los
+    # filtros que el agente derivó. Antes el HITL solo mostraba el
+    # texto crudo del usuario y no se entendía por qué los resultados
+    # eran los que eran.
+    hub_query_info = search_results.get("query", {}) or {}
+    effective_q = hub_query_info.get("text_query") or search_query
+    hub_params = hub_query_info.get("hub_params") or {}
+    param_summary_parts = [f"q='{effective_q}'"]
+    if hub_params.get("tags_any"):
+        param_summary_parts.append(f"tags={hub_params['tags_any']}")
+    if hub_params.get("service_types"):
+        param_summary_parts.append(f"tipo={hub_params['service_types']}")
+    if hub_params.get("owner_any"):
+        param_summary_parts.append(f"owner={len(hub_params['owner_any'])} cuentas")
+    if hub_params.get("bbox"):
+        param_summary_parts.append("bbox=sí")
+    param_summary = " | ".join(param_summary_parts)
+
+    description = (
+        f"Búsqueda en ArcGIS (Hub y ArcGIS Online): {param_summary}. "
+        f"Encontré {n} servicio(s)."
+    )
+    return effective_q, hub_params, description
+
+
+def _linea(svc: dict) -> str:
+    """Un servicio con lo que permite juzgarlo: quién lo publica, tipo, vistas y fecha."""
+    quien = svc.get("credits") or svc.get("org") or svc.get("owner") or "organización desconocida"
+    extra = [str(svc.get("type") or "")]
+    if isinstance(svc.get("views"), int):
+        extra.append(f"{svc['views']:,} vistas".replace(",", "."))
+    if svc.get("modified"):
+        extra.append(str(svc["modified"])[:10])
+    return f"{svc['id']}. {svc['name']}\n   {quien} · " + " · ".join(e for e in extra if e)
+
+
+def _servicio_elegido(selection: str | None, services: list[dict]) -> dict[str, Any] | None:
+    """El servicio que la persona eligió por su número; None si no eligió uno válido."""
+    # Obtener selección del usuario desde el feedback
+    if selection and selection.isdigit():
+        selected_idx = int(selection) - 1
+        if 0 <= selected_idx < len(services):
+            selected_service = services[selected_idx]
+
+            # Cargar el servicio seleccionado
+            logger.info(f"Usuario seleccionó: {selected_service['name']}")
+
+            return {
+                "status": "service_selected",
+                "selected_service": selected_service,
+                "message": f"Servicio seleccionado: {selected_service['name']}",
+                "next_action": "fetch_data",
+                "url": selected_service["url"]
+            }
+    return None
