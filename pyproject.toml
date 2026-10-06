@@ -38,7 +38,7 @@ dependencies = [
     # salte a un major con APIs incompatibles. Los caps abarcan lo instalado
     # (openai 2.x, anthropic 0.x) y bloquean el siguiente major breaking.
     "openai>=1.6.0,<4",
-    "anthropic>=0.60.0,<1",  # tool use + bloques thinking
+    "anthropic>=0.60.0,<2",  # tool use + bloques thinking
 
     # LangGraph for orchestration. RUN: cap de major — langgraph rompe seguido
     # entre versiones (StateGraph/interrupt/checkpointer). Abarca 1.x (instalado).
