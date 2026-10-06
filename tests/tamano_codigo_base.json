@@ -58,7 +58,6 @@
   "src/geo_copilot/api/routes/tiles.py::get_tile": 77,
   "src/geo_copilot/api/websocket.py::handle_approval": 91,
   "src/geo_copilot/api/websocket.py::websocket_endpoint": 133,
-  "src/geo_copilot/core/contexto_mapa.py::format_map_context": 154,
   "src/geo_copilot/core/security/url_validator.py::URLValidator.validate_url": 90,
   "src/geo_copilot/orchestrator/agent_hub.py::AgentHub.call": 62,
   "src/geo_copilot/orchestrator/bloque_workspace.py::bloque_workspace": 81,
