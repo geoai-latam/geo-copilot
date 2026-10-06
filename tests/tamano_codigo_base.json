@@ -14,7 +14,7 @@
   "src/geo_copilot/agents/data_agent/agent.py::DataAgent._process_impl": 125,
   "src/geo_copilot/agents/data_agent/busqueda_abierta.py::BusquedaAbiertaMixin.search_open_data": 156,
   "src/geo_copilot/agents/data_agent/catalogo.py::CatalogoMixin.profile_dataset": 61,
-  "src/geo_copilot/agents/data_agent/discovery.py::DiscoveryAgent.discover": 227,
+  "src/geo_copilot/agents/data_agent/discovery.py::DiscoveryAgent.discover": 95,
   "src/geo_copilot/agents/data_agent/entidades.py::EntidadesMixin.list_available_entities": 71,
   "src/geo_copilot/agents/data_agent/entidades.py::EntidadesMixin.lookup_entity": 120,
   "src/geo_copilot/agents/data_agent/hub_items.py::_score": 69,
