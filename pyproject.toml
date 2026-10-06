@@ -38,7 +38,7 @@ dependencies = [
     # salte a un major con APIs incompatibles. Los caps abarcan lo instalado
     # (openai 2.x, anthropic 0.x) y bloquean el siguiente major breaking.
     "openai>=1.6.0,<4",
-    "anthropic>=0.60.0,<1",  # tool use + bloques thinking
+    "anthropic>=0.60.0,<2",  # tool use + bloques thinking
 
     # LangGraph for orchestration. RUN: cap de major — langgraph rompe seguido
     # entre versiones (StateGraph/interrupt/checkpointer). Abarca 1.x (instalado).
@@ -119,7 +119,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
-    "mypy==2.3.1",  # fijado como ruff: una versión nueva no debe poner el CI en rojo sola
+    "mypy==2.4.0",  # fijado como ruff: una versión nueva no debe poner el CI en rojo sola
     # Fijado (#15): CI instalaba la última y el pre-commit la v0.6.9 — dos
     # versiones de ruff opinando distinto sobre el mismo código. Subir aquí y
     # en .pre-commit-config.yaml a la vez.
@@ -151,7 +151,7 @@ imagery = [
     "mcp>=1.28,<2",
     "rasterio>=1.4,<2",
     "rio-tiler>=9,<10",
-    "pillow>=10,<12",
+    "pillow>=10,<13",
 ]
 
 [project.scripts]
