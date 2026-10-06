@@ -199,7 +199,18 @@ Responde SOLO con JSON: {{"is_multi_step": true}} o {{"is_multi_step": false}}""
         """
         system_prompt = self._build_planner_prompt(context)
         user_prompt = f'CONSULTA DEL USUARIO: "{query}"'
+        result = await self._pedir_plan(system_prompt, user_prompt)
+        steps = self._pasos(result)
 
+        return ExecutionPlan(
+            is_multi_step=len(steps) > 1,
+            reasoning=result.get("reasoning", "Plan generado automáticamente"),
+            steps=steps,
+            original_query=query,
+        )
+
+    async def _pedir_plan(self, system_prompt: str, user_prompt: str) -> dict:
+        """El plan del LLM con su contenido validado (re-pregunta UNA vez; si no, ValueError)."""
         # R2.1: sin fallback adivinador. A3: el plan llega como una LLAMADA a la
         # función `create_plan` con schema (structured outputs) — la FORMA la
         # garantiza structured_call (con su propio re-intento); el CONTENIDO
@@ -207,47 +218,7 @@ Responde SOLO con JSON: {{"is_multi_step": true}} o {{"is_multi_step": false}}""
         # inválido, se RE-PREGUNTA UNA vez adjuntando el problema; si vuelve a
         # fallar, el planner falla HONESTO (ValueError → success=False).
         from geo_copilot.core.structured_output import structured_call
-        plan_parameters = {
-            "type": "object",
-            "properties": {
-                "reasoning": {
-                    "type": "string",
-                    "description": "Por qué el plan tiene estos pasos, en este orden.",
-                },
-                "steps": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "step_id": {"type": "string"},
-                            "description": {"type": "string"},
-                            "query_fragment": {
-                                "type": "string",
-                                "description": "Instrucción autónoma para el agente que ejecuta el paso.",
-                            },
-                            "action_type": {
-                                "type": "string",
-                                "enum": sorted(VALID_ACTION_TYPES),
-                            },
-                            "depends_on": {
-                                "type": ["array", "null"],
-                                "items": {"type": "string"},
-                                "description": "step_ids de los que depende (null = el anterior).",
-                            },
-                            "service_number": {
-                                "type": ["integer", "null"],
-                                "description": "Solo select_service: el número (1..N) del servicio a cargar, "
-                                               "de la lista de servicios ya mostrada.",
-                            },
-                        },
-                        "required": ["description", "query_fragment", "action_type"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["steps", "reasoning"],
-            "additionalProperties": False,
-        }
+        plan_parameters = _esquema_del_plan()
         messages = [
             LLMMessage(role="system", content=system_prompt),
             LLMMessage(role="user", content=user_prompt),
@@ -289,9 +260,10 @@ Responde SOLO con JSON: {{"is_multi_step": true}} o {{"is_multi_step": false}}""
             raise ValueError(
                 f"El planificador no produjo un plan válido tras reintentar: {problem}"
             )
+        return result
 
-        # Construir plan desde respuesta (ya validada: steps>=1 y action_type
-        # dentro del vocabulario).
+    def _pasos(self, result: dict) -> list[PlanStep]:
+        """Los pasos del plan (ya validado: steps>=1 y action_type dentro del vocabulario)."""
         steps = []
         for i, step_data in enumerate(result.get("steps", [])):
             raw_deps = step_data.get("depends_on")
@@ -330,13 +302,7 @@ Responde SOLO con JSON: {{"is_multi_step": true}} o {{"is_multi_step": false}}""
             # Tras truncar, una depends_on a un paso eliminado queda huérfana;
             # blocked_dependencies (semántica "satisfecha") la trata como no
             # satisfecha → ese paso se salta honestamente en vez de correr mal.
-
-        return ExecutionPlan(
-            is_multi_step=len(steps) > 1,
-            reasoning=result.get("reasoning", "Plan generado automáticamente"),
-            steps=steps,
-            original_query=query,
-        )
+        return steps
 
     def _build_planner_prompt(self, context: dict) -> str:
         """Construir prompt del sistema para el planificador."""
@@ -400,6 +366,51 @@ Responde SOLO con JSON: {{"is_multi_step": true}} o {{"is_multi_step": false}}""
 # el constructor de ``GeoAgentGraph`` (instancia compatibilidad) y para
 # tests que aún ejercitan ``_normalize_plan``.
 # =============================================================================
+
+def _esquema_del_plan() -> dict:
+    """El schema de la función `create_plan` (la FORMA del plan; el contenido se valida aparte)."""
+    return {
+        "type": "object",
+        "properties": {
+            "reasoning": {
+                "type": "string",
+                "description": "Por qué el plan tiene estos pasos, en este orden.",
+            },
+            "steps": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "step_id": {"type": "string"},
+                        "description": {"type": "string"},
+                        "query_fragment": {
+                            "type": "string",
+                            "description": "Instrucción autónoma para el agente que ejecuta el paso.",
+                        },
+                        "action_type": {
+                            "type": "string",
+                            "enum": sorted(VALID_ACTION_TYPES),
+                        },
+                        "depends_on": {
+                            "type": ["array", "null"],
+                            "items": {"type": "string"},
+                            "description": "step_ids de los que depende (null = el anterior).",
+                        },
+                        "service_number": {
+                            "type": ["integer", "null"],
+                            "description": "Solo select_service: el número (1..N) del servicio a cargar, "
+                                           "de la lista de servicios ya mostrada.",
+                        },
+                    },
+                    "required": ["description", "query_fragment", "action_type"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["steps", "reasoning"],
+        "additionalProperties": False,
+    }
+
 
 def _entero(valor: Any) -> int | None:
     return valor if isinstance(valor, int) and not isinstance(valor, bool) else None

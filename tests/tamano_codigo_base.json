@@ -76,7 +76,6 @@
   "src/geo_copilot/orchestrator/nodes/step_finalizer.py::run": 74,
   "src/geo_copilot/orchestrator/nodes/step_router.py::run": 107,
   "src/geo_copilot/orchestrator/nodes/symbology.py::run": 98,
-  "src/geo_copilot/orchestrator/planner.py::PlannerAgent.generate_plan": 154,
   "src/geo_copilot/orchestrator/react_tools.py::_observe": 79,
   "src/geo_copilot/orchestrator/react_tools.py::_run_node": 62,
   "src/geo_copilot/platform/workspace/derivados.py::DerivadosMixin.crear_desde_sql": 94,
