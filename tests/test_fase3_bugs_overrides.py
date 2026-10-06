@@ -148,17 +148,13 @@ async def test_responder_sobrevive_fallo_de_insights():
 # R4.7 — capacidades en sync con el whitelist real
 # ---------------------------------------------------------------------------
 def test_router_capabilities_sin_intents_fantasma():
-    from geo_copilot.agents.router_agent.agent import RouterAgent
+    from geo_copilot.agents.router_agent.agent import _VALID_INTENTS, RouterAgent
 
     agent = RouterAgent(llm_client=MagicMock())
     announced = set(agent.get_capabilities()["intents"])
-    # El whitelist real vive en process(); lo extraemos del source para no
-    # duplicarlo a mano (si divergen, este test lo detecta).
-    src = inspect.getsource(RouterAgent)
-    m = re.search(r"valid_intents\s*=\s*\{([^}]+)\}", src)
-    assert m, "no encontré valid_intents en el source"
-    valid = set(re.findall(r'["\']([a-z_]+)["\']', m.group(1)))
-    assert announced <= valid, f"intents anunciados fuera del whitelist: {announced - valid}"
+    # El whitelist real es la constante del módulo que valida process() (si divergen, este test
+    # lo detecta).
+    assert announced <= _VALID_INTENTS, f"intents anunciados fuera del whitelist: {announced - _VALID_INTENTS}"
 
 
 # ---------------------------------------------------------------------------
