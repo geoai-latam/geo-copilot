@@ -54,7 +54,6 @@
   "src/geo_copilot/api/ciclo_vida.py::CicloVidaMixin.shutdown": 71,
   "src/geo_copilot/api/dependencies.py::AppState._do_initialize": 183,
   "src/geo_copilot/api/routes/approval.py::submit_approval": 79,
-  "src/geo_copilot/api/routes/discovery.py::load": 185,
   "src/geo_copilot/api/routes/metadata.py::get_entity_details_from_database": 72,
   "src/geo_copilot/api/routes/proxy.py::proxy_imagery": 77,
   "src/geo_copilot/api/routes/query.py::ejecutar_consulta": 111,
