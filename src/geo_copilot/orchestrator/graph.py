@@ -207,8 +207,13 @@ class GeoAgentGraph(NodosMixin, RutasMixin, ResultadoMixin):
         y el routing condicional decide si volver al loop o salir.
         """
         graph = StateGraph(GraphState)
+        self._agregar_nodos(graph)
+        self._aristas_de_enrutado(graph)
+        self._aristas_de_agentes(graph)
+        return graph
 
-        # Agregar nodos (agentes)
+    def _agregar_nodos(self, graph: StateGraph) -> None:
+        """Los nodos (agentes) del grafo."""
         graph.add_node("router", self._router_node)
         graph.add_node("planner", self._planner_node)
         # A2 (hybrid): el bucle ReAct como nodo del grafo — el router puede
@@ -224,6 +229,8 @@ class GeoAgentGraph(NodosMixin, RutasMixin, ResultadoMixin):
         graph.add_node("insights_agent", self._insights_agent_node)
         graph.add_node("responder", self._responder_node)
 
+    def _aristas_de_enrutado(self, graph: StateGraph) -> None:
+        """La entrada, el router y el bucle multi-paso (planner, step_router, step_finalizer)."""
         # Punto de entrada
         graph.set_entry_point("router")
 
@@ -276,6 +283,8 @@ class GeoAgentGraph(NodosMixin, RutasMixin, ResultadoMixin):
             }
         )
 
+    def _aristas_de_agentes(self, graph: StateGraph) -> None:
+        """Las salidas de cada agente hasta el responder y END."""
         # DataAgent → GISAgent (datos internos) | SymbologyAgent (datos
         # externos ya con geojson) | StepFinalizer (multi-step) | Responder.
         graph.add_conditional_edges(
@@ -327,8 +336,6 @@ class GeoAgentGraph(NodosMixin, RutasMixin, ResultadoMixin):
 
         # Responder → END
         graph.add_edge("responder", END)
-
-        return graph
 
     # =========================================================================
     # Nodos

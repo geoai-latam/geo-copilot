@@ -5,6 +5,7 @@ Especialista en descubrimiento, validación e integración de datos
 geoespaciales de múltiples fuentes (internas y externas).
 """
 
+from typing import Any
 
 from geo_copilot.agents.base import AgentResponse, BaseAgent
 from geo_copilot.core.config import settings
@@ -149,27 +150,76 @@ class DataAgent(CatalogoMixin, EntidadesMixin, BusquedaAbiertaMixin, BaseAgent):
 
         # Verificar si hay una acción específica en el contexto (del router)
         if context.get("action") == "search_external":
-            # Búsqueda externa directa (viene del router)
-            # IMPORTANTE: Usar el query original del usuario, NO keywords generados por LLM
-            search_query = context.get("search_query") or query
+            return await self._busqueda_directa(query, context)
 
-            logger.info(f"DataAgent: Direct external search with query: '{search_query}'")
+        system_prompt = self._prompt_de_intencion()
 
-            search_results = await self.search_open_data(
-                search_query=search_query,
-                region=context.get("session_region"),  # F2.2: override por sesión
-                conversation_history=context.get("conversation_history"),
-            )
+        messages = [
+            LLMMessage(role="system", content=system_prompt),
+            LLMMessage(role="user", content=query)
+        ]
+
+        try:
+            response = await self.llm_client.chat(messages)
+            # Si el LLM no devuelve JSON parseable, NO asumimos
+            # intent="search_internal" silenciosamente — eso ejecutaba una
+            # búsqueda interna que el usuario nunca pidió. Mejor fallar.
+            analysis = parse_json_from_llm(response.content, None)
+            if not isinstance(analysis, dict) or "intent" not in analysis:
+                logger.error(
+                    f"[DataAgent] LLM no devolvió JSON válido. "
+                    f"Raw response: {response.content[:300]}"
+                )
+                return AgentResponse(
+                    success=False,
+                    message="No pude interpretar la respuesta del LLM. Reformula tu consulta.",
+                    data={"error": "invalid_llm_response", "raw": response.content[:200]},
+                )
+
+            results = await self._ejecutar_intencion(analysis, context)
 
             return AgentResponse(
                 success=True,
-                message=f"External search completed for: '{search_query}'",
+                message=f"Data search completed for: {analysis.get('data_type', 'unknown')}",
                 data={
-                    "search_results": search_results,
-                    "search_query": search_query
+                    "analysis": analysis,
+                    "results": results
                 }
             )
 
+        except Exception as e:
+            logger.error(f"Error processing data request: {e}", exc_info=True)
+            return AgentResponse(
+                success=False,
+                message=f"Error processing request: {str(e)}",
+                data=None
+            )
+
+    async def _busqueda_directa(self, query: str, context: dict) -> AgentResponse:
+        """Búsqueda externa directa (viene del router), con el query original del usuario."""
+        # Búsqueda externa directa (viene del router)
+        # IMPORTANTE: Usar el query original del usuario, NO keywords generados por LLM
+        search_query = context.get("search_query") or query
+
+        logger.info(f"DataAgent: Direct external search with query: '{search_query}'")
+
+        search_results = await self.search_open_data(
+            search_query=search_query,
+            region=context.get("session_region"),  # F2.2: override por sesión
+            conversation_history=context.get("conversation_history"),
+        )
+
+        return AgentResponse(
+            success=True,
+            message=f"External search completed for: '{search_query}'",
+            data={
+                "search_results": search_results,
+                "search_query": search_query
+            }
+        )
+
+    def _prompt_de_intencion(self) -> str:
+        """El prompt con que el LLM analiza la intención (con el contexto semántico si lo hay)."""
         # Obtener contexto semántico si está disponible
         semantic_context = ""
         if self.semantic_layer:
@@ -198,71 +248,35 @@ Responde en formato JSON con:
     }},
     "reasoning": "explicación breve"
 }}"""
+        return system_prompt
 
-        messages = [
-            LLMMessage(role="system", content=system_prompt),
-            LLMMessage(role="user", content=query)
-        ]
+    async def _ejecutar_intencion(self, analysis: dict, context: dict) -> Any:
+        """Ejecutar según la intención (sin default — el LLM ya devolvió una)."""
+        intent = analysis["intent"]
+        filters = analysis.get("filters", {})
 
-        try:
-            response = await self.llm_client.chat(messages)
-            # Si el LLM no devuelve JSON parseable, NO asumimos
-            # intent="search_internal" silenciosamente — eso ejecutaba una
-            # búsqueda interna que el usuario nunca pidió. Mejor fallar.
-            analysis = parse_json_from_llm(response.content, None)
-            if not isinstance(analysis, dict) or "intent" not in analysis:
-                logger.error(
-                    f"[DataAgent] LLM no devolvió JSON válido. "
-                    f"Raw response: {response.content[:300]}"
-                )
-                return AgentResponse(
-                    success=False,
-                    message="No pude interpretar la respuesta del LLM. Reformula tu consulta.",
-                    data={"error": "invalid_llm_response", "raw": response.content[:200]},
-                )
-
-            # Ejecutar según la intención (sin default — el LLM ya devolvió uno)
-            intent = analysis["intent"]
-            filters = analysis.get("filters", {})
-
-            if intent == "search_internal":
-                # R4.1: la firma acepta keywords (lista), no search_query — el
-                # kwarg inexistente producía TypeError en runtime cada vez que
-                # el LLM elegía search_internal (tragado por el except amplio).
-                _sq = analysis.get("search_query", "") or ""
-                results = await self.search_internal_catalog(
-                    keywords=_sq.split() if _sq else None,
-                    entities=analysis.get("suggested_entities", [])
-                )
-            elif intent == "search_external":
-                results = await self.search_open_data(
-                    search_query=analysis.get("search_query", ""),
-                    region=context.get("session_region"),  # F2.2: override por sesión
-                    conversation_history=context.get("conversation_history"),
-                )
-            elif intent == "profile":
-                results = {"message": "Profile functionality - specify dataset to profile"}
-            elif intent == "validate":
-                results = {"message": "Validation functionality - specify dataset to validate"}
-            else:
-                results = {"message": f"Unknown intent: {intent}"}
-
-            return AgentResponse(
-                success=True,
-                message=f"Data search completed for: {analysis.get('data_type', 'unknown')}",
-                data={
-                    "analysis": analysis,
-                    "results": results
-                }
+        if intent == "search_internal":
+            # R4.1: la firma acepta keywords (lista), no search_query — el
+            # kwarg inexistente producía TypeError en runtime cada vez que
+            # el LLM elegía search_internal (tragado por el except amplio).
+            _sq = analysis.get("search_query", "") or ""
+            results = await self.search_internal_catalog(
+                keywords=_sq.split() if _sq else None,
+                entities=analysis.get("suggested_entities", [])
             )
-
-        except Exception as e:
-            logger.error(f"Error processing data request: {e}", exc_info=True)
-            return AgentResponse(
-                success=False,
-                message=f"Error processing request: {str(e)}",
-                data=None
+        elif intent == "search_external":
+            results = await self.search_open_data(
+                search_query=analysis.get("search_query", ""),
+                region=context.get("session_region"),  # F2.2: override por sesión
+                conversation_history=context.get("conversation_history"),
             )
+        elif intent == "profile":
+            results = {"message": "Profile functionality - specify dataset to profile"}
+        elif intent == "validate":
+            results = {"message": "Validation functionality - specify dataset to validate"}
+        else:
+            results = {"message": f"Unknown intent: {intent}"}
+        return results
 
     # =========================================================================
     # HERRAMIENTAS INTERNAS

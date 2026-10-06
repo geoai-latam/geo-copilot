@@ -126,7 +126,7 @@ def _texto_de_comentarios(sql: str) -> str:
     return " ".join(" ".join((p or "").split()) for p in partes if p and p.strip()).strip()
 
 
-async def _preflight_entities(  # noqa: C901, PLR0912
+async def _preflight_entities(
     graph: GeoAgentGraph,
     state: GraphState,
     a2a_calls: list[dict],
@@ -159,90 +159,18 @@ async def _preflight_entities(  # noqa: C901, PLR0912
         # Reutilizamos sin re-llamar al DataAgent. Las fuzzy NO se cachean como
         # autoritativas (get() solo devuelve alta confianza) → se re-verifican.
         if memory is not None:
-            cached = memory.get(session_id, ent)
-            if cached is not None:
-                a2a_calls.append({
-                    "from": "gis_agent_node",
-                    "to": "data_agent",
-                    "method": "lookup_entity",
-                    "query": ent,
-                    "exists": True,
-                    "canonical_name": cached.canonical,
-                    "suggestions": [],
-                    "cached": True,  # vino de EntityMemory, no de un A2A fresco
-                })
-                table = cached.table or "?"
-                if (cached.canonical or "").lower() != ent.lower():
-                    lines.append(
-                        f"- Usuario dijo '{ent}' → entidad '{cached.canonical}' "
-                        f"(tabla {table}) [memoria de sesión]. USA EL NOMBRE CANÓNICO."
-                    )
-                else:
-                    lines.append(
-                        f"- '{ent}' confirmada (tabla {table}) [memoria de sesión]."
-                    )
+            recordada = _de_memoria(memory, session_id, ent, a2a_calls)
+            if recordada is not None:
+                lines.append(recordada)
                 continue
 
-        ok, payload = await hub.call(
-            caller="gis_agent_node",
-            target="data_agent",
-            method="lookup_entity",
-            name=ent,
-        )
-        if not ok:
-            logger.debug(f"[A2A] skip lookup for {ent!r}: {payload}")
+        info = await _consultar(hub, memory, session_id, ent, a2a_calls)
+        if info is None:
             continue
-        info = payload.to_dict() if hasattr(payload, "to_dict") else dict(payload)
 
-        # F3.2: recordar la resolución (la confianza la deriva resolution_from_
-        # lookup: exacto=1.0 reutilizable, fuzzy=0.5 no reutilizable como hecho).
-        if memory is not None:
-            from geo_copilot.orchestrator.entity_memory import resolution_from_lookup
-            memory.remember(session_id, resolution_from_lookup(ent, info))
-
-        a2a_calls.append({
-            "from": "gis_agent_node",
-            "to": "data_agent",
-            "method": "lookup_entity",
-            "query": ent,
-            "exists": info.get("exists"),
-            "canonical_name": info.get("canonical_name"),
-            "suggestions": info.get("suggestions") or [],
-        })
-
-        if info.get("exists"):
-            canonical = info.get("canonical_name") or ent
-            table = info.get("table") or "?"
-            if canonical.lower() != ent.lower():
-                lines.append(
-                    f"- Usuario dijo '{ent}' → el DataAgent confirma la "
-                    f"entidad '{canonical}' (tabla {table}). USA EL NOMBRE "
-                    f"CANÓNICO en el SQL."
-                )
-            else:
-                lines.append(f"- '{ent}' confirmada por DataAgent (tabla {table}).")
-        else:
-            suggestions = info.get("suggestions") or []
-            if suggestions:
-                any_correction = True
-                sug_str = ", ".join(f"'{s}'" for s in suggestions)
-                # Hecho, no orden: las sugerencias salen de un parecido de LETRAS (difflib), no de
-                # significado («edificaciones» no se parece a `construcciones`). Antes: «USA LA
-                # SUGERENCIA MÁS CERCANA», que imponía al LLM un parecido textual.
-                lines.append(
-                    f"- Usuario dijo '{ent}' y no figura con ese nombre en el catálogo. Nombres "
-                    f"parecidos POR ESCRITURA (no necesariamente por significado): {sug_str}. "
-                    f"Decide con el schema qué tabla corresponde a lo que pide; no inventes tablas."
-                )
-            else:
-                lines.append(
-                    f"- '{ent}': el catálogo A2A no la confirmó y no hay "
-                    f"sugerencias, PERO el catálogo puede estar desincronizado "
-                    f"o la entidad puede llamarse distinto en el SCHEMA. Revisa "
-                    f"el schema provisto y genera SQL contra la tabla más "
-                    f"plausible. Solo si NINGUNA tabla del schema corresponde, "
-                    f"dilo honestamente — NO fabriques un conteo 0 ni datos."
-                )
+        linea, correccion = _linea_del_lookup(ent, info)
+        lines.append(linea)
+        any_correction = any_correction or correccion
 
     if not lines:
         return ""
@@ -256,6 +184,104 @@ async def _preflight_entities(  # noqa: C901, PLR0912
             "usuario. Esto evita SQL contra tablas inexistentes."
         )
     return header + "\n".join(lines) + footer
+
+
+async def _consultar(hub: Any, memory: Any, session_id: str, ent: str,
+                     a2a_calls: list[dict]) -> dict | None:
+    """Lo que el DataAgent sabe de la entidad (vía A2A), recordado y anotado; None si falló."""
+    ok, payload = await hub.call(
+        caller="gis_agent_node",
+        target="data_agent",
+        method="lookup_entity",
+        name=ent,
+    )
+    if not ok:
+        logger.debug(f"[A2A] skip lookup for {ent!r}: {payload}")
+        return None
+    info = payload.to_dict() if hasattr(payload, "to_dict") else dict(payload)
+
+    # F3.2: recordar la resolución (la confianza la deriva resolution_from_
+    # lookup: exacto=1.0 reutilizable, fuzzy=0.5 no reutilizable como hecho).
+    if memory is not None:
+        from geo_copilot.orchestrator.entity_memory import resolution_from_lookup
+        memory.remember(session_id, resolution_from_lookup(ent, info))
+
+    a2a_calls.append({
+        "from": "gis_agent_node",
+        "to": "data_agent",
+        "method": "lookup_entity",
+        "query": ent,
+        "exists": info.get("exists"),
+        "canonical_name": info.get("canonical_name"),
+        "suggestions": info.get("suggestions") or [],
+    })
+    return info
+
+
+def _de_memoria(memory: Any, session_id: str, ent: str, a2a_calls: list[dict]) -> str | None:
+    """F3.2: la línea de una entidad ya resuelta con ALTA confianza en la sesión (None si no lo está)."""
+    cached = memory.get(session_id, ent)
+    if cached is not None:
+        a2a_calls.append({
+            "from": "gis_agent_node",
+            "to": "data_agent",
+            "method": "lookup_entity",
+            "query": ent,
+            "exists": True,
+            "canonical_name": cached.canonical,
+            "suggestions": [],
+            "cached": True,  # vino de EntityMemory, no de un A2A fresco
+        })
+        table = cached.table or "?"
+        if (cached.canonical or "").lower() != ent.lower():
+            return (
+                f"- Usuario dijo '{ent}' → entidad '{cached.canonical}' "
+                f"(tabla {table}) [memoria de sesión]. USA EL NOMBRE CANÓNICO."
+            )
+        else:
+            return (
+                f"- '{ent}' confirmada (tabla {table}) [memoria de sesión]."
+            )
+    return None
+
+
+def _linea_del_lookup(ent: str, info: dict) -> tuple[str, bool]:
+    """(línea para el prompt, si es una corrección por parecido) según lo que respondió el DataAgent."""
+    correccion = False
+    if info.get("exists"):
+        canonical = info.get("canonical_name") or ent
+        table = info.get("table") or "?"
+        if canonical.lower() != ent.lower():
+            linea = (
+                f"- Usuario dijo '{ent}' → el DataAgent confirma la "
+                f"entidad '{canonical}' (tabla {table}). USA EL NOMBRE "
+                f"CANÓNICO en el SQL."
+            )
+        else:
+            linea = (f"- '{ent}' confirmada por DataAgent (tabla {table}).")
+    else:
+        suggestions = info.get("suggestions") or []
+        if suggestions:
+            any_correction = True
+            sug_str = ", ".join(f"'{s}'" for s in suggestions)
+            # Hecho, no orden: las sugerencias salen de un parecido de LETRAS (difflib), no de
+            # significado («edificaciones» no se parece a `construcciones`). Antes: «USA LA
+            # SUGERENCIA MÁS CERCANA», que imponía al LLM un parecido textual.
+            linea = (
+                f"- Usuario dijo '{ent}' y no figura con ese nombre en el catálogo. Nombres "
+                f"parecidos POR ESCRITURA (no necesariamente por significado): {sug_str}. "
+                f"Decide con el schema qué tabla corresponde a lo que pide; no inventes tablas."
+            )
+        else:
+            linea = (
+                f"- '{ent}': el catálogo A2A no la confirmó y no hay "
+                f"sugerencias, PERO el catálogo puede estar desincronizado "
+                f"o la entidad puede llamarse distinto en el SCHEMA. Revisa "
+                f"el schema provisto y genera SQL contra la tabla más "
+                f"plausible. Solo si NINGUNA tabla del schema corresponde, "
+                f"dilo honestamente — NO fabriques un conteo 0 ni datos."
+            )
+    return linea, correccion
 
 
 async def _al_bucle(graph: GeoAgentGraph, state: GraphState, motivo: str, nota: str) -> dict | None:
