@@ -11,7 +11,7 @@ import logging
 
 from geo_mcp_kit import ExtraRoute, respond_json, respond_png
 
-from imagery_mcp import resultados
+from imagery_mcp import resultados, terreno
 from imagery_mcp.tiles import (
     _SCENE_RE,
     EscenasIncompatiblesError,
@@ -203,8 +203,28 @@ def _ruta_rgb(pool: TilePool):
     return rgb
 
 
+def _ruta_terreno():
+    """Teselas del relieve (elevación, pendiente, sombreado, orientación) del DEM Copernicus."""
+    import anyio
+
+    teselas = terreno.TerrenoTiles()
+
+    async def relieve(scope, send, t, _key):
+        lo, hi = terreno.PRODUCTOS[t[0]][2]
+        rescale = _parse_rescale(scope, default=(lo, hi), limites=(-500.0, 9000.0))             if "rescale=" in scope.get("query_string", b"").decode() else None
+        try:
+            png = await anyio.to_thread.run_sync(lambda: teselas.render(*t, rescale=rescale))
+        except Exception as exc:  # noqa: BLE001 — red flaky: error honesto
+            logger.warning(f"tesela de relieve {t} falló: {exc}")
+            await respond_json(send, 502, {"error": "tesela de relieve no disponible"})
+            return
+        await respond_png(send, png)
+
+    return relieve
+
+
 def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:
-    """Teselas NDVI, de cambio, RGB y de banda, y los resultados grandes: heredan el scope de su
+    """Teselas NDVI, de cambio, RGB, de banda y del relieve, y los resultados grandes: heredan el scope de su
     tool y pesan poco en el límite de peticiones."""
     return (
         ExtraRoute(resultados.parse_ruta, resultados.servir, requires_tool="imagery_catalog_world", weight=0.2),
@@ -212,4 +232,5 @@ def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:
         ExtraRoute(parse_tile_path, _ruta_ndvi(pool), requires_tool="imagery_ndvi", weight=0.05),
         ExtraRoute(parse_diff_tile_path, _ruta_diff(pool), requires_tool="imagery_ndvi", weight=0.05),
         ExtraRoute(parse_rgb_tile_path, _ruta_rgb(pool), requires_tool="imagery_ndvi", weight=0.05),
+        ExtraRoute(terreno.parse_ruta, _ruta_terreno(), requires_tool="imagery_terrain", weight=0.05),
     )

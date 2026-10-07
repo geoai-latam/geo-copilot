@@ -33,6 +33,9 @@ TOOL_SCOPES: dict[str, str] = {
     "imagery_scene_view": SCOPE_COMPUTE,
     "imagery_band_histogram": SCOPE_COMPUTE,
     "imagery_pixel": SCOPE_COMPUTE,
+    # El relieve abre los COG del DEM y calcula (la cuenca, un relleno de depresiones): cómputo.
+    "imagery_terrain": SCOPE_COMPUTE,
+    "imagery_watershed": SCOPE_COMPUTE,
 }
 
 

@@ -27,7 +27,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from imagery_mcp import georesult as gr
-from imagery_mcp import vista
+from imagery_mcp import tools_terreno, vista
 from imagery_mcp.aoi import aoi_bbox, bbox_area_km2, rango_fechas
 from imagery_mcp.auth import KeyRing, RateLimiter
 from imagery_mcp.catalogo import ORDENES, Catalogo, CatalogoError, ConCatalogo
@@ -74,7 +74,8 @@ mcp = FastMCP(
         "Análisis de imagery satelital Sentinel-2 L2A sobre un AOI GeoJSON: "
         "búsqueda de escenas, NDVI, cambio entre fechas, estadística zonal por "
         "feature e imagen en color (composición RGB: color natural / falso color "
-        "/ agricultura / SWIR). Datos: STAC → COG con lectura ventaneada (solo se "
+        "/ agricultura / SWIR), y el relieve (DEM Copernicus 30 m: elevación, "
+        "pendiente, sombreado, cuencas y red de drenaje). Datos: STAC → COG con lectura ventaneada (solo se "
         "transfiere la zona pedida). Las respuestas declaran la escena usada, su "
         "fecha y % de nubes; las capas visuales se sirven como teselas XYZ (ver "
         "el bloque `tiles`: url_template relativa al host del servicio, con el "
@@ -408,6 +409,10 @@ def imagery_pixel(scene_id: str, point_geojson: dict) -> dict[str, Any]:
     if lonlat is None:
         return {"error": "point_geojson debe ser un punto GeoJSON (Point, Feature o FeatureCollection con un punto)"}
     return gr.pixel(_wrap(vista.pixel, provider, scene_id, *lonlat))
+
+
+# El relieve (Copernicus DEM): elevación, pendiente, sombreado y la cuenca de un punto.
+tools_terreno.registrar(mcp, _wrap)
 
 
 # ---------------------------------------------------------------------------
