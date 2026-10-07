@@ -41,8 +41,8 @@ _TRANSPARENT_PNG = bytes.fromhex(  # 1x1 RGBA alpha=0, verificado con PIL
 
 
 # Combinaciones de bandas RGB (R-G-B) por nombre canónico. `true_color` usa el
-# asset `visual` (TCI ya renderizado) si existe; el resto compone 3 bandas crudas
-# con estiramiento por percentiles.
+# asset `visual` (TCI ya renderizado) si existe; el resto compone 3 bandas en reflectancia
+# con un estiramiento fijo (ver `_estirar_banda`).
 _COMPOSITES = {
     "true_color": ("red", "green", "blue"),     # color natural
     "false_color": ("nir", "red", "green"),     # vegetación en rojo
@@ -83,6 +83,21 @@ def _stretch_uint8(arr: np.ndarray, valid) -> np.ndarray:
     if hi - lo < 1e-6:
         hi = lo + 1.0
     return (np.clip((arr - lo) / (hi - lo), 0, 1) * 255).astype("uint8")
+
+
+#: Reflectancia que va a 255 en los composites de bandas (ganancia 2,5, la habitual en los
+#: visores de Sentinel-2). El MISMO rango en todas las teselas: no hay costuras.
+_REFLECTANCIA_MAX = 0.4
+
+
+def _estirar_banda(arr: np.ndarray, valid, scaling) -> np.ndarray:
+    """Una banda cruda a 8-bit. Con su factor publicado (o derivado del baseline) pasa a
+    reflectancia y se estira a [0, ``_REFLECTANCIA_MAX``], igual en toda la escena; sin factor
+    no hay escala común honesta y se cae al estiramiento por percentiles de la tesela."""
+    if scaling is None or scaling.is_identity:
+        return _stretch_uint8(arr, valid)
+    refl = np.nan_to_num(apply_scaling(arr, scaling), nan=0.0)
+    return (np.clip(refl / _REFLECTANCIA_MAX, 0, 1) * 255).astype("uint8")
 
 
 class TilesRenderMixin:
@@ -264,7 +279,7 @@ class TilesRenderMixin:
     def _read_rgb(self, scene_id: str, combo: str, z: int, x: int, y: int):  # noqa: PLR0912
         """RGB (3,H,W) uint8 + máscara de validez para el composite `combo`, o None
         si la tesela cae fuera. `true_color` usa el TCI `visual` (ya 8-bit); el
-        resto compone 3 bandas con estiramiento por percentiles. Comparte el pool
+        resto compone 3 bandas en reflectancia con un estiramiento fijo (sin costuras). Comparte el pool
         con refcount (H2) y el re-firmado en 401/403 (M4)."""
         import rasterio
         from rio_tiler.errors import TileOutsideBounds
@@ -298,7 +313,8 @@ class TilesRenderMixin:
                     m = (t.mask != 0)
                     valid = m if valid is None else (valid & m)
                     chans.append(a)
-                rgb = np.stack([_stretch_uint8(a, valid) for a in chans], axis=0)
+                rgb = np.stack([_estirar_banda(a, valid, scene_scaling(entry.scene, b))
+                                for a, b in zip(chans, names, strict=True)], axis=0)
                 return rgb, valid
             except TileOutsideBounds:
                 return None
