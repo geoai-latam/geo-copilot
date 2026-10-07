@@ -143,7 +143,8 @@ def cuadricula(r: dict) -> dict:
     hechos = {"teselas": len(feats), "escenas": sum(int(f["escenas"]) for f in filas),
               "ventana": f"{r.get('desde')}…{r.get('hasta')}",
               "fuente": "catálogo GeoParquet de Earth Search sentinel-2-c1-l2a (Source Cooperative)",
-              "huella": "la de la escena con más cobertura de cada tesela"}
+              "huella": "la de la escena con más cobertura de cada tesela",
+              **({"sin_filtros": r["sin_filtros"]} if r.get("sin_filtros") is not None else {})}
     return geo_result(
         [feature_collection(f"Imágenes Sentinel-2 {r.get('desde')}…{r.get('hasta')}",
                             {"type": "FeatureCollection", "features": feats}, crs="EPSG:4326")],
@@ -157,7 +158,8 @@ def escenas_catalogo(r: dict) -> dict:
     filas = r.get("filas") or []
     cols = ["id", "tile", "fecha", "nubes", "cobertura", "plataforma", "miniatura"]
     return geo_result([table(cols, filas, name="Escenas Sentinel-2")],
-                      facts={"escenas": len(filas), "ventana": f"{r.get('desde')}…{r.get('hasta')}"})
+                      facts={"escenas": len(filas), "ventana": f"{r.get('desde')}…{r.get('hasta')}",
+                             **({"sin_filtros": r["sin_filtros"]} if r.get("sin_filtros") is not None else {})})
 
 
 def mundo(r: dict) -> dict:

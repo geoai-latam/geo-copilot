@@ -340,3 +340,23 @@ def test_sin_cog_si_la_url_hay_que_firmarla_o_falta_la_banda():
     firmada = MagicMock(sign=lambda h: h + "?sas=caduca")
     assert cog_del_producto(firmada, _escena_publica(), "ndvi") is None
     assert cog_del_producto(MagicMock(sign=lambda h: h), _escena_publica(), "swir22") is None
+
+
+def test_sin_resultados_por_los_filtros_los_hechos_traen_lo_mas_despejado_sin_filtrar(monkeypatch):
+    """«Muéstrame una imagen de Bogotá sin nubes»: si nada pasa el filtro, el agente debe saber qué
+    hay (la mejor escena real) para decidir, en vez de quedarse sin imagen."""
+    from imagery_mcp import georesult as gr
+    from imagery_mcp import server
+
+    mejor = {"id": "S2B_T18NWL_20260810T152745_L2A", "tile": "18NWL", "fecha": "2026-08-10T15:31:43Z",
+             "nubes": 12.4, "cobertura": 100, "plataforma": "s2b", "miniatura": "x"}
+    falso = MagicMock(cuadricula=lambda *a, **k: [], escenas=lambda *a, **k: [] if k.get("max_nubes") is not None else [mejor])
+    monkeypatch.setattr(server, "catalogo", falso)
+    bogota = {"type": "Polygon", "coordinates": [[[-74.2, 4.5], [-74, 4.5], [-74, 4.8], [-74.2, 4.8], [-74.2, 4.5]]]}
+    r = server._cuadricula(bogota, "2026-09-07", "2026-10-07", 5, None)
+    assert r["sin_filtros"] == [{"id": mejor["id"], "fecha": mejor["fecha"], "nubes": 12.4, "cobertura": 100}]
+    assert gr.cuadricula(r)["facts"]["sin_filtros"][0]["nubes"] == 12.4
+    e = server._escenas(None, bogota, "2026-09-07", "2026-10-07", 5, None, "menos_nubes", 10)
+    assert gr.escenas_catalogo(e)["facts"]["sin_filtros"][0]["id"] == mejor["id"]
+    # sin filtros pedidos no hay nada que añadir
+    assert "sin_filtros" not in server._cuadricula(bogota, "2026-09-07", "2026-10-07", None, None)

@@ -195,10 +195,25 @@ async def _geojson_de_referencia(valor: str, working: dict) -> dict[str, Any] | 
         capa = (working.get("map_layers") or {}).get(valor) or {}
         if isinstance(capa.get("data"), dict) and capa["data"]:
             return cast(dict[str, Any], capa["data"])
+        if (extension := _extension_de_raster(valor, working)) is not None:
+            return extension
         ds_id = valor if valor.startswith("ds_") else next(
             (lyr.get("dataset_id") for lyr in ((working.get("map_context") or {}).get("layers") or [])
              if lyr.get("id") == valor and lyr.get("dataset_id")), None)
     return await _desde_workspace(ds_id, working)
+
+
+def _extension_de_raster(valor: str, working: dict) -> dict[str, Any] | None:
+    """Una capa raster del mapa como zona: su extensión. «¿Cómo está la vegetación ahí?» señala la
+    imagen que el usuario acaba de ver; antes se rechazaba (solo valían capas vectoriales)."""
+    lyr = next((x for x in ((working.get("map_context") or {}).get("layers") or []) if x.get("id") == valor), None)
+    b = (lyr or {}).get("bbox")
+    if not lyr or str(lyr.get("kind") or "").startswith("vector") or not (isinstance(b, list) and len(b) == 4):
+        return None
+    w, s_, e, n = (float(v) for v in b)
+    return {"type": "FeatureCollection", "features": [{
+        "type": "Feature", "properties": {"capa": lyr.get("name")},
+        "geometry": {"type": "Polygon", "coordinates": [[[w, s_], [e, s_], [e, n], [w, n], [w, s_]]]}}]}
 
 
 def _referencias_validas(working: dict) -> str:
@@ -222,6 +237,8 @@ def _referencias_validas(working: dict) -> str:
         refs.append(f"`punto` (marcado en lon {pt['lon']:.5f}, lat {pt['lat']:.5f})")
     capas = [f"`{lyr['id']}` ({lyr.get('name', '')})" for lyr in (mc.get("layers") or [])
              if lyr.get("id") and str(lyr.get("kind") or "vector").startswith("vector")]
+    capas += [f"`{lyr['id']}` (la extensión de la imagen «{lyr.get('name', '')}»)" for lyr in (mc.get("layers") or [])
+              if lyr.get("id") and not str(lyr.get("kind") or "vector").startswith("vector") and lyr.get("bbox")]
     refs += capas[:8]
     return ", ".join(refs) + ". No escribas geometría a mano."
 

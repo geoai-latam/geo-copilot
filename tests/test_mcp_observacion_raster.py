@@ -62,3 +62,18 @@ def test_la_capa_del_contrato_lleva_su_cog():
     ref = _capa_raster({"service_url": "/api/v1/proxy/mcp/imagery/tiles-rgb/S2X/true_color/{z}/{x}/{y}.png",
                         "name": "color", "extent": {"xmin": 0, "ymin": 0, "xmax": 1, "ymax": 1}, "cog": _COG})
     assert ref.layer.storage.cog == _COG
+
+
+def test_una_capa_raster_vale_como_zona_su_extension():
+    """«¿Cómo está la vegetación ahí?»: «ahí» es la imagen que el usuario acaba de ver."""
+    import asyncio
+
+    from geo_copilot.platform.mcp.referencias import _geojson_de_referencia, _referencias_validas
+
+    working = {"map_context": {"layers": [
+        {"id": "raster-10", "name": "true_color 2026-08-10", "kind": "raster-xyz", "bbox": [-74.22, 4.47, -74.01, 4.83]},
+        {"id": "raster-sin", "name": "sin extensión", "kind": "raster-xyz"}]}}
+    fc = asyncio.run(_geojson_de_referencia("raster-10", working))
+    assert fc["features"][0]["geometry"]["coordinates"][0][2] == [-74.01, 4.83]
+    assert asyncio.run(_geojson_de_referencia("raster-sin", working)) is None
+    assert "la extensión de la imagen «true_color 2026-08-10»" in _referencias_validas(working)

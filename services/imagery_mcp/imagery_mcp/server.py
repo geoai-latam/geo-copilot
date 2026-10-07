@@ -255,10 +255,21 @@ def _bbox_catalogo(aoi_geojson: dict) -> tuple[float, float, float, float]:
     return bbox
 
 
+def _sin_filtros(d0: str, d1: str, *, tile=None, bbox=None) -> list[dict]:
+    """Con 0 resultados por los filtros: las escenas más despejadas de esa zona y ventana SIN filtrar
+    (hecho para decidir: mostrar la mejor que hay, ampliar la ventana o preguntar)."""
+    filas = catalogo.escenas(d0, d1, tile=tile, bbox=bbox, orden="menos_nubes", limite=3)
+    return [{k: f[k] for k in ("id", "fecha", "nubes", "cobertura")} for f in filas]
+
+
 def _cuadricula(aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_pct) -> dict:
     d0, d1 = _ventana_catalogo(date_from, date_to)
-    filas = catalogo.cuadricula(_bbox_catalogo(aoi_geojson), d0, d1, max_cloud_pct, min_coverage_pct)
-    return {"filas": filas, "desde": d0, "hasta": d1}
+    bbox = _bbox_catalogo(aoi_geojson)
+    filas = catalogo.cuadricula(bbox, d0, d1, max_cloud_pct, min_coverage_pct)
+    r = {"filas": filas, "desde": d0, "hasta": d1}
+    if not filas and (max_cloud_pct is not None or min_coverage_pct is not None):
+        r["sin_filtros"] = _sin_filtros(d0, d1, bbox=bbox)
+    return r
 
 
 def _escenas(tile, aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_pct, order, limit) -> dict:
@@ -266,7 +277,10 @@ def _escenas(tile, aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_
     bbox = _bbox_catalogo(aoi_geojson) if aoi_geojson else None
     filas = catalogo.escenas(d0, d1, tile=tile, bbox=bbox, max_nubes=max_cloud_pct,
                              min_cobertura=min_coverage_pct, orden=order, limite=limit)
-    return {"filas": filas, "desde": d0, "hasta": d1}
+    r = {"filas": filas, "desde": d0, "hasta": d1}
+    if not filas and (max_cloud_pct is not None or min_coverage_pct is not None):
+        r["sin_filtros"] = _sin_filtros(d0, d1, tile=tile, bbox=bbox)
+    return r
 
 
 @mcp.tool(
@@ -286,7 +300,8 @@ def imagery_catalog_grid(
     despejada (`mejor_escena`, `mejor_fecha`), nubes mínima y mediana (%) y cobertura máxima
     (%). Devuelve las teselas como capa para colorear. Sirve para decidir DÓNDE y CUÁNDO hay
     imagen útil antes de pedir una; `mejor_escena` se puede pasar como `scene_id` a
-    imagery_composite, imagery_ndvi o imagery_zonal_stats."""
+    imagery_scene_view (verla entera), imagery_ndvi o imagery_zonal_stats. Si los filtros dejan
+    0 teselas, los hechos traen `sin_filtros`: las escenas más despejadas de la zona sin filtrar."""
     return gr.cuadricula(_wrap(_cuadricula, aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_pct))
 
 
@@ -308,8 +323,9 @@ def imagery_catalog_scenes(
     """Escenas Sentinel-2 de una tesela MGRS (`tile`, p. ej. '18NWL', de imagery_catalog_grid)
     o de un área, con fecha, nubes (%), cobertura de la tesela (%) y miniatura (URL de una
     vista previa JPG), ordenadas por menos nubes, más cobertura o más reciente (hasta 200).
-    Cada `id` se puede pasar como `scene_id` a imagery_composite, imagery_ndvi o
-    imagery_zonal_stats para verla o medirla."""
+    Cada `id` se puede pasar como `scene_id` a imagery_scene_view (verla entera), imagery_ndvi o
+    imagery_zonal_stats. Si los filtros dejan 0 escenas, los hechos traen `sin_filtros`: las más
+    despejadas de esa zona y ventana sin filtrar."""
     if order not in ORDENES:
         order = "menos_nubes"
     return gr.escenas_catalogo(_wrap(_escenas, tile, aoi_geojson, date_from, date_to,
@@ -330,8 +346,9 @@ def imagery_catalog_world(
 ) -> dict[str, Any]:
     """Disponibilidad de Sentinel-2 en TODO EL MUNDO por tesela MGRS (~29.000 teselas), por
     meses completos (los que toca la ventana; hasta un año): escenas, nubes mínima, mediana de
-    las medianas mensuales y cobertura máxima (%). Para ver dónde hay imagen despejada a escala
-    de país o continente; una tesela concreta se detalla con imagery_catalog_scenes."""
+    las medianas mensuales y cobertura máxima (%). Solo para un panorama de varios países, un
+    continente o el planeta; para un lugar concreto (una ciudad, un municipio, una zona del
+    mapa) no aporta: usa imagery_catalog_scenes o imagery_catalog_grid sobre ese lugar."""
     return gr.mundo(_wrap(_mundo, date_from, date_to, max_cloud_pct, min_coverage_pct, min_scenes))
 
 
