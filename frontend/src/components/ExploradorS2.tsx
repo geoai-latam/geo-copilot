@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { AlertTriangle, Cloud, Grid3x3, Leaf, Loader2, Palette, Satellite, Search } from 'lucide-react'
 
 import { mcpApi, type McpRunResult } from '@/services/api'
-import { useExploradorS2 } from '@/stores/exploradorS2Store'
+import { type OrdenEscenas, useExploradorS2 } from '@/stores/exploradorS2Store'
 import { useMapStore, useSessionStore } from '@/stores'
 import { capaDelUsuario, useOperaciones } from '@/lib/operaciones'
 import { aplicarResultado } from '@/lib/resultadoHerramienta'
@@ -21,13 +21,27 @@ import {
   simbologiaCuadricula, type TeselaS2, teselasDe, vistaDeBbox,
 } from '@/lib/exploradorS2'
 
-type Producto = 'true_color' | 'false_color' | 'ndvi'
+type Producto = 'true_color' | 'false_color' | 'agriculture' | 'swir' | 'ndvi'
 
-const PRODUCTOS: { id: Producto; etiqueta: string; icono: typeof Palette }[] = [
-  { id: 'true_color', etiqueta: 'Color', icono: Palette },
-  { id: 'false_color', etiqueta: 'Falso color', icono: Palette },
-  { id: 'ndvi', etiqueta: 'NDVI', icono: Leaf },
+const PRODUCTOS: { id: Producto; etiqueta: string; titulo: string; icono: typeof Palette }[] = [
+  { id: 'true_color', etiqueta: 'Color', titulo: 'Color real (B04, B03, B02)', icono: Palette },
+  { id: 'false_color', etiqueta: 'Falso color', titulo: 'Infrarrojo (B08, B04, B03): vegetación en rojo', icono: Palette },
+  { id: 'agriculture', etiqueta: 'Agricultura', titulo: 'Agricultura (B11, B08, B02): cultivos y suelo', icono: Palette },
+  { id: 'swir', etiqueta: 'SWIR', titulo: 'Infrarrojo de onda corta (B12, B8A, B04): humedad, quemas', icono: Palette },
+  { id: 'ndvi', etiqueta: 'NDVI', titulo: 'Índice de vegetación (B08/B04)', icono: Leaf },
 ]
+
+const ORDENES: { id: OrdenEscenas; etiqueta: string }[] = [
+  { id: 'menos_nubes', etiqueta: 'Menos nubes' },
+  { id: 'mas_cobertura', etiqueta: 'Más cobertura' },
+  { id: 'reciente', etiqueta: 'Más reciente' },
+]
+
+/** Resalta en la cuadrícula la tesela abierta (null la apaga). */
+function resaltarTesela(capa: string | null, tile: string | null) {
+  if (!capa || !useMapStore.getState().layers.some((l) => l.id === capa)) return
+  useMapStore.getState().setResaltado(capa, tile ? { where: { field: 'tile', op: '=', value: tile }, count: 1, origin: 'query' } : null)
+}
 
 async function correr(tool: string, args: Record<string, unknown>): Promise<McpRunResult> {
   const sessionId = useSessionStore.getState().sessionId
@@ -58,7 +72,7 @@ function rellenoCuadricula(capa: string | null, metrica: Metrica, relleno: boole
 
 export function ExploradorS2() {
   const {
-    desde, hasta, maxNubes, minCobertura, metrica, teselas, capaGrid, tesela, escenas, rasterPrevio, fijar,
+    desde, hasta, maxNubes, minCobertura, metrica, orden, teselas, capaGrid, tesela, escenas, rasterPrevio, fijar,
   } = useExploradorS2()
   const [cargando, setCargando] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -91,18 +105,30 @@ export function ExploradorS2() {
     rellenoCuadricula(capaGrid, m, tesela === null)
   }
 
-  const abrirTesela = (t: TeselaS2) => conEstado(`tesela:${t.tile}`, async () => {
-    fijar({ tesela: t, escenas: null })
+  const cargarEscenas = (t: TeselaS2, o: OrdenEscenas) => conEstado(`tesela:${t.tile}`, async () => {
+    fijar({ escenas: null })
+    const res = await correr('imagery_catalog_scenes', { tile: t.tile, ...filtros, order: o, limit: 60 })
+    fijar({ escenas: escenasDe(res) })
+  })
+
+  const abrirTesela = (t: TeselaS2) => {
+    fijar({ tesela: t })
+    resaltarTesela(capaGrid, t.tile)
     if (t.bbox) {
       const v = vistaDeBbox(t.bbox)
       useMapStore.getState().setMapView(v.centro, v.zoom)
     }
-    const res = await correr('imagery_catalog_scenes', { tile: t.tile, ...filtros, limit: 60 })
-    fijar({ escenas: escenasDe(res) })
-  })
+    return cargarEscenas(t, orden)
+  }
+
+  const cambiarOrden = (o: OrdenEscenas) => {
+    fijar({ orden: o })
+    if (tesela) void cargarEscenas(tesela, o)
+  }
 
   const volverATeselas = () => {
     fijar({ tesela: null, escenas: null })
+    resaltarTesela(capaGrid, null)
     rellenoCuadricula(capaGrid, metrica, true)
   }
 
@@ -176,6 +202,12 @@ export function ExploradorS2() {
             <Grid3x3 className="w-3.5 h-3.5" /> Tesela {tesela.tile}
             <button className="imgp-link" onClick={volverATeselas}>← teselas</button>
           </header>
+          <label className="imgp-sub">Ordenar
+            <select value={orden} onChange={(e) => cambiarOrden(e.target.value as OrdenEscenas)}
+              aria-label="Ordenar escenas" disabled={cargando !== null}>
+              {ORDENES.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
+            </select>
+          </label>
           {cargando === `tesela:${tesela.tile}` && <p className="imgp-sub"><Loader2 className="w-3 h-3 animate-spin" /> Buscando escenas…</p>}
           {escenas?.length === 0 && <p className="imgp-sub">Ninguna escena pasa los filtros.</p>}
           <ul className="s2-escenas">
@@ -185,9 +217,10 @@ export function ExploradorS2() {
                 <div>
                   <b>{fechaCorta(e.fecha)}</b>
                   <span className="imgp-sub">{e.nubes}% nubes · {e.cobertura}% cobertura</span>
+                  <code className="s2-id" title={e.id}>{e.id}</code>
                   <div className="s2-acciones">
-                    {PRODUCTOS.map(({ id, etiqueta, icono: Icono }) => (
-                      <button key={id} className="imgp-chip" disabled={cargando !== null}
+                    {PRODUCTOS.map(({ id, etiqueta, titulo, icono: Icono }) => (
+                      <button key={id} className="imgp-chip" disabled={cargando !== null} title={titulo}
                         onClick={() => void ver(e, id)} data-testid={`s2-ver-${id}`}>
                         {cargando === `ver:${e.id}:${id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icono className="w-3 h-3" />} {etiqueta}
                       </button>

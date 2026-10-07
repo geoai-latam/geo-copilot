@@ -90,7 +90,13 @@ test.describe('Explorador Sentinel-2', () => {
     await expect(escenas).toContainText('Tesela 18NWL')
     await expect(escenas.locator('.s2-escena')).toHaveCount(2)
     await expect(escenas.locator('img').first()).toHaveAttribute('src', 'https://imagenes.test/a/L2A_PVI.jpg')
-    expect(enviados.imagery_catalog_scenes.arguments).toMatchObject({ tile: '18NWL', max_cloud_pct: 60 })
+    expect(enviados.imagery_catalog_scenes.arguments).toMatchObject({ tile: '18NWL', max_cloud_pct: 60, order: 'menos_nubes' })
+    await expect(escenas.locator('.s2-id').first()).toHaveText('S2B_T18NWL_20260810T152745_L2A')
+
+    // Cambiar el orden vuelve a pedir las escenas con ese orden.
+    await escenas.getByLabel('Ordenar escenas').selectOption('reciente')
+    await expect.poll(() => enviados.imagery_catalog_scenes.arguments.order).toBe('reciente')
+    await expect(escenas.locator('.s2-escena')).toHaveCount(2)
 
     await escenas.getByTestId('s2-ver-true_color').first().click()
     await waitForLayerKind(page, 'raster-xyz')

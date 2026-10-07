@@ -8,12 +8,16 @@ import { create } from 'zustand'
 import type { EscenaS2, Metrica, TeselaS2 } from '@/lib/exploradorS2'
 import { ventanaPorDefecto } from '@/lib/exploradorS2'
 
+export type OrdenEscenas = 'menos_nubes' | 'mas_cobertura' | 'reciente'
+
 export interface ExploradorS2Estado {
   desde: string
   hasta: string
   maxNubes: number
   minCobertura: number
   metrica: Metrica
+  /** Orden de las escenas de la tesela (el de `imagery_catalog_scenes`). */
+  orden: OrdenEscenas
   teselas: TeselaS2[] | null
   /** Capa de la cuadrícula en el mapa (la búsqueda nueva la sustituye). */
   capaGrid: string | null
@@ -28,7 +32,7 @@ export interface ExploradorS2Estado {
 function inicial() {
   const { desde, hasta } = ventanaPorDefecto(new Date())
   return {
-    desde, hasta, maxNubes: 100, minCobertura: 10, metrica: 'nubes_min' as Metrica,
+    desde, hasta, maxNubes: 100, minCobertura: 10, metrica: 'nubes_min' as Metrica, orden: 'menos_nubes' as OrdenEscenas,
     teselas: null, capaGrid: null, tesela: null, escenas: null, rasterPrevio: null,
   }
 }
