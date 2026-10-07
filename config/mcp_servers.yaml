@@ -21,7 +21,7 @@ servers:
     trust: trusted   # servicio propio del despliegue; los de terceros quedan `untrusted` (por defecto)
     tools: { allow: ["imagery_*"] }
     policy: { default_risk: compute, timeout_s: 120, max_result_mb: 20 }
-    tiles: { prefixes: ["/tiles/", "/tiles-diff/", "/tiles-rgb/"] }
+    tiles: { prefixes: ["/tiles/", "/tiles-diff/", "/tiles-rgb/", "/tiles-band/"] }
 
   # ArcGIS (F5, T5.2; servicio arcgis-mcp del compose): buscar en ArcGIS Hub, describir servicios y
   # traer capas. Lo usa el PROPIO núcleo (panel de datos, búsqueda y carga por chat), que ya no

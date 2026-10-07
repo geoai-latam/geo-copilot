@@ -17,19 +17,17 @@ import logging
 from typing import Any, Literal
 
 from geo_mcp_kit import (
-    ExtraRoute,
     GeoMcpAuth,
     ToolRunner,
     geo_meta,
     jsonrpc_tool_names,
-    respond_json,
-    respond_png,
 )
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from imagery_mcp import georesult as gr
+from imagery_mcp import vista
 from imagery_mcp.aoi import aoi_bbox, bbox_area_km2, rango_fechas
 from imagery_mcp.auth import KeyRing, RateLimiter
 from imagery_mcp.catalogo import ORDENES, Catalogo, CatalogoError, ConCatalogo
@@ -43,14 +41,12 @@ from imagery_mcp.engine import (
     run_zonal,
 )
 from imagery_mcp.providers import ColeccionNoDisponible, build_provider
-from imagery_mcp.tiles import (
-    _SCENE_RE,
-    EscenasIncompatiblesError,
-    TilePool,
-    parse_diff_tile_path,
-    parse_rgb_tile_path,
-    parse_tile_path,
+from imagery_mcp.rutas import (  # noqa: F401 — los tests los importan de aquí
+    _parse_indice,
+    _parse_rescale,
+    rutas_de_teselas,
 )
+from imagery_mcp.tiles import TilePool
 
 logger = logging.getLogger("imagery_mcp")
 
@@ -320,116 +316,88 @@ def imagery_catalog_scenes(
                                      max_cloud_pct, min_coverage_pct, order, limit))
 
 
+@mcp.tool(
+    meta=geo_meta(inputs={}, outputs=["feature_collection"], cost="medium"),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    structured_output=True,
+)
+def imagery_catalog_world(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    max_cloud_pct: float | None = None,
+    min_coverage_pct: float | None = None,
+    min_scenes: int | None = None,
+) -> dict[str, Any]:
+    """Disponibilidad de Sentinel-2 en TODO EL MUNDO por tesela MGRS (~29.000 teselas), por
+    meses completos (los que toca la ventana; hasta un año): escenas, nubes mínima, mediana de
+    las medianas mensuales y cobertura máxima (%). Para ver dónde hay imagen despejada a escala
+    de país o continente; una tesela concreta se detalla con imagery_catalog_scenes."""
+    return gr.mundo(_wrap(_mundo, date_from, date_to, max_cloud_pct, min_coverage_pct, min_scenes))
+
+
+def _mundo(date_from, date_to, max_cloud_pct, min_coverage_pct, min_scenes) -> dict:
+    d0, d1 = _ventana_catalogo(date_from, date_to)
+    r = catalogo.mundo(d0, d1, max_cloud_pct, min_coverage_pct, min_scenes)
+    return {**r, "desde": d0, "hasta": d1}
+
+
+@mcp.tool(
+    meta=geo_meta(inputs={}, outputs=["raster_tiles"], cost="low"),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    structured_output=True,
+)
+def imagery_scene_view(
+    scene_id: str,
+    product: str = "true_color",
+    stretch: list[list[float]] | None = None,
+    rescale: list[float] | None = None,
+) -> dict[str, Any]:
+    """VER una escena Sentinel-2 ENTERA (~110 km) por su `scene_id` (de imagery_catalog_scenes o
+    imagery_search_scenes), sin medir nada. `product`: color 'true_color', 'false_color',
+    'agriculture', 'swir'; índice 'ndvi', 'ndwi' (agua), 'ndmi', 'ndbi'; una banda suelta
+    ('coastal', 'blue', 'green', 'red', 'rededge1'…'rededge3', 'nir', 'nir08', 'nir09',
+    'swir16', 'swir22', 'aot', 'wvp'); 'scl' (clasificación de la escena: nube, sombra, agua,
+    vegetación…) o 'cloud'/'snow' (probabilidad %). `stretch`: contraste de un color, tres
+    pares [mín, máx] de reflectancia (R, G, B); `rescale`: [mín, máx] de un índice o banda.
+    Devuelve la capa y los enlaces para DESCARGAR cada banda (COG)."""
+    return gr.vista(_wrap(vista.ver_escena, provider, scene_id, product, estiramiento=stretch,
+                          rescale=rescale, on_scene=tile_pool.register_scene))
+
+
+@mcp.tool(
+    meta=geo_meta(inputs={}, outputs=["stats"], cost="medium"),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    structured_output=True,
+)
+def imagery_band_histogram(scene_id: str, bands: list[str]) -> dict[str, Any]:
+    """Histograma y percentiles 2/98 de hasta 6 bandas de una escena entera (reflectancia; la
+    'scl' da el % de cada clase: nubes, sombra, agua, vegetación…). Sirve para elegir el
+    contraste (`stretch`/`rescale` de imagery_scene_view) o para saber cuánto de la escena está
+    cubierto de nubes."""
+    return gr.histograma(_wrap(vista.histograma, provider, scene_id, bands))
+
+
+@mcp.tool(
+    meta=geo_meta(inputs={"point_geojson": ["geometry"]}, geometry_types={"point_geojson": ["Point"]},
+                  outputs=["table"], cost="low"),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    structured_output=True,
+)
+def imagery_pixel(scene_id: str, point_geojson: dict) -> dict[str, Any]:
+    """El valor de CADA banda de una escena en un punto (GeoJSON Point): reflectancia de B01…B12,
+    AOT, vapor de agua, la clase SCL y la probabilidad de nubes/nieve, más los índices que salen
+    de ellas (NDVI, NDWI, NDMI, NDBI). Para saber qué hay en un píxel concreto."""
+    g = (point_geojson or {}).get("geometry", point_geojson) or {}
+    if g.get("type") != "Point":
+        return {"error": "point_geojson debe ser un GeoJSON Point"}
+    lon, lat = (float(v) for v in g["coordinates"][:2])
+    return gr.pixel(_wrap(vista.pixel, provider, scene_id, lon, lat))
+
+
 # ---------------------------------------------------------------------------
 # ASGI: auth del kit + rutas de teselas propias
 # ---------------------------------------------------------------------------
 _jsonrpc_tool_names = jsonrpc_tool_names  # compat con tests existentes
-
-
-def _parse_rescale(scope, default: tuple[float, float] = (-1.0, 1.0)):
-    """``?rescale=lo,hi`` con lo<hi en [-1,1]; malformado → default."""
-    rescale = default
-    try:
-        from urllib.parse import unquote
-        q = scope.get("query_string", b"").decode()
-        for part in q.split("&"):
-            if part.startswith("rescale="):
-                # unquote: la coma URL-encoded (%2C) no debe caer al default en
-                # silencio (divergía de la tesela precalentada).
-                lo_s, hi_s = unquote(part[len("rescale="):]).split(",")
-                lo_f, hi_f = float(lo_s), float(hi_s)
-                if -1.0 <= lo_f < hi_f <= 1.0:
-                    rescale = (lo_f, hi_f)
-    except (ValueError, IndexError):
-        pass
-    return rescale
-
-
-def _parse_indice(scope) -> tuple[str, str | None] | None:
-    """``?index=…&collection=…`` de una tesela de índice (T5.5). None si alguno no es válido;
-    sin ellos, NDVI de la colección por defecto (las URLs de siempre)."""
-    from urllib.parse import parse_qs
-
-    from imagery_mcp.engine import INDICES
-    from imagery_mcp.providers import COLECCIONES
-
-    q = parse_qs(scope.get("query_string", b"").decode())
-    index = (q.get("index") or ["ndvi"])[0]
-    collection = (q.get("collection") or [None])[0]
-    if index not in INDICES or (collection is not None and collection not in COLECCIONES):
-        return None
-    return index, collection
-
-
-def _rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:  # noqa: C901
-    """Teselas NDVI, de cambio y RGB: heredan el scope de imagery_ndvi y pesan 0.05."""
-    import anyio
-
-    async def ndvi(scope, send, tile, _key):
-        if not _SCENE_RE.match(tile[0]):
-            await respond_json(send, 400, {"error": "scene_id con formato inválido"})
-            return
-        rescale = _parse_rescale(scope)
-        pedido = _parse_indice(scope)
-        if pedido is None:
-            await respond_json(send, 400, {"error": "índice o colección no válidos"})
-            return
-        index, collection = pedido
-        try:
-            png = await anyio.to_thread.run_sync(
-                lambda: pool.render_tile(*tile, rescale=rescale, index=index, collection=collection))
-        except KeyError:
-            await respond_json(send, 404, {"error": "escena no registrada; ejecuta antes imagery_ndvi/zonal"})
-            return
-        except Exception as exc:  # noqa: BLE001 — red flaky: error honesto
-            logger.warning(f"tile {tile} falló: {exc}")
-            pool.record_tile_failure()
-            await respond_json(send, 502, {"error": "tesela no disponible"})
-            return
-        await respond_png(send, png)
-
-    async def diff(scope, send, dtile, _key):
-        if not (_SCENE_RE.match(dtile[0]) and _SCENE_RE.match(dtile[1])):
-            await respond_json(send, 400, {"error": "scene_id con formato inválido"})
-            return
-        rescale = _parse_rescale(scope, default=(-0.5, 0.5))
-        try:
-            png = await anyio.to_thread.run_sync(lambda: pool.render_diff_tile(*dtile, rescale=rescale))
-        except KeyError:
-            await respond_json(send, 404, {"error": "alguna escena del cambio no está disponible"})
-            return
-        except EscenasIncompatiblesError as exc:
-            # 409: la petición es válida pero el cálculo que pide sería falso.
-            await respond_json(send, 409, {"error": str(exc)})
-            return
-        except Exception as exc:  # noqa: BLE001 — red flaky: error honesto
-            logger.warning(f"diff tile {dtile} falló: {exc}")
-            pool.record_tile_failure()
-            await respond_json(send, 502, {"error": "tesela de cambio no disponible"})
-            return
-        await respond_png(send, png)
-
-    async def rgb(scope, send, rgbt, _key):
-        if not _SCENE_RE.match(rgbt[0]):
-            await respond_json(send, 400, {"error": "scene_id con formato inválido"})
-            return
-        try:
-            png = await anyio.to_thread.run_sync(lambda: pool.render_rgb_tile(*rgbt))
-        except KeyError:
-            await respond_json(send, 404, {"error": "escena no registrada; ejecuta antes imagery_composite"})
-            return
-        except Exception as exc:  # noqa: BLE001 — red flaky: error honesto
-            logger.warning(f"rgb tile {rgbt} falló: {exc}")
-            pool.record_tile_failure()
-            await respond_json(send, 502, {"error": "tesela RGB no disponible"})
-            return
-        await respond_png(send, png)
-
-    return (
-        ExtraRoute(parse_tile_path, ndvi, requires_tool="imagery_ndvi", weight=0.05),
-        ExtraRoute(parse_diff_tile_path, diff, requires_tool="imagery_ndvi", weight=0.05),
-        ExtraRoute(parse_rgb_tile_path, rgb, requires_tool="imagery_ndvi", weight=0.05),
-    )
 
 
 def AuthMiddleware(app, keyring: KeyRing, limiter: RateLimiter,
@@ -437,7 +405,7 @@ def AuthMiddleware(app, keyring: KeyRing, limiter: RateLimiter,
     """401 sin clave · 429 sobre el límite · 403 sin scope (fail-closed) · teselas."""
     return GeoMcpAuth(
         app, keyring, limiter, service="imagery-mcp",
-        routes=_rutas_de_teselas(tile_pool) if tile_pool is not None else (),
+        routes=rutas_de_teselas(tile_pool) if tile_pool is not None else (),
         metrics=(lambda: dict(tile_pool.metrics)) if tile_pool is not None else None,
         max_body_bytes=_MAX_BODY_BYTES,
     )
