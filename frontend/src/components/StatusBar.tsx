@@ -1,10 +1,8 @@
 import { useMessages, useChatStatus } from '@/stores'
-import { useSessionId } from '@/stores'
 
 export function StatusBar() {
   const messages = useMessages()
   const status = useChatStatus()
-  const sessionId = useSessionId()
 
   const lastUser = [...messages].reverse().find((m) => m.role === 'user')
   const lastTs = lastUser ? new Date(lastUser.timestamp) : null
@@ -35,11 +33,6 @@ export function StatusBar() {
       </span>
 
       <div className="right">
-        {sessionId && (
-          <span className="mono" title="Session ID">
-            sesión <b>{sessionId.slice(-6)}</b>
-          </span>
-        )}
         <span>
           <span className="kbd">⌘K</span> Buscar
         </span>

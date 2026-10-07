@@ -28,6 +28,7 @@ import {
   useUIStore,
 } from '@/stores'
 import { useResultsStore } from '@/stores/resultsStore'
+import { useTraza } from '@/stores/trazaStore'
 import type { ChatStatus } from '@/stores/chatStore'
 import { usePedidoMapa } from '@/lib/pedidoMapa'
 import { buildMapContext, type Alcance } from '@/utils/mapContext'
@@ -377,6 +378,7 @@ export async function runQuery(text: string, alcance: Alcance = {}): Promise<voi
   setChatStatus('searching')
 
   const assistantMessageId = `${idMensaje('msg')}-assistant`
+  useTraza.getState().reiniciar()   // la trazabilidad de ESTE turno empieza vacía
   addMessage({
     id: assistantMessageId,
     role: 'assistant',
@@ -446,6 +448,9 @@ export async function runQuery(text: string, alcance: Alcance = {}): Promise<voi
       setChatStatus('error')
     }
   } finally {
+    // los pasos que dio el agente quedan con su respuesta (también si falló o se canceló)
+    const pasos = useTraza.getState().pasos
+    if (pasos.length) updateMessage(assistantMessageId, { traza: pasos })
     activeController = null
     enVuelo = null
     const t = useChatStore.getState().turnoRemoto

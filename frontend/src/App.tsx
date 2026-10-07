@@ -40,6 +40,8 @@ import { PedidoMapaBar } from '@/components/PedidoMapaBar'
 import { VistasControl } from '@/components/VistasControl'
 import { CompararCortina } from '@/components/CompararCortina'
 import { TiempoControl } from '@/components/TiempoControl'
+import { useTraza } from '@/stores/trazaStore'
+import type { TrazaPaso } from '@/types'
 
 function App() {
   const sessionId = useSessionId()
@@ -145,7 +147,12 @@ function App() {
         // su turno; al reconectar se sabe si el que se esperaba sigue en curso.
         if (manejarAvisoDeTurno(message.type, message.data)) return
 
-        if (message.type === 'approval_request') {
+        if (message.type === 'trace') {
+          // trazabilidad: lo que el agente está haciendo, paso a paso (el chat lo pinta en vivo)
+          useTraza.getState().aplicar(message.data as TrazaPaso)
+        }
+
+        else if (message.type === 'approval_request') {
           const approvalData = message.data as ApprovalStatus
           addPendingApproval(approvalData)
           // HITL BLOQUEANTE: la respuesta HTTP no llega hasta resolver la

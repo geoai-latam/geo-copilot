@@ -428,9 +428,11 @@ def main() -> None:  # pragma: no cover — entrypoint
         f"imagery-mcp: provider={settings.provider}, claves={len(keyring)}, "
         f"puerto={settings.port}"
     )
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
 
-    catalogo.precalentar([datetime.now(UTC).year])   # la 1.ª consulta del explorador no paga los pies
+    hoy = datetime.now(UTC).date()
+    # la 1.ª apertura del explorador (el mundo de los últimos 90 días) no paga el arranque en frío
+    catalogo.precalentar([hoy.year], mundo=((hoy - timedelta(days=90)).isoformat(), hoy.isoformat()))
     uvicorn.run(build_app(), host=settings.host, port=settings.port)
 
 

@@ -3,7 +3,7 @@
  * vista lo comparten). Las tools son las de imagery-mcp, las mismas que usa el agente.
  */
 import { mcpApi, type McpRunResult } from '@/services/api'
-import { EMPTY_FC, useMapStore, useSessionStore } from '@/stores'
+import { EMPTY_FC, esVectorial, type MapLayer, useMapStore, useSessionStore } from '@/stores'
 import { capaDelUsuario, useOperaciones } from '@/lib/operaciones'
 import { buildMapContext } from '@/utils/mapContext'
 import { type Metrica, SERVIDOR_IMAGERY, simbologiaCuadricula } from '@/lib/exploradorS2'
@@ -66,3 +66,39 @@ export function resaltarTesela(capa: string | null, tile: string | null) {
     useOperaciones.getState().ejecutar({ op: 'clear_selection', layer_id: capa, args: {}, reason: null } as never, 'user')
   }
 }
+
+/** ¿Es una cuadrícula del explorador (la del panel o la que pidió el agente)? Por sus campos. */
+export function esCuadriculaS2(l: MapLayer): boolean {
+  if (!esVectorial(l)) return false
+  const campos = l.tiles?.fields?.length ? l.tiles.fields : Object.keys(l.data?.features?.[0]?.properties ?? {})
+  return campos.includes('tile') && campos.includes('nubes_min')
+}
+
+/** ¿Es una escena de imagery (la ponga el panel o el agente)? */
+const esEscenaImagery = (l: MapLayer) => l.kind === 'raster-xyz'
+  && (/imagery_scene_view$/.test(l.origen?.capability ?? '') || (l.url ?? '').includes('/proxy/mcp/imagery/'))
+
+/**
+ * Los rasters entran DEBAJO de los vectores: una escena nueva quedaría teñida por el relleno de
+ * la cuadrícula y por la selección del clic con que se marcó un punto. Al entrar una, venga del
+ * panel o del agente, cada cuadrícula del explorador pasa a solo contorno (conserva su
+ * simbología) y sin selección ni resaltado.
+ */
+export function despejarEscenasNuevas(antes: MapLayer[], ahora: MapLayer[]) {
+  const previas = new Set(antes.map((l) => l.id))
+  if (!ahora.some((l) => !previas.has(l.id) && esEscenaImagery(l))) return
+  const ops = useOperaciones.getState()
+  for (const g of ahora.filter(esCuadriculaS2)) {
+    const s = g.symbology
+    if (s && (s.fill?.opacity ?? 0.4) > 0) {
+      ops.ejecutar({ op: 'set_style', layer_id: g.id, reason: 'escena Sentinel-2 encima',
+        args: { style: { ...s, fill: { ...(s.fill ?? {}), opacity: 0 } } as never } }, 'user')
+    }
+    if (g.seleccion) ops.ejecutar({ op: 'clear_selection', layer_id: g.id, args: {}, reason: null } as never, 'user')
+    if (g.resaltado) useMapStore.getState().setResaltado(g.id, null)
+  }
+}
+
+useMapStore.subscribe((s, prev) => {
+  if (s.layers !== prev.layers) despejarEscenasNuevas(prev.layers, s.layers)
+})

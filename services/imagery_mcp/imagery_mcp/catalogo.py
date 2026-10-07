@@ -186,10 +186,14 @@ FROM read_parquet({rutas}) GROUP BY mgrs_tile
         cols = ("tile", "escenas", "nubes_min", "nubes_mediana", "cobertura_max")
         return {"filas": [dict(zip(cols, f, strict=True)) for f in filas], "meses": meses}
 
-    def precalentar(self, anios: list[int]) -> None:
-        """Lee en segundo plano los pies de los archivos de esos años (best-effort)."""
+    def precalentar(self, anios: list[int], mundo: tuple[str, str] | None = None) -> None:
+        """En segundo plano y best-effort: el mundo de la ventana por defecto del explorador (lo
+        primero que pide al abrirse: en frío eran ~10 s y el usuario los esperaba) y los pies de
+        los archivos de esos años."""
         def _trabajo() -> None:
             try:
+                if mundo:
+                    self.mundo(*mundo)
                 for a in anios:
                     for r in self.archivos(a):
                         self._conexion().execute("SELECT count(*) FROM parquet_metadata(?)", [r])

@@ -32,9 +32,6 @@ export function TopBar() {
       {sessionId && (
         <>
           <div className="div" />
-          <div className="crumb mono">
-            sesión <span>#{sessionId.slice(-6)}</span>
-          </div>
           <ProyectosControl />
         </>
       )}

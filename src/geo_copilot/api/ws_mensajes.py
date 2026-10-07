@@ -137,6 +137,7 @@ class WSMessageType(str, Enum):
     STEP_STARTED = "step_started"            # Iniciando paso N del plan
     STEP_COMPLETED = "step_completed"        # Paso N completado
     EXECUTION_CANCELLED = "execution_cancelled"  # Ejecución cancelada con resultados parciales
+    TRACE = "trace"                          # Un paso del turno, legible: la trazabilidad del chat
 
 
 class WSMessage(BaseModel):

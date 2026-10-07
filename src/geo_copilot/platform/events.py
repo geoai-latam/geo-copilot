@@ -51,6 +51,10 @@ class EventSink(Protocol):
         status: str, result: dict | None = None,
     ) -> None: ...
 
+    async def traza(self, session_id: str, evento: dict) -> None:
+        """Un paso del turno, legible para el usuario (orchestrator/traza.py)."""
+        ...
+
 
 class NullSink:
     """No emite nada: tests, bench y cualquier uso del núcleo sin transporte."""
@@ -80,6 +84,9 @@ class NullSink:
     async def step_progress(self, session_id: str, step_index: int, total_steps: int,
                             action: str, status: str,
                             result: dict | None = None) -> None:
+        return None
+
+    async def traza(self, session_id: str, evento: dict) -> None:
         return None
 
 
