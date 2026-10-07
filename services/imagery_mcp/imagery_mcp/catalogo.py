@@ -51,11 +51,13 @@ ORDENES = {
 # Se filtra en un CTE MATERIALIZED y se deduplica después: con el QUALIFY sobre la lectura,
 # DuckDB 1.5 lo reescribe como semi-join por número de fila y la rama que trae las columnas
 # lee el parquet entero, sin podar (medido 2026-10-07: >200 s frente a ~20 s en frío).
+# `geometria`: la huella solo la pide la cuadrícula; la lista de escenas no la necesita y es la
+# columna más pesada (WKB); el tiempo lo marcan las peticiones HTTP, no ella (medido: ~igual).
 _ESCENAS = """
 WITH filtradas AS MATERIALIZED (
 SELECT id, _tile AS tile, datetime AS fecha, "eo:cloud_cover" AS nubes,
        100 - coalesce("s2:nodata_pixel_percentage", 0) AS cobertura,
-       platform AS plataforma, thumbnail_url AS miniatura, geometry, "s2:generation_time" AS gen
+       platform AS plataforma, thumbnail_url AS miniatura{geometria}, "s2:generation_time" AS gen
 FROM read_parquet({archivos}, union_by_name = true)
 WHERE {donde})
 SELECT * EXCLUDE (gen) FROM filtradas
@@ -231,7 +233,7 @@ FROM read_parquet({rutas}) GROUP BY mgrs_tile
         donde.insert(0, _EN_BBOX)
         params = [*bbox, *bbox, *params]
         sql = f"""
-WITH s AS ({_ESCENAS.format(archivos=self._fuente(desde, hasta), donde=" AND ".join(donde))})
+WITH s AS ({_ESCENAS.format(archivos=self._fuente(desde, hasta), donde=" AND ".join(donde), geometria=", geometry")})
 SELECT tile, count(*) AS escenas, round(min(nubes), 2) AS nubes_min,
        round(median(nubes), 2) AS nubes_mediana, round(max(cobertura), 2) AS cobertura_max,
        arg_min(id, nubes) AS mejor_escena, strftime(arg_min(fecha, nubes), '%Y-%m-%d') AS mejor_fecha,
@@ -267,7 +269,7 @@ FROM s GROUP BY tile ORDER BY tile"""
         sql = f"""
 SELECT id, tile, strftime(fecha, '%Y-%m-%dT%H:%M:%SZ') AS fecha, round(nubes, 2) AS nubes,
        round(cobertura, 2) AS cobertura, plataforma, miniatura
-FROM ({_ESCENAS.format(archivos=self._fuente(desde, hasta), donde=" AND ".join(donde))})
+FROM ({_ESCENAS.format(archivos=self._fuente(desde, hasta), donde=" AND ".join(donde), geometria="")})
 ORDER BY {ORDENES[orden]} LIMIT {max(1, min(int(limite), 200))}"""
         filas = self._conexion().execute(sql, params).fetchall()
         cols = ("id", "tile", "fecha", "nubes", "cobertura", "plataforma", "miniatura")

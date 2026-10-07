@@ -24,8 +24,9 @@ RUN pip install --no-cache-dir "/opt/geo_mcp_kit[otel]"
 ENV DUCKDB_EXTENSION_DIR=/opt/duckdb_ext
 # Presupuesto de memoria (el contenedor tiene 1 GiB; un OOM tumbaba el servicio a mitad de turno):
 # GDAL por defecto cachea el 5 % de la RAM del HOST en bloques y 25 MB por archivo abierto (una
-# escena son ~18 COG por carril); DuckDB, el 80 % del contenedor.
-ENV GDAL_CACHEMAX=128     VSI_CACHE_SIZE=4194304     IMAGERY_DUCKDB_MEMORIA=256MB     IMAGERY_DUCKDB_HILOS=2
+# escena son ~18 COG por carril); DuckDB, el 80 % del contenedor. Los hilos de DuckDB son
+# peticiones HTTP en paralelo (no memoria: la acota memory_limit): 2 → 8 baja una tesela de 8,5 a 4–5 s.
+ENV GDAL_CACHEMAX=128     VSI_CACHE_SIZE=4194304     IMAGERY_DUCKDB_MEMORIA=256MB     IMAGERY_DUCKDB_HILOS=8
 RUN python -c "import duckdb; c = duckdb.connect(); c.execute(\"SET extension_directory = '/opt/duckdb_ext'\"); c.execute('INSTALL httpfs; INSTALL spatial')" \
     && chmod -R a+rX /opt/duckdb_ext
 
