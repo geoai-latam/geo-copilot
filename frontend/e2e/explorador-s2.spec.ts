@@ -123,11 +123,13 @@ test.describe('Explorador Sentinel-2', () => {
 
     // Opacidad del relleno de la cuadrícula y cuántos rasters hay en el mapa.
     const estado = () => page.evaluate(() => {
-      const w = window as unknown as { __mapTestState?: { layers?: { id: string; kind?: string }[] }; __mlmap?: { getLayer: (id: string) => unknown; getPaintProperty: (id: string, p: string) => unknown } }
+      const w = window as unknown as { __mapTestState?: { layers?: { id: string; kind?: string }[] }; __mlmap?: { getLayer: (id: string) => unknown; getPaintProperty: (id: string, p: string) => unknown; getFilter: (id: string) => unknown } }
       const capas = w.__mapTestState?.layers ?? []
       const grid = capas.find((l) => w.__mlmap?.getLayer(`${l.id}-fill`))
       return {
         relleno: grid ? w.__mlmap?.getPaintProperty(`${grid.id}-fill`, 'fill-opacity') : null,
+        // El filtro de la capa de resaltado: ['boolean', false] = nada resaltado.
+        resaltado: grid ? JSON.stringify(w.__mlmap?.getFilter(`${grid.id}-sel-fill`)) !== '["boolean",false]' : null,
         rasters: capas.filter((l) => l.kind === 'raster-xyz').length,
         cuadriculas: capas.filter((l) => w.__mlmap?.getLayer(`${l.id}-fill`)).length,
       }
@@ -142,9 +144,10 @@ test.describe('Explorador Sentinel-2', () => {
     await waitForFeatureCount(page, 2)
     await panel.getByTestId('s2-teselas').locator('.imgp-scene').first().click()
     const escenas = panel.getByTestId('s2-escenas')
+    await expect.poll(async () => (await estado()).resaltado).toBe(true)     // la tesela abierta, resaltada
     await escenas.getByTestId('s2-ver-true_color').first().click()
     await waitForLayerKind(page, 'raster-xyz')
-    await expect.poll(estado).toMatchObject({ relleno: 0, rasters: 1 })
+    await expect.poll(estado).toMatchObject({ relleno: 0, rasters: 1, resaltado: false })
 
     await escenas.getByTestId('s2-ver-false_color').first().click()
     await expect.poll(async () => (await estado()).rasters).toBe(1)      // sustituye, no apila

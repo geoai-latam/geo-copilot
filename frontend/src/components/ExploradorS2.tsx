@@ -141,6 +141,7 @@ export function ExploradorS2() {
     const previo = rasterPrevio && useMapStore.getState().layers.some((l) => l.id === rasterPrevio) ? rasterPrevio : null
     fijar({ rasterPrevio: aplicarResultado(res, `${p} ${e.id}`, previo).raster ?? previo })
     rellenoCuadricula(capaGrid, metrica, false)
+    resaltarTesela(capaGrid, null)   // su relleno también teñiría la escena; la escena ya marca la tesela
     const xs = caja.coordinates[0].map((c) => c[0]), ys = caja.coordinates[0].map((c) => c[1])
     const v = vistaDeBbox([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)])
     useMapStore.getState().setMapView(v.centro, v.zoom)
