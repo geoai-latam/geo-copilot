@@ -2,8 +2,13 @@
  * Estado del explorador Sentinel-2. Vive fuera del componente: el cajón se desmonta al cambiar
  * de cajón y, con el estado local, volver dejaba el panel en blanco y la búsqueda siguiente ya no
  * sabía qué cuadrícula ni qué escena sustituir (se apilaban en el mapa).
+ *
+ * Se guarda en `sessionStorage` (por pestaña, como la sesión y sus capas, que al recargar vuelven
+ * con el MISMO id): sin eso, cada recarga olvidaba sus capas y la búsqueda siguiente sumaba otra
+ * cuadrícula. Sin almacenamiento (modo privado), funciona igual hasta recargar.
  */
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
 
 import type { EscenaS2, Metrica, TeselaS2 } from '@/lib/exploradorS2'
 import { ventanaPorDefecto } from '@/lib/exploradorS2'
@@ -37,8 +42,11 @@ function inicial() {
   }
 }
 
-export const useExploradorS2 = create<ExploradorS2Estado>((set) => ({
+export const useExploradorS2 = create<ExploradorS2Estado>()(persist((set) => ({
   ...inicial(),
   fijar: (cambios) => set(cambios),
   reiniciar: () => set(inicial()),
+}), {
+  name: 'geo.exploradorS2',
+  storage: createJSONStorage(() => window.sessionStorage),
 }))

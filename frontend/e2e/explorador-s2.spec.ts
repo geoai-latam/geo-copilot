@@ -164,6 +164,12 @@ test.describe('Explorador Sentinel-2', () => {
     await panel.getByTestId('s2-buscar').click()
     await expect.poll(async () => (await estado()).cuadriculas).toBe(1)
     await waitForFeatureCount(page, 2)
+
+    // Recargar la pestaña: el cajón sigue sabiendo qué buscó (y qué capas son suyas).
+    await page.reload()
+    await waitForMap(page)
+    await page.locator('[title="Sentinel-2"]').click()
+    await expect(panel.getByTestId('s2-teselas')).toContainText('2 teselas')
   })
 
   test('el error del servicio se dice tal cual', async ({ page }) => {
