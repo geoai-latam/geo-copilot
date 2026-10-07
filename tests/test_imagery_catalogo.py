@@ -110,6 +110,35 @@ def test_escenas_fechas_inclusivas_y_errores_honestos(catalogo):
         catalogo.escenas("2026-07-01", "2026-09-30")
 
 
+class _PlanDeLaConsulta:
+    """Cursor espía: en vez de ejecutar, guarda el EXPLAIN de la consulta."""
+
+    def __init__(self, cursor, planes: list[str]) -> None:
+        self._cursor, self._planes = cursor, planes
+
+    def execute(self, sql, params=None):
+        self._planes.append(self._cursor.execute("EXPLAIN " + sql, params).fetchall()[0][1])
+        return self
+
+    def fetchall(self):
+        return []
+
+
+def test_las_consultas_por_bbox_podan_por_grupo_de_filas(catalogo, monkeypatch):
+    """Sobre el parquet de 4,7 GB del año, la consulta por bbox solo es viable si DuckDB
+    descarta grupos de filas por su `geo_bbox`: el plan debe llevar el `&&` en la lectura y
+    no el semi-join por número de fila (con él, la rama de columnas lee el archivo entero)."""
+    planes: list[str] = []
+    real = catalogo._conexion
+    monkeypatch.setattr(catalogo, "_conexion", lambda: _PlanDeLaConsulta(real(), planes))
+    catalogo.cuadricula(_BOGOTA, "2026-07-01", "2026-09-30")
+    catalogo.escenas("2026-07-01", "2026-09-30", bbox=_BOGOTA)
+    assert len(planes) == 2
+    for plan in planes:
+        assert "&&" in plan
+        assert "SEMI" not in plan
+
+
 def test_item_reconstruye_la_escena_y_la_resuelve_el_proveedor(catalogo):
     sid = "S2B_T18NWL_20260810T152745_L2A"
     item = catalogo.item(sid)
