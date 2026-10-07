@@ -1,4 +1,5 @@
 /* eslint-disable max-lines -- deuda congelada (F1 del plan de calidad): partir por responsabilidad, no crecer */
+import { useProyeccion } from '@/lib/proyeccion'
 import { useEffect, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import '@/lib/maplibreWorker'
@@ -234,6 +235,7 @@ export function MapLibreMap() {
   const mapCenter = useMapCenter()
   const mapZoom = useMapZoom()
   const viewInitRef = useRef(false)
+  useProyeccion(mapRef)
 
   // Init una sola vez.
   useEffect(() => {

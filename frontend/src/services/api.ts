@@ -409,6 +409,8 @@ export interface McpLegend {
   min?: number;
   max?: number;
   nota?: string;
+  colores?: string[];
+  clases?: { valor: number; etiqueta: string; color: string }[];
 }
 
 export interface McpRunResult {

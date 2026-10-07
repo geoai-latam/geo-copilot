@@ -1,35 +1,27 @@
 /**
  * Explorador Sentinel-2 (panel transaccional) — la misma puerta que usa el agente.
  *
- * 1. «Buscar en la vista» → `imagery_catalog_grid`: las teselas MGRS de la vista coloreadas por
- *    la métrica elegida (capa del workspace: el agente también la ve y la puede usar).
- * 2. Elegir una tesela → `imagery_catalog_scenes`: sus escenas con miniatura, nubes y cobertura.
- * 3. Ver una escena → `imagery_composite` (color) o `imagery_ndvi` con su `scene_id`.
+ * 1. Al abrir, el mundo entero: `imagery_catalog_world` pinta las ~29.000 teselas MGRS por la
+ *    métrica elegida (agregados por meses). «Detallar la vista» usa `imagery_catalog_grid`
+ *    (fechas exactas y la mejor escena de cada tesela). En globo o en plano.
+ * 2. Una tesela (de la lista o con un clic en el mapa) → `imagery_catalog_scenes`.
+ * 3. Una escena → `imagery_scene_view`: la escena ENTERA en el producto elegido (color, índice,
+ *    banda suelta, SCL, nubes). Su tarjeta ajusta el contraste, lee píxeles y la descarga.
  */
-import { useState } from 'react'
-import { AlertTriangle, Cloud, Grid3x3, Leaf, Loader2, Palette, Satellite, Search } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, Cloud, Eye, Globe2, Grid3x3, Loader2, Map as MapaIcono, Satellite, Search } from 'lucide-react'
 
-import { mcpApi, type McpRunResult } from '@/services/api'
-import { type OrdenEscenas, useExploradorS2 } from '@/stores/exploradorS2Store'
-import { useMapStore, useSessionStore } from '@/stores'
-import { capaDelUsuario, useOperaciones } from '@/lib/operaciones'
+import { useMapStore, useSelectedFeature } from '@/stores'
 import { aplicarResultado } from '@/lib/resultadoHerramienta'
-import { getViewBounds } from '@/lib/mapViewport'
-import { buildMapContext } from '@/utils/mapContext'
 import {
-  cajaParaVer, type EscenaS2, escenasDe, fechaCorta, METRICAS, type Metrica, SERVIDOR_IMAGERY,
-  simbologiaCuadricula, type TeselaS2, teselasDe, vistaDeBbox,
+  type EscenaS2, escenasDe, fechaCorta, GRUPOS, METRICAS, type Metrica, PRODUCTOS_S2, productoS2,
+  simbologiaCuadricula, type TeselaS2, teselasDe, teselasDelMundo, vistaDeBbox,
 } from '@/lib/exploradorS2'
-
-type Producto = 'true_color' | 'false_color' | 'agriculture' | 'swir' | 'ndvi'
-
-const PRODUCTOS: { id: Producto; etiqueta: string; titulo: string; icono: typeof Palette }[] = [
-  { id: 'true_color', etiqueta: 'Color', titulo: 'Color real (B04, B03, B02)', icono: Palette },
-  { id: 'false_color', etiqueta: 'Falso color', titulo: 'Infrarrojo (B08, B04, B03): vegetación en rojo', icono: Palette },
-  { id: 'agriculture', etiqueta: 'Agricultura', titulo: 'Agricultura (B11, B08, B02): cultivos y suelo', icono: Palette },
-  { id: 'swir', etiqueta: 'SWIR', titulo: 'Infrarrojo de onda corta (B12, B8A, B04): humedad, quemas', icono: Palette },
-  { id: 'ndvi', etiqueta: 'NDVI', titulo: 'Índice de vegetación (B08/B04)', icono: Leaf },
-]
+import {
+  capaDeCuadricula, correrImagery, existeCapa, quitarSiExiste, rellenoCuadricula, resaltarTesela,
+} from '@/lib/exploradorS2Mapa'
+import { type OrdenEscenas, useExploradorS2 } from '@/stores/exploradorS2Store'
+import { EscenaS2Vista } from './EscenaS2Vista'
 
 const ORDENES: { id: OrdenEscenas; etiqueta: string }[] = [
   { id: 'menos_nubes', etiqueta: 'Menos nubes' },
@@ -37,43 +29,91 @@ const ORDENES: { id: OrdenEscenas; etiqueta: string }[] = [
   { id: 'reciente', etiqueta: 'Más reciente' },
 ]
 
-/** Resalta en la cuadrícula la tesela abierta (null la apaga). */
-function resaltarTesela(capa: string | null, tile: string | null) {
-  if (!capa || !useMapStore.getState().layers.some((l) => l.id === capa)) return
-  useMapStore.getState().setResaltado(capa, tile ? { where: { field: 'tile', op: '=', value: tile }, count: 1, origin: 'query' } : null)
+/** El mundo se pide UNA vez al abrir el explorador por primera vez (StrictMode monta dos). */
+let mundoPedido = false
+
+type Seccion = { source?: string; properties?: Record<string, unknown> }
+
+function FiltrosS2() {
+  const { desde, hasta, maxNubes, minCobertura, minEscenas, fijar } = useExploradorS2()
+  return (
+    <>
+      <div className="imgp-row">
+        <label className="imgp-sub">Desde<input type="date" value={desde} onChange={(e) => fijar({ desde: e.target.value })} /></label>
+        <label className="imgp-sub">Hasta<input type="date" value={hasta} onChange={(e) => fijar({ hasta: e.target.value })} /></label>
+      </div>
+      <label className="imgp-sub">Nubes máximas <b className="imgp-cloud-val">{maxNubes}%</b>
+        <input className="imgp-slider" type="range" min={0} max={100} value={maxNubes}
+          onChange={(e) => fijar({ maxNubes: Number(e.target.value) })} aria-label="Nubes máximas" />
+      </label>
+      <label className="imgp-sub">Cobertura mínima de la tesela <b className="imgp-cloud-val">{minCobertura}%</b>
+        <input className="imgp-slider" type="range" min={0} max={100} value={minCobertura}
+          onChange={(e) => fijar({ minCobertura: Number(e.target.value) })} aria-label="Cobertura mínima" />
+      </label>
+      <label className="imgp-sub">Escenas mínimas por tesela <b className="imgp-cloud-val">{minEscenas}</b>
+        <input className="imgp-slider" type="range" min={0} max={60} value={minEscenas}
+          onChange={(e) => fijar({ minEscenas: Number(e.target.value) })} aria-label="Escenas mínimas" />
+      </label>
+    </>
+  )
 }
 
-async function correr(tool: string, args: Record<string, unknown>): Promise<McpRunResult> {
-  const sessionId = useSessionStore.getState().sessionId
-  if (!sessionId) throw new Error('No hay sesión activa.')
-  const res = await mcpApi.run(SERVIDOR_IMAGERY, tool, {
-    session_id: sessionId, arguments: args, map_context: buildMapContext(),
-  })
-  if (!res.success) throw new Error(res.message ?? 'La herramienta no devolvió resultado.')
-  return res
+function ListaTeselas({ teselas, mundo, ocupado, onAbrir }: {
+  teselas: TeselaS2[]; mundo: boolean; ocupado: boolean; onAbrir: (t: TeselaS2) => void
+}) {
+  return (
+    <section className="imgp-card" data-testid="s2-teselas">
+      <header><Grid3x3 className="w-3.5 h-3.5" /> {mundo ? 'Las más despejadas' : `${teselas.length} teselas`}</header>
+      {teselas.length === 0 && <p className="imgp-sub">Ninguna tesela pasa los filtros.</p>}
+      <ul className="imgp-scenes">
+        {teselas.slice(0, 50).map((t) => (
+          <li key={t.tile}>
+            <button className="imgp-scene" onClick={() => onAbrir(t)} disabled={ocupado}>
+              <span>{t.tile}</span>
+              <em><Cloud className="w-3 h-3" />{t.nubes_min}% · {t.escenas} escenas</em>
+              {t.mejor_fecha && <i className={t.nubes_min <= 10 ? 'ok' : 'part'}>{t.mejor_fecha}</i>}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
-/** Quita una capa del mapa si sigue ahí (el usuario pudo borrarla a mano). */
-function quitarSiExiste(id: string | null) {
-  if (id && useMapStore.getState().layers.some((l) => l.id === id)) {
-    useOperaciones.getState().ejecutar({ op: 'remove_layer', layer_id: id, args: {}, reason: null }, 'user')
-  }
-}
-
-/** Relleno de la cuadrícula: se apaga mientras se ve una escena para no teñirla. */
-function rellenoCuadricula(capa: string | null, metrica: Metrica, relleno: boolean) {
-  if (capa && useMapStore.getState().layers.some((l) => l.id === capa)) {
-    useOperaciones.getState().ejecutar({
-      op: 'set_style', layer_id: capa, args: { style: simbologiaCuadricula(metrica, relleno) as never },
-      reason: 'explorador Sentinel-2',
-    }, 'user')
-  }
+function ListaEscenas({ escenas, vista, producto, cargando, onVer }: {
+  escenas: EscenaS2[] | null; vista: string | null; producto: string; cargando: string | null
+  onVer: (e: EscenaS2) => void
+}) {
+  if (escenas?.length === 0) return <p className="imgp-sub">Ninguna escena pasa los filtros.</p>
+  return (
+    <ul className="s2-escenas">
+      {(escenas ?? []).map((e) => (
+        <li key={e.id} className={`s2-escena${vista === e.id ? ' activa' : ''}`}>
+          <img src={e.miniatura} alt={`Vista previa ${e.id}`} loading="lazy" width={64} height={64} />
+          <div>
+            <b>{fechaCorta(e.fecha)}</b>
+            <span className="imgp-sub">{e.nubes}% nubes · {e.cobertura}% cobertura</span>
+            <code className="s2-id" title={e.id}>{e.id}</code>
+            <div className="s2-acciones">
+              <button className="imgp-chip" disabled={cargando !== null} data-testid="s2-ver" onClick={() => onVer(e)}
+                title={`Ver la escena entera: ${productoS2(producto).etiqueta}`}>
+                {cargando === `ver:${e.id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />} Ver
+              </button>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 export function ExploradorS2() {
   const {
-    desde, hasta, maxNubes, minCobertura, metrica, orden, teselas, capaGrid, tesela, escenas, rasterPrevio, fijar,
+    desde, hasta, maxNubes, minCobertura, minEscenas, metrica, orden, modo, producto, teselas, capaGrid,
+    tesela, escenas, escenaVista, rasterPrevio, fijar,
   } = useExploradorS2()
+  const proyeccion = useMapStore((s) => s.proyeccion)
+  const seleccion = useSelectedFeature() as { secciones?: Seccion[] } | null
   const [cargando, setCargando] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -89,25 +129,33 @@ export function ExploradorS2() {
     try { await fn() } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setCargando(null) }
   }
 
-  const buscar = () => conEstado('grid', async () => {
-    const res = await correr('imagery_catalog_grid', { aoi_geojson: 'viewport', ...filtros })
-    quitarSiExiste(capaGrid)   // la búsqueda nueva sustituye a la anterior (se puede deshacer)
-    const fc = res.results.geojson
-    const capa = fc?.features?.length
-      ? capaDelUsuario(useMapStore.getState().addLayer(fc, `Sentinel-2 ${desde} → ${hasta}`,
-        simbologiaCuadricula(metrica), res.results.layer_ref?.id)) ?? null
-      : null
-    fijar({ teselas: teselasDe(res), tesela: null, escenas: null, capaGrid: capa })
+  const ponerCuadricula = (res: Parameters<typeof teselasDe>[0], nombre: string) => {
+    quitarSiExiste(capaGrid)   // la cuadrícula nueva sustituye a la anterior (se puede deshacer)
+    return capaDeCuadricula(res, nombre, simbologiaCuadricula(metrica))
+  }
+
+  const verMundo = () => conEstado('mundo', async () => {
+    const res = await correrImagery('imagery_catalog_world', { ...filtros, ...(minEscenas > 0 ? { min_scenes: minEscenas } : {}) })
+    const capa = ponerCuadricula(res, `Sentinel-2 en el mundo ${desde} → ${hasta}`)
+    fijar({ modo: 'mundo', teselas: teselasDelMundo(res), tesela: null, escenas: null, capaGrid: capa })
   })
 
-  const cambiarMetrica = (m: Metrica) => {
-    fijar({ metrica: m })
-    rellenoCuadricula(capaGrid, m, tesela === null)
-  }
+  const detallarVista = () => conEstado('vista', async () => {
+    const res = await correrImagery('imagery_catalog_grid', { aoi_geojson: 'viewport', ...filtros })
+    const capa = ponerCuadricula(res, `Sentinel-2 ${desde} → ${hasta}`)
+    fijar({ modo: 'vista', teselas: teselasDe(res), tesela: null, escenas: null, capaGrid: capa })
+  })
+
+  useEffect(() => {
+    if (!mundoPedido && useExploradorS2.getState().teselas === null) {
+      mundoPedido = true
+      void verMundo()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- solo al abrir por primera vez
 
   const cargarEscenas = (t: TeselaS2, o: OrdenEscenas) => conEstado(`tesela:${t.tile}`, async () => {
     fijar({ escenas: null })
-    const res = await correr('imagery_catalog_scenes', { tile: t.tile, ...filtros, order: o, limit: 60 })
+    const res = await correrImagery('imagery_catalog_scenes', { tile: t.tile, ...filtros, order: o, limit: 60 })
     fijar({ escenas: escenasDe(res) })
   })
 
@@ -121,6 +169,23 @@ export function ExploradorS2() {
     return cargarEscenas(t, orden)
   }
 
+  // Un clic sobre la cuadrícula del mapa abre esa tesela (con el mundo no caben todas en la lista).
+  useEffect(() => {
+    const s = seleccion?.secciones?.find((x) => x.source === capaGrid)
+    const p = s?.properties
+    if (p && typeof p.tile === 'string' && p.tile !== tesela?.tile && cargando === null) {
+      void abrirTesela({
+        tile: p.tile, escenas: Number(p.escenas), nubes_min: Number(p.nubes_min),
+        nubes_mediana: Number(p.nubes_mediana), cobertura_max: Number(p.cobertura_max), bbox: null,
+      })
+    }
+  }, [seleccion]) // eslint-disable-line react-hooks/exhaustive-deps -- reacciona solo al clic
+
+  const cambiarMetrica = (m: Metrica) => {
+    fijar({ metrica: m })
+    rellenoCuadricula(capaGrid, m, escenaVista === null)
+  }
+
   const cambiarOrden = (o: OrdenEscenas) => {
     fijar({ orden: o })
     if (tesela) void cargarEscenas(tesela, o)
@@ -132,69 +197,73 @@ export function ExploradorS2() {
     rellenoCuadricula(capaGrid, metrica, true)
   }
 
-  const ver = (e: EscenaS2, p: Producto) => conEstado(`ver:${e.id}:${p}`, async () => {
-    if (!tesela?.bbox) throw new Error('La tesela no trae su huella.')
-    const caja = cajaParaVer(tesela.bbox, getViewBounds())
-    const res = p === 'ndvi'
-      ? await correr('imagery_ndvi', { aoi_geojson: caja, scene_id: e.id })
-      : await correr('imagery_composite', { aoi_geojson: caja, scene_id: e.id, combo: p })
-    const previo = rasterPrevio && useMapStore.getState().layers.some((l) => l.id === rasterPrevio) ? rasterPrevio : null
-    fijar({ rasterPrevio: aplicarResultado(res, `${p} ${e.id}`, previo).raster ?? previo })
-    rellenoCuadricula(capaGrid, metrica, false)
-    resaltarTesela(capaGrid, null)   // su relleno también teñiría la escena; la escena ya marca la tesela
-    const xs = caja.coordinates[0].map((c) => c[0]), ys = caja.coordinates[0].map((c) => c[1])
-    const v = vistaDeBbox([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)])
-    useMapStore.getState().setMapView(v.centro, v.zoom)
-  })
+  /** La escena ENTERA en el producto elegido; `rangos` = el contraste de su tarjeta. */
+  const verEscena = (id: string, fecha: string, prod: string, rangos: [number, number][] | null) =>
+    conEstado(`ver:${id}`, async () => {
+      const args: Record<string, unknown> = { scene_id: id, product: prod }
+      if (rangos) {
+        if (productoS2(prod).grupo === 'color') args.stretch = rangos
+        else args.rescale = rangos[0]
+      }
+      const res = await correrImagery('imagery_scene_view', args)
+      const previo = existeCapa(rasterPrevio) ? rasterPrevio : null
+      const raster = aplicarResultado(res, `${prod} ${id}`, previo).raster ?? previo
+      rellenoCuadricula(capaGrid, metrica, false)
+      resaltarTesela(capaGrid, null)   // su relleno también teñiría la escena; la escena ya marca la tesela
+      const escena = (res.facts?.scene ?? {}) as { bbox?: [number, number, number, number] }
+      if (!rangos && escena.bbox) {
+        const v = vistaDeBbox(escena.bbox)
+        useMapStore.getState().setMapView(v.centro, v.zoom)
+      }
+      fijar({
+        rasterPrevio: raster,
+        escenaVista: { id, fecha, producto: prod, bbox: escena.bbox ?? null, rangos,
+          descargas: (res.facts?.descargas ?? []) as never },
+      })
+    })
 
   return (
     <div className="imgp" data-testid="explorador-s2">
       <section className="imgp-card">
-        <header><Satellite className="w-3.5 h-3.5" /> Sentinel-2 L2A · 10 m</header>
-        <div className="imgp-row">
-          <label className="imgp-sub">Desde<input type="date" value={desde} onChange={(e) => fijar({ desde: e.target.value })} /></label>
-          <label className="imgp-sub">Hasta<input type="date" value={hasta} onChange={(e) => fijar({ hasta: e.target.value })} /></label>
-        </div>
-        <label className="imgp-sub">Nubes máximas <b className="imgp-cloud-val">{maxNubes}%</b>
-          <input className="imgp-slider" type="range" min={0} max={100} value={maxNubes}
-            onChange={(e) => fijar({ maxNubes: Number(e.target.value) })} aria-label="Nubes máximas" />
-        </label>
-        <label className="imgp-sub">Cobertura mínima de la tesela <b className="imgp-cloud-val">{minCobertura}%</b>
-          <input className="imgp-slider" type="range" min={0} max={100} value={minCobertura}
-            onChange={(e) => fijar({ minCobertura: Number(e.target.value) })} aria-label="Cobertura mínima" />
-        </label>
+        <header>
+          <Satellite className="w-3.5 h-3.5" /> Sentinel-2 L2A · 10 m
+          <button className="imgp-link" onClick={() => useMapStore.getState().setProyeccion(proyeccion === 'globe' ? 'mercator' : 'globe')}
+            data-testid="s2-globo" title="Ver el mapa como globo o en plano">
+            {proyeccion === 'globe' ? <><MapaIcono className="w-3 h-3" /> Plano</> : <><Globe2 className="w-3 h-3" /> Globo</>}
+          </button>
+        </header>
+        <FiltrosS2 />
         <label className="imgp-sub">Colorear teselas por
           <select value={metrica} onChange={(e) => cambiarMetrica(e.target.value as Metrica)} aria-label="Colorear por">
             {METRICAS.map((m) => <option key={m.id} value={m.id}>{m.etiqueta}</option>)}
           </select>
         </label>
-        <button className="btn btn-primary imgp-run" onClick={() => void buscar()} disabled={cargando !== null}
-          data-testid="s2-buscar">
-          {cargando === 'grid' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-          Buscar en la vista
-        </button>
-        <p className="imgp-hint">Busca en lo que ves en el mapa (hasta el tamaño de un país, hasta un año).
-          La primera búsqueda tarda más: lee el catálogo de escenas.</p>
+        <div className="imgp-row">
+          <button className="btn btn-primary imgp-run" onClick={() => void verMundo()} disabled={cargando !== null}
+            data-testid="s2-mundo">
+            {cargando === 'mundo' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe2 className="w-4 h-4" />}
+            El mundo
+          </button>
+          <button className="btn imgp-run" onClick={() => void detallarVista()} disabled={cargando !== null}
+            data-testid="s2-buscar">
+            {cargando === 'vista' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            Detallar la vista
+          </button>
+        </div>
+        <p className="imgp-hint">{modo === 'mundo'
+          ? 'Todas las teselas del mundo, por meses completos. Haz clic en una del mapa para ver sus escenas.'
+          : 'Las teselas de la vista con fechas exactas y su escena más despejada (hasta el tamaño de un país).'}</p>
       </section>
 
       {error && <div className="imgp-error" role="alert"><AlertTriangle className="w-4 h-4" />{error}</div>}
 
+      {escenaVista && (
+        <EscenaS2Vista vista={escenaVista} ocupado={cargando !== null}
+          onAplicar={(rangos) => verEscena(escenaVista.id, escenaVista.fecha, escenaVista.producto, rangos)} />
+      )}
+
       {teselas && !tesela && (
-        <section className="imgp-card" data-testid="s2-teselas">
-          <header><Grid3x3 className="w-3.5 h-3.5" /> {teselas.length} teselas</header>
-          {teselas.length === 0 && <p className="imgp-sub">Ninguna escena pasa los filtros en esta vista.</p>}
-          <ul className="imgp-scenes">
-            {teselas.map((t) => (
-              <li key={t.tile}>
-                <button className="imgp-scene" onClick={() => void abrirTesela(t)} disabled={cargando !== null}>
-                  <span>{t.tile}</span>
-                  <em><Cloud className="w-3 h-3" />{t.nubes_min}% · {t.escenas} escenas</em>
-                  <i className={t.nubes_min <= 10 ? 'ok' : 'part'}>{t.mejor_fecha}</i>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <ListaTeselas teselas={teselas} mundo={modo === 'mundo'} ocupado={cargando !== null} onAbrir={(t) => void abrirTesela(t)} />
       )}
 
       {tesela && (
@@ -203,34 +272,26 @@ export function ExploradorS2() {
             <Grid3x3 className="w-3.5 h-3.5" /> Tesela {tesela.tile}
             <button className="imgp-link" onClick={volverATeselas}>← teselas</button>
           </header>
-          <label className="imgp-sub">Ordenar
-            <select value={orden} onChange={(e) => cambiarOrden(e.target.value as OrdenEscenas)}
-              aria-label="Ordenar escenas" disabled={cargando !== null}>
-              {ORDENES.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
-            </select>
-          </label>
+          <div className="imgp-row">
+            <label className="imgp-sub">Ordenar
+              <select value={orden} onChange={(e) => cambiarOrden(e.target.value as OrdenEscenas)}
+                aria-label="Ordenar escenas" disabled={cargando !== null}>
+                {ORDENES.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
+              </select>
+            </label>
+            <label className="imgp-sub">Ver como
+              <select value={producto} onChange={(e) => fijar({ producto: e.target.value })} aria-label="Ver como">
+                {GRUPOS.map((g) => (
+                  <optgroup key={g.id} label={g.etiqueta}>
+                    {PRODUCTOS_S2.filter((p) => p.grupo === g.id).map((p) => <option key={p.id} value={p.id}>{p.etiqueta}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+          </div>
           {cargando === `tesela:${tesela.tile}` && <p className="imgp-sub"><Loader2 className="w-3 h-3 animate-spin" /> Buscando escenas…</p>}
-          {escenas?.length === 0 && <p className="imgp-sub">Ninguna escena pasa los filtros.</p>}
-          <ul className="s2-escenas">
-            {(escenas ?? []).map((e) => (
-              <li key={e.id} className="s2-escena">
-                <img src={e.miniatura} alt={`Vista previa ${e.id}`} loading="lazy" width={64} height={64} />
-                <div>
-                  <b>{fechaCorta(e.fecha)}</b>
-                  <span className="imgp-sub">{e.nubes}% nubes · {e.cobertura}% cobertura</span>
-                  <code className="s2-id" title={e.id}>{e.id}</code>
-                  <div className="s2-acciones">
-                    {PRODUCTOS.map(({ id, etiqueta, titulo, icono: Icono }) => (
-                      <button key={id} className="imgp-chip" disabled={cargando !== null} title={titulo}
-                        onClick={() => void ver(e, id)} data-testid={`s2-ver-${id}`}>
-                        {cargando === `ver:${e.id}:${id}` ? <Loader2 className="w-3 h-3 animate-spin" /> : <Icono className="w-3 h-3" />} {etiqueta}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <ListaEscenas escenas={escenas} vista={escenaVista?.id ?? null} producto={producto} cargando={cargando}
+            onVer={(e) => void verEscena(e.id, e.fecha, producto, null)} />
         </section>
       )}
     </div>

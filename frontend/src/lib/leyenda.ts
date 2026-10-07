@@ -21,15 +21,23 @@ export interface Leyenda {
 
 const esRaster = (l: MapLayer) => l.kind === 'raster-xyz' || l.kind === 'arcgis-image' || l.kind === 'wms'
 
-export function leyendaDe(l: MapLayer): Leyenda | null { // eslint-disable-line complexity -- deuda congelada (F1): ESLint 10 suma `?.` y defaults; partir, no subir
-  if (!l.visible) return null
-  if (esRaster(l)) {
-    const ley = l.legend as { field?: string; min?: number; max?: number; nota?: string } | null | undefined
-    if (ley && typeof ley.min === 'number' && typeof ley.max === 'number') {
-      return { titulo: l.name, rampa: { colores: RAMPA_INDICE, min: ley.min, max: ley.max, campo: ley.field ?? null, nota: ley.nota ?? null } }
-    }
-    return null // una imagen (color real, mapa base de un servicio) no tiene clases que explicar
+/** Raster: sus clases (la SCL de Sentinel-2) o su rampa, con los colores que declara el servidor
+ * (NDWI azul, una banda en gris…) o la del índice de siempre. Una imagen en color no tiene. */
+function leyendaRaster(l: MapLayer): Leyenda | null {
+  const ley = l.legend
+  if (ley?.clases?.length) {
+    return { titulo: l.name, filas: ley.clases.map((c) => ({ label: c.etiqueta, color: c.color })), nota: ley.field }
   }
+  if (ley && typeof ley.min === 'number' && typeof ley.max === 'number') {
+    const colores = ley.colores?.length ? ley.colores : RAMPA_INDICE
+    return { titulo: l.name, rampa: { colores, min: ley.min, max: ley.max, campo: ley.field ?? null, nota: ley.nota ?? null } }
+  }
+  return null
+}
+
+export function leyendaDe(l: MapLayer): Leyenda | null {
+  if (!l.visible) return null
+  if (esRaster(l)) return leyendaRaster(l)
   const s = l.symbology
   const titulo = l.name
   const tipo = s?.symbology_type

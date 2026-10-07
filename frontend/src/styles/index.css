@@ -2710,6 +2710,27 @@ input, textarea { font: inherit; color: inherit; }
 .s2-id { font-size: 10px; color: var(--text-mute); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; user-select: all; }
 .s2-acciones { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.s2-escena.activa { border-color: var(--accent, #2f6f4f); box-shadow: 0 0 0 1px var(--accent, #2f6f4f) inset; }
+.s2-apartado { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+.s2-apartado > summary { display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 12px;
+  font-weight: 600; list-style: none; }
+.s2-apartado > summary::-webkit-details-marker { display: none; }
+.s2-apartado[open] > summary { margin-bottom: 6px; }
+.s2-canal { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+.s2-canal input[type="number"] { width: 100%; padding: 3px 5px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.s2-hist { width: 100%; height: 28px; display: block; background: var(--bg-2); border-radius: 4px; }
+.s2-hist rect { fill: var(--text-mute); }
+.s2-hist .s2-hist-rango { fill: var(--accent, #2f6f4f); opacity: 0.18; }
+.s2-clases, .s2-descargas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px;
+  font-size: 11.5px; max-height: 30vh; overflow-y: auto; }
+.s2-clases li { display: flex; justify-content: space-between; gap: 8px; }
+.s2-clases b { font-variant-numeric: tabular-nums; }
+.s2-descargas a { font-weight: 600; font-family: var(--font-mono, monospace); }
+.s2-pixel { width: 100%; font-size: 11.5px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.s2-pixel th { text-align: left; font-weight: 600; padding: 1px 6px 1px 0; white-space: nowrap; }
+.s2-pixel td { text-align: right; padding: 1px 0; }
+.s2-pixel tr + tr { border-top: 1px solid var(--border); }
 .s2-acciones .imgp-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; }
 .imgp select, .imgp input[type="date"] { width: 100%; margin-top: 3px; padding: 4px 6px;
   border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
