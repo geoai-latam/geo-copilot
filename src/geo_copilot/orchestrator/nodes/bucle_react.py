@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from geo_copilot.core.agent_audit import DecisionTrace
 from geo_copilot.core.llm_client import LLMMessage
 from geo_copilot.core.logging import get_logger
+from geo_copilot.orchestrator import traza
 from geo_copilot.orchestrator.circuit_breaker import CircuitBreaker
 from geo_copilot.platform.capabilities import ANSWER_TOOL
 
@@ -180,17 +182,30 @@ class BucleReAct:
     # ------------------------------------------------------------------ el paso
     async def paso(self) -> bool:
         """Un paso del bucle: pensar → elegir herramienta → ejecutarla → observar. True = seguir."""
+        session_id = self.state.get("session_id") or ""
+        id_pensar = traza.nuevo_id("pensar")
+        await traza.emitir(session_id, id=id_pensar, tipo="pensar", estado="en_curso",
+                           titulo="Decidiendo el siguiente paso")
+        t0 = time.monotonic()
         try:
             tool_schemas = _al()._esquemas_del_paso(self.graph, self.working)
             response = await self.llm.chat(self.messages, tools=tool_schemas)
         except Exception as exc:  # noqa: BLE001 — un fallo del LLM cierra honesto
             from geo_copilot.core.llm_client import mensaje_fallo_llm
 
+            await traza.emitir(session_id, id=id_pensar, tipo="pensar", estado="fallo",
+                               titulo="Decidiendo el siguiente paso", detalle="el modelo no respondió",
+                               ms=int((time.monotonic() - t0) * 1000))
             logger.error(f"[agent_loop] LLM falló: {exc}")
             self.trace.record_error(self.step, f"LLM error: {exc}")
             self.final_text = (mensaje_fallo_llm(exc)  # saturación o cuota agotada: cada una con su mensaje
                                or "No pude completar la solicitud por un error del modelo.")
             return False
+        elegida = (((response.tool_calls or [{}])[0] or {}).get("function") or {}).get("name") if response.tool_calls else None
+        await traza.emitir(session_id, id=id_pensar, tipo="pensar", estado="ok", titulo="Decidiendo el siguiente paso",
+                           detalle=("eligió responder" if not elegida or elegida == ANSWER_TOOL
+                                    else f"eligió {traza.describir_herramienta(elegida)[0]}"),
+                           ms=int((time.monotonic() - t0) * 1000))
         usage = response.usage or {}
         _tok = usage.get("total_tokens")
         self.breaker.record_tokens(_tok if isinstance(_tok, int) else 0)
@@ -251,12 +266,20 @@ class BucleReAct:
         self.tools_used.append(name)
         session_id = self.state.get("session_id") or ""
         await _al()._anunciar(session_id, name, "started")
+        titulo, que_hace = traza.describir_herramienta(name)
+        id_tool, t0 = traza.nuevo_id("tool"), time.monotonic()
+        await traza.emitir(session_id, id=id_tool, tipo="herramienta", estado="en_curso", titulo=titulo,
+                           detalle=que_hace, herramienta=name, argumentos=traza.resumen_argumentos(args))
         try:
             outcome = await _al().dispatch_tool(self.graph, self.working, name, args)
         except Exception as exc:  # noqa: BLE001
             logger.error(f"[agent_loop] dispatch '{name}' falló: {exc}")
             from geo_copilot.orchestrator.react_tools import ToolOutcome
             outcome = ToolOutcome(observation=f"la herramienta {name} falló: {str(exc)[:200]}", success=False)
+        await traza.emitir(session_id, id=id_tool, tipo="herramienta", estado="ok" if outcome.success else "fallo",
+                           titulo=titulo, herramienta=name, argumentos=traza.resumen_argumentos(args),
+                           detalle=traza.resumen_resultado(outcome),
+                           ms=int((time.monotonic() - t0) * 1000))
         if outcome.is_final:  # p. ej. request_map_input: cierra el turno CON su orden al mapa
             self.working.update(outcome.delta)
             self.final_text = (outcome.final_text or "").strip()

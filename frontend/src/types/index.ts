@@ -230,6 +230,18 @@ export interface Entity {
 }
 
 // Chat types
+/** Un paso del turno contado al usuario (evento WS `trace`, orchestrator/traza.py). */
+export interface TrazaPaso {
+  id: string;
+  tipo: 'interpretar' | 'pensar' | 'herramienta' | 'agente';
+  estado: 'en_curso' | 'ok' | 'fallo';
+  titulo: string;
+  detalle?: string;
+  herramienta?: string;
+  argumentos?: Record<string, string>;
+  ms?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -242,6 +254,8 @@ export interface ChatMessage {
   capas?: string[];
   /** F7: la página se recargó con este turno en marcha; su resultado (por WS) va a este mensaje. */
   turnoPendiente?: string;
+  /** Los pasos que dio el agente para esta respuesta (su trazabilidad). */
+  traza?: TrazaPaso[];
 }
 
 // WebSocket types
@@ -278,6 +292,7 @@ export type WSMessageType =
   | 'plan_created'
   | 'step_started'
   | 'step_completed'
+  | 'trace'
   | 'execution_cancelled';
 
 // Health types

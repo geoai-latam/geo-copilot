@@ -36,6 +36,8 @@ import type { Artifact } from '@/contracts'
 import type { ChatMessage, FoundService } from '@/types'
 import type { DiscoveryLayer, HubItem } from '@/types/discovery'
 import { TextoRespuesta } from './TextoRespuesta'
+import { TrazaTurno } from './TrazaTurno'
+import { useTraza } from '@/stores/trazaStore'
 import { useSesionAuth } from '@/hooks/useSesionAuth'
 
 // Sugerencias genéricas de partida. No están atadas a entidades
@@ -81,6 +83,9 @@ export function ChatDock() { // eslint-disable-line complexity -- deuda congelad
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const sessionId = useSessionId()
+  // trazabilidad del turno en curso: lo que el agente está haciendo ahora
+  const trazaViva = useTraza((s) => s.pasos)
+  const pasoEnCurso = [...trazaViva].reverse().find((p) => p.estado === 'en_curso')
 
   const messages = useMessages()
   const isLoading = useIsLoading()
@@ -249,10 +254,13 @@ export function ChatDock() { // eslint-disable-line complexity -- deuda congelad
         </div>
 
         {isSending ? (
-          <div className="thinking">
-            <span className="spin" />
-            <span className="cursor">Procesando consulta…</span>
-          </div>
+          <>
+            <div className="thinking">
+              <span className="spin" />
+              <span className="cursor">{pasoEnCurso?.titulo ? `${pasoEnCurso.titulo}…` : 'Procesando consulta…'}</span>
+            </div>
+            <TrazaTurno pasos={trazaViva} enVivo />
+          </>
         ) : (
           <>
             <div className={isError ? 'bubble-error' : 'bubble-assist'}>
@@ -326,6 +334,7 @@ export function ChatDock() { // eslint-disable-line complexity -- deuda congelad
                 ) : null
               })()}
             </div>
+            {message.traza?.length ? <TrazaTurno pasos={message.traza} /> : null}
           </>
         )}
       </div>
@@ -339,9 +348,6 @@ export function ChatDock() { // eslint-disable-line complexity -- deuda congelad
         <span className={`status-chip ${getStatusChipClass()}`}>
           {getStatusLabel()}
         </span>
-        {sessionId && (
-          <span className="session-id">#{sessionId.slice(-6)}</span>
-        )}
       </div>
 
       {/* Retry indicator */}

@@ -322,6 +322,12 @@ async def send_execution_cancelled(
         )
 
 
+async def send_traza(session_id: str, evento: dict) -> None:
+    """Un paso del turno para la trazabilidad del chat (orchestrator/traza.py)."""
+    if session_id and await _ws().connection_manager.is_connected(session_id):
+        await _ws().connection_manager.send_message(session_id, WSMessage(type=WSMessageType.TRACE, data=evento))
+
+
 class WebSocketEventSink:
     """`platform.events.EventSink` sobre WebSocket (S1.2).
 
@@ -356,3 +362,6 @@ class WebSocketEventSink:
                             action: str, status: str,
                             result: dict | None = None) -> None:
         await send_step_progress(session_id, step_index, total_steps, action, status, result)
+
+    async def traza(self, session_id: str, evento: dict) -> None:
+        await send_traza(session_id, evento)

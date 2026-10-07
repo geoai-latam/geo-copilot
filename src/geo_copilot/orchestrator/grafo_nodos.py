@@ -3,6 +3,7 @@
 Salió de `GeoAgentGraph` (F4 del plan de calidad: graph.py tenía 1.317 líneas), tal cual.
 """
 
+import time
 from typing import TYPE_CHECKING, cast
 
 from geo_copilot.core.formatters import format_found_services
@@ -34,8 +35,24 @@ class NodosMixin:
         visibles (data / gis / sym / ins) las cubren los agentes reales
         + el responder (que se mapea a 'ins').
         """
+        from geo_copilot.orchestrator import traza
         from geo_copilot.orchestrator.nodes import router
-        return await router.run(cast("GeoAgentGraph", self), state)
+
+        sid = state.get("session_id") if isinstance(state, dict) else None
+        id_paso, t0 = traza.nuevo_id("interpretar"), time.monotonic()
+        await traza.emitir(sid, id=id_paso, tipo="interpretar", estado="en_curso", titulo="Entendiendo tu consulta")
+        try:
+            result: dict = await router.run(cast("GeoAgentGraph", self), state)
+        except Exception:
+            await traza.emitir(sid, id=id_paso, tipo="interpretar", estado="fallo", titulo="Entendiendo tu consulta",
+                               ms=int((time.monotonic() - t0) * 1000))
+            raise
+        # su lectura del pedido, con sus palabras (la razón con la que clasificó el mensaje)
+        lectura = next((str((m.get("data") or {}).get("reasoning") or "") for m in reversed(result.get("messages") or [])
+                        if isinstance(m, dict) and m.get("agent") == "router"), "")
+        await traza.emitir(sid, id=id_paso, tipo="interpretar", estado="ok", titulo="Entendiendo tu consulta",
+                           detalle=lectura[:300] or None, ms=int((time.monotonic() - t0) * 1000))
+        return result
 
     async def _planner_node(self, state: GraphState) -> dict:
         """Fase 6 #6 — cuerpo extraído a ``orchestrator/nodes/planner.py``."""
@@ -81,14 +98,24 @@ class NodosMixin:
         description: str,
         runner,
     ) -> dict:
-        """Wrapper común: emite step_started/step_completed alrededor del nodo."""
+        """Wrapper común: emite step_started/step_completed alrededor del nodo (el chip) y su paso
+        en la trazabilidad del chat."""
+        from geo_copilot.orchestrator import traza
+
+        sid = state.get("session_id") if isinstance(state, dict) else None
+        id_paso, t0 = traza.nuevo_id("agente"), time.monotonic()
         await self._emit_agent(state, agent, description, "started")
+        await traza.emitir(sid, id=id_paso, tipo="agente", estado="en_curso", titulo=description)
         try:
             result: dict = await runner()
         except Exception:
             await self._emit_agent(state, agent, description, "failed")
+            await traza.emitir(sid, id=id_paso, tipo="agente", estado="fallo", titulo=description,
+                               ms=int((time.monotonic() - t0) * 1000))
             raise
         await self._emit_agent(state, agent, description, "completed")
+        await traza.emitir(sid, id=id_paso, tipo="agente", estado="ok", titulo=description,
+                           ms=int((time.monotonic() - t0) * 1000))
         return result
 
     async def _data_agent_node(self, state: GraphState) -> dict:

@@ -103,6 +103,14 @@ class Catalogo:
                 # GLOBAL: cada consulta usa un cursor, y un cursor no hereda los SET de sesión
                 # (con SET a secas las fechas salían y se filtraban en la hora local).
                 con.execute("SET GLOBAL TimeZone = 'UTC'; SET GLOBAL enable_http_metadata_cache = true;")
+                # Con su presupuesto: por defecto toma el 80 % del contenedor y, junto a GDAL, lo
+                # llevaba a un OOM (el servicio moría a mitad de un turno).
+                memoria = os.environ.get("IMAGERY_DUCKDB_MEMORIA")
+                hilos = os.environ.get("IMAGERY_DUCKDB_HILOS")
+                if memoria and re.fullmatch(r"\d+(\.\d+)?\s*[KMG]i?B", memoria):
+                    con.execute(f"SET GLOBAL memory_limit = '{memoria}'")
+                if hilos and hilos.isdigit():
+                    con.execute(f"SET GLOBAL threads = {int(hilos)}")
                 self._con = con
             return self._con.cursor()
 
@@ -186,10 +194,14 @@ FROM read_parquet({rutas}) GROUP BY mgrs_tile
         cols = ("tile", "escenas", "nubes_min", "nubes_mediana", "cobertura_max")
         return {"filas": [dict(zip(cols, f, strict=True)) for f in filas], "meses": meses}
 
-    def precalentar(self, anios: list[int]) -> None:
-        """Lee en segundo plano los pies de los archivos de esos años (best-effort)."""
+    def precalentar(self, anios: list[int], mundo: tuple[str, str] | None = None) -> None:
+        """En segundo plano y best-effort: el mundo de la ventana por defecto del explorador (lo
+        primero que pide al abrirse: en frío eran ~10 s y el usuario los esperaba) y los pies de
+        los archivos de esos años."""
         def _trabajo() -> None:
             try:
+                if mundo:
+                    self.mundo(*mundo)
                 for a in anios:
                     for r in self.archivos(a):
                         self._conexion().execute("SELECT count(*) FROM parquet_metadata(?)", [r])
