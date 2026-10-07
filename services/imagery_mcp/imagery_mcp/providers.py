@@ -155,6 +155,12 @@ COLECCIONES: dict[str, Coleccion] = {
         bandas={"planetary-computer": _PC_LANDSAT_BANDS},
         mascara={"planetary-computer": "qa_pixel"},
         mask_kind="qa_pixel", baseline_esa=False),
+    # Las escenas del catálogo GeoParquet (catalogo.py): Earth Search Collection 1, la
+    # reprocesada por ESA con un solo baseline. Mismas claves de asset que sentinel-2-l2a.
+    "sentinel-2-c1-l2a": Coleccion(
+        id="sentinel-2-c1-l2a", etiqueta="Sentinel-2 L2A (Collection 1)", resolucion_m=10,
+        bandas={"earth-search": _ES_BANDS}, mascara={"earth-search": "scl"},
+        mask_kind="scl", baseline_esa=True),
 }
 COLECCION_DEFECTO = "sentinel-2-l2a"
 

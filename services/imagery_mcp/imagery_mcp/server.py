@@ -30,7 +30,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from imagery_mcp import georesult as gr
+from imagery_mcp.aoi import aoi_bbox, bbox_area_km2, rango_fechas
 from imagery_mcp.auth import KeyRing, RateLimiter
+from imagery_mcp.catalogo import ORDENES, Catalogo, CatalogoError, ConCatalogo
 from imagery_mcp.config import Settings
 from imagery_mcp.engine import (
     ImageryError,
@@ -61,7 +63,10 @@ settings = Settings.from_env()
 #: Tipos de geometría que son un ÁREA (menú contextual: el NDVI de una zona, la estadística
 #: zonal de unos polígonos; en un punto no tienen sentido, salvo leer el píxel del NDVI).
 AREAS = ["Polygon", "MultiPolygon"]
-provider = build_provider(settings.provider)
+# El proveedor STAC + las escenas del catálogo GeoParquet (ids de Collection 1): una escena
+# elegida en el explorador sirve igual a las tools de cálculo y a las teselas.
+catalogo = Catalogo()
+provider = ConCatalogo(build_provider(settings.provider), catalogo)
 keyring = KeyRing(settings.parsed_keys())
 limiter = RateLimiter()
 # Teselado dinámico (spec §8): pool de Readers calientes + caché de PNGs.
@@ -97,7 +102,7 @@ mcp = FastMCP(
 
 # S0.6: tiempo máximo por tool (ejecución y errores honestos: geo_mcp_kit).
 _RUNNER = ToolRunner(
-    timeout_s=settings.limits.tool_timeout_s, service="imagery", expected_errors=(ImageryError, ColeccionNoDisponible,),
+    timeout_s=settings.limits.tool_timeout_s, service="imagery", expected_errors=(ImageryError, ColeccionNoDisponible, CatalogoError),
 )
 
 
@@ -230,6 +235,89 @@ def imagery_composite(
     return gr.composite(_wrap(run_composite, provider, aoi_geojson, combo, date_from, date_to,
                               scene_id, settings.limits, on_scene=tile_pool.register_scene,
                               max_cloud_pct=max_cloud_pct))
+
+
+#: Cotas del catálogo: un área del tamaño de un país (Colombia: ~1,9 M km² de bbox) y un año
+#: de ventana; más que eso abre muchos archivos y tarda minutos.
+_CATALOGO_MAX_KM2 = 5_000_000.0
+_CATALOGO_MAX_DIAS = 366
+
+
+def _ventana_catalogo(date_from: str | None, date_to: str | None) -> tuple[str, str]:
+    from datetime import date
+
+    d0, d1 = rango_fechas(date_from, date_to, settings.limits)
+    if (date.fromisoformat(d1) - date.fromisoformat(d0)).days > _CATALOGO_MAX_DIAS:
+        raise CatalogoError(f"la ventana {d0}…{d1} pasa de {_CATALOGO_MAX_DIAS} días: pide un año o menos")
+    return d0, d1
+
+
+def _bbox_catalogo(aoi_geojson: dict) -> tuple[float, float, float, float]:
+    bbox = aoi_bbox(aoi_geojson)
+    if bbox_area_km2(bbox) > _CATALOGO_MAX_KM2:
+        raise CatalogoError("el área pasa del tamaño de un país; acota la zona")
+    return bbox
+
+
+def _cuadricula(aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_pct) -> dict:
+    d0, d1 = _ventana_catalogo(date_from, date_to)
+    filas = catalogo.cuadricula(_bbox_catalogo(aoi_geojson), d0, d1, max_cloud_pct, min_coverage_pct)
+    return {"filas": filas, "desde": d0, "hasta": d1}
+
+
+def _escenas(tile, aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_pct, order, limit) -> dict:
+    d0, d1 = _ventana_catalogo(date_from, date_to)
+    bbox = _bbox_catalogo(aoi_geojson) if aoi_geojson else None
+    filas = catalogo.escenas(d0, d1, tile=tile, bbox=bbox, max_nubes=max_cloud_pct,
+                             min_cobertura=min_coverage_pct, orden=order, limite=limit)
+    return {"filas": filas, "desde": d0, "hasta": d1}
+
+
+@mcp.tool(
+    meta=geo_meta(inputs={"aoi_geojson": ["geometry", "layer_ref"]}, geometry_types={"aoi_geojson": AREAS}, outputs=["feature_collection"], cost="medium"),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    structured_output=True,
+)
+def imagery_catalog_grid(
+    aoi_geojson: dict,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    max_cloud_pct: float | None = None,
+    min_coverage_pct: float | None = None,
+) -> dict[str, Any]:
+    """Disponibilidad de imágenes Sentinel-2 en un área (hasta el tamaño de un país) y una
+    ventana de fechas (hasta un año), por tesela MGRS de 110 km: cuántas escenas hay, la más
+    despejada (`mejor_escena`, `mejor_fecha`), nubes mínima y mediana (%) y cobertura máxima
+    (%). Devuelve las teselas como capa para colorear. Sirve para decidir DÓNDE y CUÁNDO hay
+    imagen útil antes de pedir una; `mejor_escena` se puede pasar como `scene_id` a
+    imagery_composite, imagery_ndvi o imagery_zonal_stats."""
+    return gr.cuadricula(_wrap(_cuadricula, aoi_geojson, date_from, date_to, max_cloud_pct, min_coverage_pct))
+
+
+@mcp.tool(
+    meta=geo_meta(inputs={"aoi_geojson": ["geometry", "layer_ref"]}, outputs=["table"], cost="low"),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    structured_output=True,
+)
+def imagery_catalog_scenes(
+    tile: str | None = None,
+    aoi_geojson: dict | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    max_cloud_pct: float | None = None,
+    min_coverage_pct: float | None = None,
+    order: Literal["menos_nubes", "mas_cobertura", "reciente"] = "menos_nubes",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Escenas Sentinel-2 de una tesela MGRS (`tile`, p. ej. '18NWL', de imagery_catalog_grid)
+    o de un área, con fecha, nubes (%), cobertura de la tesela (%) y miniatura (URL de una
+    vista previa JPG), ordenadas por menos nubes, más cobertura o más reciente (hasta 200).
+    Cada `id` se puede pasar como `scene_id` a imagery_composite, imagery_ndvi o
+    imagery_zonal_stats para verla o medirla."""
+    if order not in ORDENES:
+        order = "menos_nubes"
+    return gr.escenas_catalogo(_wrap(_escenas, tile, aoi_geojson, date_from, date_to,
+                                     max_cloud_pct, min_coverage_pct, order, limit))
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +461,9 @@ def main() -> None:  # pragma: no cover — entrypoint
         f"imagery-mcp: provider={settings.provider}, claves={len(keyring)}, "
         f"puerto={settings.port}"
     )
+    from datetime import UTC, datetime
+
+    catalogo.precalentar([datetime.now(UTC).year])   # la 1.ª consulta del explorador no paga los pies
     uvicorn.run(build_app(), host=settings.host, port=settings.port)
 
 

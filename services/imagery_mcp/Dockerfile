@@ -19,6 +19,11 @@ COPY services/imagery_mcp/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY packages/geo_mcp_kit /opt/geo_mcp_kit
 RUN pip install --no-cache-dir "/opt/geo_mcp_kit[otel]"
+# Extensiones de DuckDB del catálogo (httpfs, spatial) instaladas en la imagen: en marcha el
+# servicio corre sin HOME escribible y no las descargaría.
+ENV DUCKDB_EXTENSION_DIR=/opt/duckdb_ext
+RUN python -c "import duckdb; c = duckdb.connect(); c.execute(\"SET extension_directory = '/opt/duckdb_ext'\"); c.execute('INSTALL httpfs; INSTALL spatial')" \
+    && chmod -R a+rX /opt/duckdb_ext
 
 # F7 (S7.2): las herramientas de empaquetado no hacen falta para ejecutar y traen vulnerabilidades
 # propias y vendorizadas (Trivy); fuera de la imagen final.
