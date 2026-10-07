@@ -57,8 +57,12 @@ export function rellenoCuadricula(capa: string | null, metrica: Metrica, relleno
   }
 }
 
-/** Resalta en la cuadrícula la tesela abierta (null la apaga). */
+/** Resalta en la cuadrícula la tesela abierta. null la apaga y quita también la selección del
+ * clic con que se abrió: su relleno teñiría la escena que se va a ver. */
 export function resaltarTesela(capa: string | null, tile: string | null) {
   if (!existeCapa(capa)) return
   useMapStore.getState().setResaltado(capa, tile ? { where: { field: 'tile', op: '=', value: tile }, count: 1, origin: 'query' } : null)
+  if (!tile && useMapStore.getState().layers.find((l) => l.id === capa)?.seleccion) {
+    useOperaciones.getState().ejecutar({ op: 'clear_selection', layer_id: capa, args: {}, reason: null } as never, 'user')
+  }
 }
