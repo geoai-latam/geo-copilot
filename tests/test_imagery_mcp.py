@@ -757,6 +757,46 @@ def test_render_rgb_composite_estira_bandas(tmp_path, monkeypatch):
     assert (im[:, :, 3] == 255).all()
 
 
+def test_render_rgb_composite_con_factor_no_tiene_costuras(tmp_path, monkeypatch):
+    """Con factor de reflectancia el estiramiento es FIJO: el mismo DN da el mismo color en
+    dos teselas de contenido distinto (por percentiles de cada tesela salían costuras)."""
+    import io as _io
+    from unittest.mock import MagicMock, patch
+
+    import imagery_mcp.tiles as tiles_mod
+    from imagery_mcp.escalado import BandScaling
+    from imagery_mcp.providers import Scene
+    from imagery_mcp.tiles import _TILESIZE, TilePool
+    from PIL import Image
+
+    monkeypatch.setattr(tiles_mod, "_DISK_CACHE_DIR", str(tmp_path))
+    c1 = BandScaling(scale=0.0001, offset=-0.1)     # Collection 1: DN 1000 = reflectancia 0
+    escena = Scene(
+        id="S2A_C1", datetime="x", cloud_pct=5.0, bbox=[-75, 4, -73, 5],
+        red_href="mem://red", nir_href="mem://nir", provider="t",
+        bands={"nir": "mem://nir", "red": "mem://red", "green": "mem://green"},
+        scaling=dict.fromkeys(("nir", "red", "green"), c1))
+    pool = TilePool(MagicMock(sign=lambda h: h))
+    pool.register_scene(escena)
+
+    oscura = np.full((_TILESIZE, _TILESIZE), 2000, "float32")      # toda a reflectancia 0,1
+    clara = oscura.copy()
+    clara[:, _TILESIZE // 2:] = 5000                                 # media tesela brillante
+    por_x = {1: oscura, 2: clara}
+
+    def _tesela(x, y, z, **_kw):
+        return MagicMock(data=por_x[x][None, :, :], mask=np.full((_TILESIZE, _TILESIZE), 255, "uint8"))
+
+    def _pintar(x: int) -> np.ndarray:
+        png = pool.render_rgb_tile("S2A_C1", "false_color", 13, x, 1)
+        return np.array(Image.open(_io.BytesIO(png)).convert("RGBA"))
+
+    with patch("rio_tiler.io.Reader", return_value=MagicMock(**{"tile.side_effect": _tesela})):
+        a, b = _pintar(1), _pintar(2)
+    assert a[0, 0, 0] == b[0, 0, 0] == int(0.1 / 0.4 * 255)          # mismo DN, mismo color
+    assert b[0, -1, 0] == 255                                        # 0,4 o más satura
+
+
 def test_parse_rgb_tile_path():
     from imagery_mcp.tiles import parse_rgb_tile_path
     assert parse_rgb_tile_path("/tiles-rgb/S2A_X/true_color/13/1/1.png") == (

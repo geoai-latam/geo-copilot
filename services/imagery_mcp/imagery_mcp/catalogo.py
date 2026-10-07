@@ -44,14 +44,26 @@ ORDENES = {
 
 # Una fila por escena: las partes (archivo del año y cola del mes) solo se solapan en una
 # escena reprocesada, que conserva su id con un `s2:generation_time` más nuevo.
+# Se filtra en un CTE MATERIALIZED y se deduplica después: con el QUALIFY sobre la lectura,
+# DuckDB 1.5 lo reescribe como semi-join por número de fila y la rama que trae las columnas
+# lee el parquet entero, sin podar (medido 2026-10-07: >200 s frente a ~20 s en frío).
 _ESCENAS = """
+WITH filtradas AS MATERIALIZED (
 SELECT id, _tile AS tile, datetime AS fecha, "eo:cloud_cover" AS nubes,
        100 - coalesce("s2:nodata_pixel_percentage", 0) AS cobertura,
-       platform AS plataforma, thumbnail_url AS miniatura, geometry
+       platform AS plataforma, thumbnail_url AS miniatura, geometry, "s2:generation_time" AS gen
 FROM read_parquet({archivos}, union_by_name = true)
-WHERE {donde}
-QUALIFY row_number() OVER (PARTITION BY id ORDER BY "s2:generation_time" DESC) = 1
+WHERE {donde})
+SELECT * EXCLUDE (gen) FROM filtradas
+QUALIFY row_number() OVER (PARTITION BY id ORDER BY gen DESC) = 1
 """
+
+
+# `&&` (cruce de extensiones) es lo que DuckDB poda con las estadísticas `geo_bbox` de cada
+# grupo de filas; ST_Intersects a secas no poda y baja la geometría de los 4,7 GB del año
+# (medido 2026-10-07: 768 s frente a 10 s en frío). ST_Intersects queda para el corte exacto.
+_EN_BBOX = ("geometry && ST_MakeEnvelope(?, ?, ?, ?) "
+            "AND ST_Intersects(geometry, ST_MakeEnvelope(?, ?, ?, ?))")
 
 
 class CatalogoError(ValueError):
@@ -145,8 +157,8 @@ class Catalogo:
         """Una fila por tesela MGRS que toca el bbox, con las escenas que pasan los filtros:
         cuántas, la más despejada, nubes mínima y mediana, cobertura máxima y su huella."""
         donde, params = self._filtros(desde, hasta, max_nubes, min_cobertura)
-        donde.insert(0, "ST_Intersects(geometry, ST_MakeEnvelope(?, ?, ?, ?))")
-        params = [*bbox, *params]
+        donde.insert(0, _EN_BBOX)
+        params = [*bbox, *bbox, *params]
         sql = f"""
 WITH s AS ({_ESCENAS.format(archivos=self._fuente(desde, hasta), donde=" AND ".join(donde))})
 SELECT tile, count(*) AS escenas, round(min(nubes), 2) AS nubes_min,
@@ -179,8 +191,8 @@ FROM s GROUP BY tile ORDER BY tile"""
             donde.insert(0, "_tile = ?")
             params.insert(0, tile)
         if bbox is not None:
-            donde.insert(0, "ST_Intersects(geometry, ST_MakeEnvelope(?, ?, ?, ?))")
-            params = [*bbox, *params]
+            donde.insert(0, _EN_BBOX)
+            params = [*bbox, *bbox, *params]
         sql = f"""
 SELECT id, tile, strftime(fecha, '%Y-%m-%dT%H:%M:%SZ') AS fecha, round(nubes, 2) AS nubes,
        round(cobertura, 2) AS cobertura, plataforma, miniatura

@@ -2707,6 +2707,8 @@ input, textarea { font: inherit; color: inherit; }
 .s2-escena img { width: 64px; height: 64px; flex-shrink: 0; border-radius: 6px;
   object-fit: cover; background: var(--bg-2); }
 .s2-escena > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.s2-id { font-size: 10px; color: var(--text-mute); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; user-select: all; }
 .s2-acciones { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .s2-acciones .imgp-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; }
 .imgp select, .imgp input[type="date"] { width: 100%; margin-top: 3px; padding: 4px 6px;

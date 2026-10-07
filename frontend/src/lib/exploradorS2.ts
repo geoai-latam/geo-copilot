@@ -30,8 +30,9 @@ const CORTES: Record<Metrica, { cortes: number[]; unidad: string; masEsMejor: bo
   cobertura_max: { cortes: [0, 50, 80, 95, 99.9, 100], unidad: '%', masEsMejor: true },
 }
 
-/** Simbología de la cuadrícula por la métrica elegida (cortes fijos: comparables entre búsquedas). */
-export function simbologiaCuadricula(m: Metrica): LayerSymbology {
+/** Simbología de la cuadrícula por la métrica elegida (cortes fijos: comparables entre búsquedas).
+ * `relleno: false` deja solo el contorno: mientras se ve una escena, el relleno la teñiría. */
+export function simbologiaCuadricula(m: Metrica, relleno = true): LayerSymbology {
   const { cortes, unidad, masEsMejor } = CORTES[m]
   const colores = masEsMejor ? [...VERDE_A_ROJO].reverse() : VERDE_A_ROJO
   const ultimo = cortes.length - 2
@@ -45,8 +46,8 @@ export function simbologiaCuadricula(m: Metrica): LayerSymbology {
       label: i === ultimo && m === 'escenas' ? `${cortes[i]}+` : `${cortes[i]}–${cortes[i + 1]}${unidad}`,
       color,
     })),
-    fill: { color: colores[0], opacity: 0.45 },
-    stroke: { color: '#1f2937', width: 0.6, opacity: 0.7 },
+    fill: { color: colores[0], opacity: relleno ? 0.45 : 0 },
+    stroke: { color: '#1f2937', width: relleno ? 0.6 : 1.2, opacity: 0.7 },
   }
 }
 

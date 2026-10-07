@@ -90,13 +90,86 @@ test.describe('Explorador Sentinel-2', () => {
     await expect(escenas).toContainText('Tesela 18NWL')
     await expect(escenas.locator('.s2-escena')).toHaveCount(2)
     await expect(escenas.locator('img').first()).toHaveAttribute('src', 'https://imagenes.test/a/L2A_PVI.jpg')
-    expect(enviados.imagery_catalog_scenes.arguments).toMatchObject({ tile: '18NWL', max_cloud_pct: 60 })
+    expect(enviados.imagery_catalog_scenes.arguments).toMatchObject({ tile: '18NWL', max_cloud_pct: 60, order: 'menos_nubes' })
+    await expect(escenas.locator('.s2-id').first()).toHaveText('S2B_T18NWL_20260810T152745_L2A')
+
+    // Cambiar el orden vuelve a pedir las escenas con ese orden.
+    await escenas.getByLabel('Ordenar escenas').selectOption('reciente')
+    await expect.poll(() => enviados.imagery_catalog_scenes.arguments.order).toBe('reciente')
+    await expect(escenas.locator('.s2-escena')).toHaveCount(2)
 
     await escenas.getByTestId('s2-ver-true_color').first().click()
     await waitForLayerKind(page, 'raster-xyz')
     const ver = enviados.imagery_composite.arguments
     expect(ver).toMatchObject({ scene_id: 'S2B_T18NWL_20260810T152745_L2A', combo: 'true_color' })
     expect((ver.aoi_geojson as { type: string }).type).toBe('Polygon')
+  })
+
+  test('el cajón recuerda su estado: la búsqueda y la escena nuevas sustituyen, el relleno no tiñe la escena', async ({ page }) => {
+    const raster = (combo: string) => ({
+      success: true, message: null, facts: {},
+      results: {
+        visualization: { type: 'imagery' },
+        external_imagery: {
+          service_url: `/api/v1/proxy/mcp/imagery/tiles-rgb/S2B_T18NWL_20260810T152745_L2A/${combo}/{z}/{x}/{y}.png`,
+          name: `${combo} 2026-08-10`, extent: { xmin: -74.3, ymin: 4.5, xmax: -73.9, ymax: 4.9 },
+        },
+      },
+    })
+    await page.route('**/api/v1/connections/imagery/tools/imagery_catalog_grid/run', (r) => json(r, GRID))
+    await page.route('**/api/v1/connections/imagery/tools/imagery_catalog_scenes/run', (r) => json(r, ESCENAS))
+    await page.route('**/api/v1/connections/imagery/tools/imagery_composite/run', (r) =>
+      json(r, raster(JSON.parse(r.request().postData() ?? '{}').arguments.combo)))
+
+    // Opacidad del relleno de la cuadrícula y cuántos rasters hay en el mapa.
+    const estado = () => page.evaluate(() => {
+      const w = window as unknown as { __mapTestState?: { layers?: { id: string; kind?: string }[] }; __mlmap?: { getLayer: (id: string) => unknown; getPaintProperty: (id: string, p: string) => unknown; getFilter: (id: string) => unknown } }
+      const capas = w.__mapTestState?.layers ?? []
+      const grid = capas.find((l) => w.__mlmap?.getLayer(`${l.id}-fill`))
+      return {
+        relleno: grid ? w.__mlmap?.getPaintProperty(`${grid.id}-fill`, 'fill-opacity') : null,
+        // El filtro de la capa de resaltado: ['boolean', false] = nada resaltado.
+        resaltado: grid ? JSON.stringify(w.__mlmap?.getFilter(`${grid.id}-sel-fill`)) !== '["boolean",false]' : null,
+        rasters: capas.filter((l) => l.kind === 'raster-xyz').length,
+        cuadriculas: capas.filter((l) => w.__mlmap?.getLayer(`${l.id}-fill`)).length,
+      }
+    })
+
+    await page.goto('/')
+    await waitForMap(page)
+    await waitForStyleLoaded(page)
+    await page.locator('[title="Sentinel-2"]').click()
+    const panel = page.locator('[data-testid="explorador-s2"]')
+    await panel.getByTestId('s2-buscar').click()
+    await waitForFeatureCount(page, 2)
+    await panel.getByTestId('s2-teselas').locator('.imgp-scene').first().click()
+    const escenas = panel.getByTestId('s2-escenas')
+    await expect.poll(async () => (await estado()).resaltado).toBe(true)     // la tesela abierta, resaltada
+    await escenas.getByTestId('s2-ver-true_color').first().click()
+    await waitForLayerKind(page, 'raster-xyz')
+    await expect.poll(estado).toMatchObject({ relleno: 0, rasters: 1, resaltado: false })
+
+    await escenas.getByTestId('s2-ver-false_color').first().click()
+    await expect.poll(async () => (await estado()).rasters).toBe(1)      // sustituye, no apila
+
+    await escenas.getByRole('button', { name: '← teselas' }).click()
+    await expect.poll(async () => (await estado()).relleno).toBe(0.45)
+
+    // Cambiar de cajón y volver: la búsqueda sigue ahí.
+    await page.locator('[title="Capas"]').click()
+    await page.locator('[title="Sentinel-2"]').click()
+    await expect(panel.getByTestId('s2-teselas')).toContainText('2 teselas')
+
+    // La búsqueda siguiente sustituye la cuadrícula (no quedan dos).
+    await panel.getByTestId('s2-buscar').click()
+    await expect.poll(async () => (await estado()).cuadriculas).toBe(1)
+    await waitForFeatureCount(page, 2)
+
+    // Recargar la pestaña: el cajón sigue sabiendo qué buscó (y qué capas son suyas).
+    await page.reload()
+    await waitForMap(page)
+    await page.locator('[title="Sentinel-2"]').click()
+    await expect(panel.getByTestId('s2-teselas')).toContainText('2 teselas')
   })
 
   test('el error del servicio se dice tal cual', async ({ page }) => {
