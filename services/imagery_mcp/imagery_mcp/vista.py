@@ -196,6 +196,19 @@ def _valor_en(provider, href: str, lon: float, lat: float) -> float | None:
         return None if src.nodata is not None and v == src.nodata else float(v)
 
 
+def punto_de(geojson: Any) -> tuple[float, float] | None:
+    """(lon, lat) de un Point, un Feature o un FeatureCollection con un punto (las referencias del
+    núcleo, como `punto`, llegan como FeatureCollection)."""
+    g = geojson or {}
+    if g.get("type") == "FeatureCollection":
+        g = next(iter(g.get("features") or []), None) or {}
+    if g.get("type") == "Feature":
+        g = g.get("geometry") or {}
+    if g.get("type") != "Point" or len(g.get("coordinates") or []) < 2:
+        return None
+    return float(g["coordinates"][0]), float(g["coordinates"][1])
+
+
 def pixel(provider, scene_id: str, lon: float, lat: float) -> dict:
     """Lo que vale cada banda de la escena en un punto, en reflectancia (o su clase), y los
     índices que salen de ellas."""

@@ -291,3 +291,15 @@ def test_el_color_con_contraste_por_canal_se_compone_de_sus_bandas(tmp_path, mon
     with patch("rio_tiler.io.Reader", side_effect=lector):
         im = _png(pool.render_rgb_estirado("S2A_RGB", "true_color", 12, 1, 1, ((0, 0.1), (0, 0.2), (0, 0.4))))
     assert np.allclose(im[0, 0, :3], (255, 127, 63), atol=1)      # cada canal con su rango
+
+
+def test_el_punto_llega_en_cualquier_forma_geojson():
+    from imagery_mcp.vista import punto_de
+
+    pt = {"type": "Point", "coordinates": [-74.08, 4.65]}
+    assert punto_de(pt) == (-74.08, 4.65)
+    assert punto_de({"type": "Feature", "geometry": pt, "properties": {}}) == (-74.08, 4.65)
+    # la referencia `punto` del núcleo
+    assert punto_de({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": pt}]}) == (-74.08, 4.65)
+    assert punto_de({"type": "Polygon", "coordinates": []}) is None
+    assert punto_de({"type": "FeatureCollection", "features": []}) is None

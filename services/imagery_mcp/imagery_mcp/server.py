@@ -387,11 +387,10 @@ def imagery_pixel(scene_id: str, point_geojson: dict) -> dict[str, Any]:
     """El valor de CADA banda de una escena en un punto (GeoJSON Point): reflectancia de B01…B12,
     AOT, vapor de agua, la clase SCL y la probabilidad de nubes/nieve, más los índices que salen
     de ellas (NDVI, NDWI, NDMI, NDBI). Para saber qué hay en un píxel concreto."""
-    g = (point_geojson or {}).get("geometry", point_geojson) or {}
-    if g.get("type") != "Point":
-        return {"error": "point_geojson debe ser un GeoJSON Point"}
-    lon, lat = (float(v) for v in g["coordinates"][:2])
-    return gr.pixel(_wrap(vista.pixel, provider, scene_id, lon, lat))
+    lonlat = vista.punto_de(point_geojson)
+    if lonlat is None:
+        return {"error": "point_geojson debe ser un punto GeoJSON (Point, Feature o FeatureCollection con un punto)"}
+    return gr.pixel(_wrap(vista.pixel, provider, scene_id, *lonlat))
 
 
 # ---------------------------------------------------------------------------
