@@ -11,6 +11,7 @@ import logging
 
 from geo_mcp_kit import ExtraRoute, respond_json, respond_png
 
+from imagery_mcp import resultados
 from imagery_mcp.tiles import (
     _SCENE_RE,
     EscenasIncompatiblesError,
@@ -186,6 +187,7 @@ def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:  # noqa: C901
         await respond_png(send, png)
 
     return (
+        ExtraRoute(resultados.parse_ruta, resultados.servir, requires_tool="imagery_catalog_world", weight=0.2),
         ExtraRoute(parse_band_tile_path, _ruta_banda(pool), requires_tool="imagery_ndvi", weight=0.05),
         ExtraRoute(parse_tile_path, ndvi, requires_tool="imagery_ndvi", weight=0.05),
         ExtraRoute(parse_diff_tile_path, diff, requires_tool="imagery_ndvi", weight=0.05),

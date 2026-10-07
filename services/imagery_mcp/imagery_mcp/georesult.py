@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from geo_mcp_kit import feature_collection, geo_result, raster_tiles, stats, table
+from geo_mcp_kit import feature_collection, feature_ref, geo_result, raster_tiles, stats, table
 
 _HECHOS = ("index", "collection", "scene", "scene_a", "scene_b", "stats", "diff_stats", "facts", "cloud_mask",
            "reflectance", "descartes", "alternatives", "degraded", "skipped", "combo")
@@ -176,9 +176,13 @@ def mundo(r: dict) -> dict:
                           "mediana de las medianas mensuales",
               "sin_huella": len(filas) - len(feats),
               "mas_despejadas": [{k: f[k] for k in ("tile", "nubes_min", "escenas")} for f in despejadas[:10]]}
+    from imagery_mcp import resultados
+
+    # ~29.000 polígonos: por referencia (el núcleo descarga el GeoJSON de este servicio)
+    uri = resultados.guardar({"type": "FeatureCollection", "features": feats})
     return geo_result(
-        [feature_collection(f"Sentinel-2 en el mundo {r.get('desde')}…{r.get('hasta')}",
-                            {"type": "FeatureCollection", "features": feats}, crs="EPSG:4326")],
+        [feature_ref(f"Sentinel-2 en el mundo {r.get('desde')}…{r.get('hasta')}", uri, fmt="geojson",
+                     crs="EPSG:4326", feature_count=len(feats))],
         facts=hechos, style_hint={"field": "nubes_min", "method": "quantile"},
     )
 

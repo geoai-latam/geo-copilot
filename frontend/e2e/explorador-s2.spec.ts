@@ -234,6 +234,21 @@ test.describe('Explorador Sentinel-2', () => {
     await expect(panel.getByTestId('s2-teselas')).toContainText('Las más despejadas')
   })
 
+  test('un clic sobre la cuadrícula del mapa abre esa tesela', async ({ page }) => {
+    const enviados = await rutas(page)
+    const panel = await abrir(page)
+    await waitForFeatureCount(page, 2)
+    // Clic en el centro de la tesela 18NWL (su píxel, con la cámara ya quieta: la capa nueva encuadra).
+    await page.waitForFunction(() => !(window as unknown as { __mlmap: { isMoving: () => boolean } }).__mlmap.isMoving())
+    await page.waitForTimeout(300)
+    const lienzo = (await page.locator('.maplibregl-canvas').boundingBox())!
+    const p = await page.evaluate(() => (window as unknown as { __mlmap: { project: (c: [number, number]) => { x: number; y: number } } })
+      .__mlmap.project([-74.0, 4.95]))
+    await page.mouse.click(lienzo.x + p.x, lienzo.y + p.y)
+    await expect(panel.getByTestId('s2-escenas')).toContainText('Tesela 18NWL')
+    expect(ultimo(enviados, 'imagery_catalog_scenes')).toMatchObject({ tile: '18NWL' })
+  })
+
   test('globo o plano', async ({ page }) => {
     await rutas(page)
     const panel = await abrir(page)

@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Cloud, Eye, Globe2, Grid3x3, Loader2, Map as MapaIcono, Satellite, Search } from 'lucide-react'
 
-import { useMapStore, useSelectedFeature } from '@/stores'
+import { useMapStore, useSelectedFeature, useSessionStore } from '@/stores'
 import { aplicarResultado } from '@/lib/resultadoHerramienta'
 import {
   type EscenaS2, escenasDe, fechaCorta, GRUPOS, METRICAS, type Metrica, PRODUCTOS_S2, productoS2,
@@ -32,7 +32,7 @@ const ORDENES: { id: OrdenEscenas; etiqueta: string }[] = [
 /** El mundo se pide UNA vez al abrir el explorador por primera vez (StrictMode monta dos). */
 let mundoPedido = false
 
-type Seccion = { source?: string; properties?: Record<string, unknown> }
+type Seccion = { layerId?: string; properties?: Record<string, unknown> }
 
 function FiltrosS2() {
   const { desde, hasta, maxNubes, minCobertura, minEscenas, fijar } = useExploradorS2()
@@ -147,6 +147,13 @@ export function ExploradorS2() {
   })
 
   useEffect(() => {
+    // El estado guardado es de UNA sesión (sus capas viven en ella): con otra, se empieza de cero.
+    const sid = useSessionStore.getState().sessionId
+    const st = useExploradorS2.getState()
+    if (st.sesion !== sid) {
+      st.reiniciar()
+      fijar({ sesion: sid })
+    }
     if (!mundoPedido && useExploradorS2.getState().teselas === null) {
       mundoPedido = true
       void verMundo()
@@ -171,7 +178,7 @@ export function ExploradorS2() {
 
   // Un clic sobre la cuadrícula del mapa abre esa tesela (con el mundo no caben todas en la lista).
   useEffect(() => {
-    const s = seleccion?.secciones?.find((x) => x.source === capaGrid)
+    const s = seleccion?.secciones?.find((x) => x.layerId === capaGrid)
     const p = s?.properties
     if (p && typeof p.tile === 'string' && p.tile !== tesela?.tile && cargando === null) {
       void abrirTesela({

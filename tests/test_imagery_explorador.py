@@ -94,13 +94,21 @@ def test_sin_meses_publicados_es_un_error_honesto(catalogo_mundo):
         catalogo_mundo.mundo("2020-01-01", "2020-02-01")
 
 
-def test_el_mundo_sale_como_capa_con_las_mas_despejadas():
+def test_el_mundo_sale_por_referencia_con_las_mas_despejadas(tmp_path, monkeypatch):
+    import json
+
     from imagery_mcp import georesult as gr
+    from imagery_mcp import resultados
+
+    monkeypatch.setattr(resultados, "DIR", str(tmp_path))
 
     out = gr.mundo({"filas": [{"tile": "18NWL", "escenas": 5, "nubes_min": 1, "nubes_mediana": 60, "cobertura_max": 100},
                               {"tile": "nope", "escenas": 1, "nubes_min": 0, "nubes_mediana": 0, "cobertura_max": 1}],
                     "meses": ["2026-08"], "desde": "2026-08-01", "hasta": "2026-08-31"})
-    fc = out["artifacts"][0]["data"]
+    ref = out["artifacts"][0]
+    assert ref["kind"] == "feature_ref" and ref["feature_count"] == 1      # ~29.000 polígonos no caben en línea
+    ident = resultados.parse_ruta(ref["uri"])
+    fc = json.loads((tmp_path / f"{ident}.geojson").read_text(encoding="utf-8"))
     assert len(fc["features"]) == 1 and fc["features"][0]["properties"]["tile"] == "18NWL"
     assert out["facts"]["sin_huella"] == 1
     assert out["facts"]["mas_despejadas"][0]["tile"] == "nope"

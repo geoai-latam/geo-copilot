@@ -27,6 +27,8 @@ export interface EscenaVista {
 }
 
 export interface ExploradorS2Estado {
+  /** Sesión a la que pertenece este estado: sus capas viven en ella (otra sesión, otro estado). */
+  sesion: string | null
   desde: string
   hasta: string
   maxNubes: number
@@ -54,7 +56,7 @@ export interface ExploradorS2Estado {
 function inicial() {
   const { desde, hasta } = ventanaPorDefecto(new Date())
   return {
-    desde, hasta, maxNubes: 100, minCobertura: 10, metrica: 'nubes_min' as Metrica, orden: 'menos_nubes' as OrdenEscenas, minEscenas: 0,
+    sesion: null as string | null, desde, hasta, maxNubes: 100, minCobertura: 10, metrica: 'nubes_min' as Metrica, orden: 'menos_nubes' as OrdenEscenas, minEscenas: 0,
     modo: 'mundo' as 'mundo' | 'vista', producto: 'true_color', escenaVista: null as EscenaVista | null,
     teselas: null, capaGrid: null, tesela: null, escenas: null, rasterPrevio: null,
   }
