@@ -990,6 +990,66 @@ def test_pool_evict_no_cierra_reader_en_uso(tmp_path, monkeypatch):
     assert all(e.refs == 0 for e in pool._pending_close)
 
 
+def test_teselas_de_una_escena_se_leen_en_paralelo_sin_compartir_reader(tmp_path, monkeypatch):
+    """Carriles: varias teselas de UNA escena se leen a la vez, y cada reader (dataset
+    GDAL, no thread-safe) lo usa un solo hilo por vez. Antes un lock por escena las
+    dibujaba una por una (16 teselas z12 en frío: 13,8 s → 8,8 s con PC, 2026-10-06)."""
+    import threading
+    import time
+    from unittest.mock import patch
+
+    import imagery_mcp.tiles as tiles_mod
+    from imagery_mcp.tiles import _LANES_PER_SCENE, _TILESIZE, TilePool
+
+    monkeypatch.setattr(tiles_mod, "_DISK_CACHE_DIR", str(tmp_path))
+    guard = threading.Lock()
+    activos = {"ahora": 0, "max": 0}
+    violations: list[str] = []
+
+    class _FakeReader:
+        def __init__(self, href):
+            self.en_uso = False
+
+        def tile(self, x, y, z, tilesize=256):
+            with guard:
+                if self.en_uso:
+                    violations.append("reader leído por dos hilos a la vez")
+                self.en_uso = True
+                activos["ahora"] += 1
+                activos["max"] = max(activos["max"], activos["ahora"])
+            time.sleep(0.02)
+            with guard:
+                self.en_uso = False
+                activos["ahora"] -= 1
+            r = type("T", (), {})()
+            r.data = np.full((1, _TILESIZE, _TILESIZE), 0.4, dtype="float32")
+            r.mask = np.full((_TILESIZE, _TILESIZE), 255, dtype="uint8")
+            return r
+
+        def close(self):
+            pass
+
+    class _Prov:
+        def get_scene(self, sid):
+            return _scene([-75, 4, -73, 5], sid=sid)
+
+        def sign(self, h):
+            return h
+
+    pool = TilePool(_Prov())
+    with patch("rio_tiler.io.Reader", side_effect=lambda href: _FakeReader(href)):
+        threads = [threading.Thread(target=pool.render_tile, args=("S2-UNA", 13, 100 + i, 200))
+                   for i in range(_LANES_PER_SCENE * 2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert not violations, violations
+    assert activos["max"] > 1   # la escena ya no se lee de a una tesela
+    assert pool.metrics["tiles_rendered"] == _LANES_PER_SCENE * 2
+
+
 def test_id_irresoluble_cachea_negativo_y_no_deja_lock(tmp_path, monkeypatch):
     """M3: un id irresoluble se recuerda (un solo get_scene) y no crea scene_lock."""
     from unittest.mock import MagicMock
