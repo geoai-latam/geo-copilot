@@ -249,6 +249,9 @@ export interface RemoteRef {
  * via the `definition` "RasterTiles".
  */
 export interface RasterTiles {
+  cog: {
+    [k: string]: unknown
+  } | null
   kind: 'raster-tiles'
   legend: {
     [k: string]: unknown
@@ -822,6 +825,9 @@ export interface RasterTilesArtifact {
    * @maxItems 4
    */
   bounds: [unknown, unknown, unknown, unknown]
+  cog?: {
+    [k: string]: unknown
+  } | null
   crs: string
   datetime?: string | null
   kind?: 'raster_tiles'

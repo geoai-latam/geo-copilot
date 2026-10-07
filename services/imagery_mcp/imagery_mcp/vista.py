@@ -18,6 +18,7 @@ from imagery_mcp.catalogo import ID_C1
 from imagery_mcp.engine import _GDAL_ENV, ImageryError, apply_scaling, scene_scaling
 from imagery_mcp.radiometria import INDICES
 from imagery_mcp.tiles_bandas import CLASES_SCL, PROBABILIDADES, rango_de
+from imagery_mcp.tiles_render import _COMPOSITES
 
 #: Bandas de Sentinel-2 L2A: nombre canónico → (código ESA, qué es, resolución en m).
 BANDAS: dict[str, tuple[str, str, int]] = {
@@ -115,6 +116,50 @@ def _capa(escena, producto: str, estiramiento: list[list[float]] | None, rescale
                         "colores": ["#000000", "#ffffff"]}}
 
 
+def _cog_banda(provider, escena, banda: str) -> dict | None:
+    """URL pública de un COG de la escena con su factor; None si hay que firmarla (caduca: que la
+    pinte el servidor) o no es https."""
+    href = (escena.bands or {}).get(banda) or (getattr(escena, "scl_href", None) if banda == "scl" else None)
+    if not href:
+        return None
+    url = provider.sign(href)
+    if url != href or not str(url).startswith("https://"):
+        return None
+    sc = scene_scaling(escena, banda)
+    return {"banda": banda, "url": url, "escala": sc.scale, "offset": sc.offset}
+
+
+def cog_del_producto(provider, escena, producto: str, estiramiento=None, rescale=None) -> dict | None:
+    """Cómo pintar el producto EN EL CLIENTE desde los COG de la escena (lo que hace el servidor en
+    /tiles*, mismas bandas, rangos, rampa y máscara de nubes). None si alguna banda no es pública."""
+    from imagery_mcp.estadisticas import _SCL_CLOUD_CLASSES
+    from imagery_mcp.tiles_bandas import RANGO_REFLECTANCIA
+
+    spec: dict[str, Any]
+    if producto in COMBOS:
+        visual = _cog_banda(provider, escena, "visual") if producto == "true_color" and not estiramiento else None
+        if visual:
+            spec = {"tipo": "rgb8", "bandas": [visual]}
+        else:
+            spec = {"tipo": "rgb", "bandas": [_cog_banda(provider, escena, b) for b in _COMPOSITES[producto]],
+                    "rangos": estiramiento or [list(RANGO_REFLECTANCIA)] * 3}
+    elif producto in INDICES:
+        a, b = INDICES[producto]["bandas"]
+        scl = _cog_banda(provider, escena, "scl")
+        spec = {"tipo": "indice", "bandas": [_cog_banda(provider, escena, a), _cog_banda(provider, escena, b)],
+                "rangos": [list(rescale or (-1.0, 1.0))], "colores": _colores(INDICES[producto]["colormap"], 9),
+                **({"mascara": {"url": scl["url"], "excluir": list(_SCL_CLOUD_CLASSES)}} if scl else {})}
+    elif producto == "scl":
+        spec = {"tipo": "clases", "bandas": [_cog_banda(provider, escena, "scl")],
+                "clases": {str(v): c for v, (_e, c) in CLASES_SCL.items()}}
+    else:
+        spec = {"tipo": "banda", "bandas": [_cog_banda(provider, escena, producto)],
+                "rangos": [list(rescale or rango_de(producto))], "colores": ["#000000", "#ffffff"]}
+    if any(b is None for b in spec["bandas"]):
+        return None
+    return {"version": 1, "nodata": 0, **spec}
+
+
 def ver_escena(provider, scene_id: str, producto: str, *, estiramiento=None, rescale=None,
                on_scene=None) -> dict:
     """La escena ENTERA en el producto pedido, con sus descargas."""
@@ -131,7 +176,8 @@ def ver_escena(provider, scene_id: str, producto: str, *, estiramiento=None, res
         "scene": {"id": escena.id, "datetime": escena.datetime, "cloud_pct": escena.cloud_pct,
                   "provider": escena.provider, "bbox": list(escena.bbox)},
         "producto": {"id": producto, "nombre": capa["nombre"]},
-        "tiles": {"url_template": capa["url"], "bounds": list(escena.bbox), "legend": capa["leyenda"]},
+        "tiles": {"url_template": capa["url"], "bounds": list(escena.bbox), "legend": capa["leyenda"],
+                  "cog": cog_del_producto(provider, escena, producto, estiramiento, rescale)},
         "descargas": descargas(provider, escena),
         "nota": "la escena completa (~110 km); las teselas se componen al vuelo",
     }

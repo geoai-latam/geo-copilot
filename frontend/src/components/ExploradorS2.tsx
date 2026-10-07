@@ -205,8 +205,18 @@ export function ExploradorS2() {
   }
 
   /** La escena ENTERA en el producto elegido; `rangos` = el contraste de su tarjeta. */
+  /** Contraste de una escena pintada en el navegador: solo cambian sus rangos (sin servidor). */
+  const contrasteLocal = (rangos: [number, number][] | null): boolean => {
+    const capa = useMapStore.getState().layers.find((l) => l.id === rasterPrevio)
+    const cog = capa?.cog
+    if (!capa || !cog || !rangos || !['rgb', 'indice', 'banda'].includes(cog.tipo)) return false
+    useMapStore.getState().setLayerCog(capa.id, { ...cog, rangos })
+    if (escenaVista) fijar({ escenaVista: { ...escenaVista, rangos } })
+    return true
+  }
+
   const verEscena = (id: string, fecha: string, prod: string, rangos: [number, number][] | null) =>
-    conEstado(`ver:${id}`, async () => {
+    contrasteLocal(rangos) ? Promise.resolve() : conEstado(`ver:${id}`, async () => {
       const args: Record<string, unknown> = { scene_id: id, product: prod }
       if (rangos) {
         if (productoS2(prod).grupo === 'color') args.stretch = rangos

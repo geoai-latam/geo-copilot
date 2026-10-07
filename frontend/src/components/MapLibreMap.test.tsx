@@ -41,6 +41,7 @@ vi.mock('maplibre-gl', () => ({
   NavigationControl: vi.fn(),
   AttributionControl: vi.fn(),
   setWorkerUrl: vi.fn(),
+  addProtocol: vi.fn(),
 }))
 
 const { MapLibreMap } = await import('./MapLibreMap')

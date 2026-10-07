@@ -5,6 +5,7 @@
  */
 import type { MapLayer } from '@/stores/mapStore'
 import { imageryRasterSource } from '@/lib/maplibreImagery'
+import { plantillaCog } from '@/lib/cogNavegador'
 import type { BBox, LegendSpec, MapSpecs, OpacidadPaint, PanelRow, Renderer, StyleLayerSpec } from './types'
 
 function capaRaster(layer: MapLayer): StyleLayerSpec {
@@ -45,7 +46,9 @@ export const rasterXyz: Renderer = {
     // se componen en el servidor) y la cola de imágenes, compartida, dejaba el mapa base en blanco.
     const b = extension(layer)
     return {
-      source: { type: 'raster', tiles: [layer.url ?? ''], tileSize: 256, ...(b ? { bounds: b } : {}) },
+      // Con `cog`, la pinta el navegador desde los COG (las teselas del servidor, de respaldo).
+      source: { type: 'raster', tiles: [layer.cog ? plantillaCog(layer.id, layer.cog, layer.url ?? '') : layer.url ?? ''],
+                tileSize: 256, ...(b ? { bounds: b } : {}) },
       layers: [capaRaster(layer)],
     }
   },

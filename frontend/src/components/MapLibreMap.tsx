@@ -3,6 +3,10 @@ import { useProyeccion } from '@/lib/proyeccion'
 import { useEffect, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import '@/lib/maplibreWorker'
+import { cargarTesela, PROTOCOLO } from '@/lib/cogNavegador'
+
+// Las escenas con `cog` se pintan en el navegador desde sus COG (lib/cogNavegador).
+maplibregl.addProtocol(PROTOCOLO, cargarTesela as never)
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { BASE_MAPS, useBaseMapId, useLayers, useFlyToLayerId, useMapCenter, useMapZoom, useMapStore, type MapLayer } from '@/stores/mapStore'
 import { setMapTestState, type LayerProbe } from '@/lib/mapTestState'

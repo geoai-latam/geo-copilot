@@ -303,3 +303,60 @@ def test_el_punto_llega_en_cualquier_forma_geojson():
     assert punto_de({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": pt}]}) == (-74.08, 4.65)
     assert punto_de({"type": "Polygon", "coordinates": []}) is None
     assert punto_de({"type": "FeatureCollection", "features": []}) is None
+
+
+# --- pintar en el cliente desde los COG ---------------------------------------------------
+_S3 = "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/19/N/BD/2026/8/S2X"
+
+
+def _escena_publica(**extra):
+    bandas = {b: f"{_S3}/{c}.tif" for b, c in (("red", "B04"), ("green", "B03"), ("blue", "B02"), ("nir", "B08"),
+                                                ("visual", "TCI"), ("scl", "SCL"), ("cloud", "CLD"))}
+    return Scene(id="S2C_T19NBD_20260802T151752_L2A", datetime="2026-08-02", cloud_pct=6, bbox=[-71.7, 2.6, -71.1, 3.6],
+                 red_href=bandas["red"], nir_href=bandas["nir"], provider="earth-search", scl_href=bandas["scl"],
+                 bands=bandas, scaling=dict.fromkeys(("red", "green", "blue", "nir"), C1), **extra)
+
+
+def test_cada_producto_trae_como_pintarlo_en_el_cliente():
+    from imagery_mcp.vista import cog_del_producto
+
+    e, p = _escena_publica(), MagicMock(sign=lambda h: h)
+    tci = cog_del_producto(p, e, "true_color")
+    assert tci["tipo"] == "rgb8" and tci["bandas"][0]["url"].endswith("/TCI.tif")
+    estirado = cog_del_producto(p, e, "true_color", estiramiento=[[0, 0.3]] * 3)
+    assert estirado["tipo"] == "rgb" and [b["banda"] for b in estirado["bandas"]] == ["red", "green", "blue"]
+    assert estirado["bandas"][0]["escala"] == 0.0001 and estirado["bandas"][0]["offset"] == -0.1
+    ndwi = cog_del_producto(p, e, "ndwi")
+    assert [b["banda"] for b in ndwi["bandas"]] == ["green", "nir"] and ndwi["rangos"] == [[-1.0, 1.0]]
+    assert ndwi["mascara"]["excluir"] == [3, 8, 9, 10] and len(ndwi["colores"]) == 9   # la máscara del servidor
+    assert cog_del_producto(p, e, "scl")["clases"]["6"] == "#0000ff"
+    nube = cog_del_producto(p, e, "cloud")
+    assert nube["rangos"] == [[0.0, 100.0]] and nube["bandas"][0]["escala"] == 1.0
+
+
+def test_sin_cog_si_la_url_hay_que_firmarla_o_falta_la_banda():
+    from imagery_mcp.vista import cog_del_producto
+
+    firmada = MagicMock(sign=lambda h: h + "?sas=caduca")
+    assert cog_del_producto(firmada, _escena_publica(), "ndvi") is None
+    assert cog_del_producto(MagicMock(sign=lambda h: h), _escena_publica(), "swir22") is None
+
+
+def test_sin_resultados_por_los_filtros_los_hechos_traen_lo_mas_despejado_sin_filtrar(monkeypatch):
+    """«Muéstrame una imagen de Bogotá sin nubes»: si nada pasa el filtro, el agente debe saber qué
+    hay (la mejor escena real) para decidir, en vez de quedarse sin imagen."""
+    from imagery_mcp import georesult as gr
+    from imagery_mcp import server
+
+    mejor = {"id": "S2B_T18NWL_20260810T152745_L2A", "tile": "18NWL", "fecha": "2026-08-10T15:31:43Z",
+             "nubes": 12.4, "cobertura": 100, "plataforma": "s2b", "miniatura": "x"}
+    falso = MagicMock(cuadricula=lambda *a, **k: [], escenas=lambda *a, **k: [] if k.get("max_nubes") is not None else [mejor])
+    monkeypatch.setattr(server, "catalogo", falso)
+    bogota = {"type": "Polygon", "coordinates": [[[-74.2, 4.5], [-74, 4.5], [-74, 4.8], [-74.2, 4.8], [-74.2, 4.5]]]}
+    r = server._cuadricula(bogota, "2026-09-07", "2026-10-07", 5, None)
+    assert r["sin_filtros"] == [{"id": mejor["id"], "fecha": mejor["fecha"], "nubes": 12.4, "cobertura": 100}]
+    assert gr.cuadricula(r)["facts"]["sin_filtros"][0]["nubes"] == 12.4
+    e = server._escenas(None, bogota, "2026-09-07", "2026-10-07", 5, None, "menos_nubes", 10)
+    assert gr.escenas_catalogo(e)["facts"]["sin_filtros"][0]["id"] == mejor["id"]
+    # sin filtros pedidos no hay nada que añadir
+    assert "sin_filtros" not in server._cuadricula(bogota, "2026-09-07", "2026-10-07", None, None)

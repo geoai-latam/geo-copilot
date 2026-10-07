@@ -1,5 +1,5 @@
 {
-  "$id": "geo-copilot/map_action/1.8.0",
+  "$id": "geo-copilot/map_action/1.9.0",
   "additionalProperties": false,
   "description": "Una operación del registro, como la ve el agente en el turno siguiente.\n\nNo lleva el estado completo (la capa ya está descrita en `map_context.layers`):\nlleva QUIÉN hizo QUÉ sobre CUÁL capa y si luego se deshizo.",
   "properties": {

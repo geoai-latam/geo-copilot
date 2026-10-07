@@ -75,5 +75,5 @@ export interface Renderer {
 /** Qué cambia la GEOMETRÍA o el estilo de una capa (si cambia, se reconstruye). */
 export function firmaDeCapa(layer: MapLayer): unknown[] {
   return [layer.kind, layer.data, layer.symbology, layer.tiles?.url, layer.url, layer.wmsLayers, layer.labelField,
-          JSON.stringify(layer.filtro ?? null)]
+          JSON.stringify(layer.filtro ?? null), layer.cog]
 }

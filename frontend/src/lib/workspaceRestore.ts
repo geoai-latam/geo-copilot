@@ -21,6 +21,7 @@ import { sessionApi, workspaceApi } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type { ChatMessage, GeoJSONFeatureCollection, LayerSymbology } from '@/types'
 import type { SeleccionCapa } from '@/lib/seleccion'
+import type { CogSpec } from '@/lib/cogNavegador'
 
 const CLAVE_SESION = 'geo.session'
 const clavesCapas = (sid: string) => `geo.layers.${sid}`
@@ -49,6 +50,8 @@ export interface CapaGuardada {
   origen?: OrigenCapa | null
   /** FH.10: fecha del raster (serie temporal). */
   fecha?: string | null
+  /** Pintarla en el navegador desde sus COG. */
+  cog?: CogSpec | null
   /** FH.11: lo seleccionado en la capa (un proyecto lo conserva). */
   seleccion?: SeleccionCapa | null
 }
@@ -126,6 +129,7 @@ export function capasGuardables(layers: MapLayer[]): CapaGuardada[] { // eslint-
         extent: l.extent ?? null, legend: l.legend ?? null, origen: l.origen ?? null,
         ...(l.wmsLayers ? { wmsLayers: l.wmsLayers } : {}),
         ...(l.fecha ? { fecha: l.fecha } : {}),
+        ...(l.cog ? { cog: l.cog } : {}),
       })
     } else if (l.datasetId) {
       guardadas.push({ ...comun, tipo: 'dataset', datasetId: l.datasetId, symbology: l.symbology,
@@ -249,7 +253,8 @@ async function restaurar(sessionId: string): Promise<number> { // eslint-disable
     vistas.add(clave)
     if (g.tipo === 'raster' && g.url) {
       const id = conservarId(map.addRasterLayer({ url: g.url, name: g.name, extent: g.extent, legend: g.legend,
-                                                  kind: g.kind, wmsLayers: g.wmsLayers, origen: g.origen, fecha: g.fecha ?? null }), g.id)
+                                                  kind: g.kind, wmsLayers: g.wmsLayers, origen: g.origen, fecha: g.fecha ?? null,
+                                                  cog: g.cog ?? null }), g.id)
       if (!g.visible) useMapStore.getState().toggleLayerVisibility(id)
       if (g.opacity !== undefined) useMapStore.getState().setLayerOpacity(id, g.opacity)
       idsEnOrden.push(id)

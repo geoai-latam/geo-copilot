@@ -83,6 +83,9 @@ class RasterTiles(Strict):
     tile_size: Literal[256, 512] = 256
     #: Leyenda del raster tal como la da el productor (rampa, rango, unidades).
     legend: dict[str, Any] | None = None
+    #: Cómo pintarla EN EL CLIENTE desde sus COG públicos (bandas, escala, rangos, rampa); solo de
+    #: servidores de confianza y con URLs https. Sin él, o si falla, se usan las teselas.
+    cog: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _plantilla_xyz(self) -> RasterTiles:

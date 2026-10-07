@@ -426,6 +426,8 @@ export interface McpRunResult {
       name?: string;
       extent?: { xmin: number; ymin: number; xmax: number; ymax: number } | null;
       legend?: McpLegend | null;
+      /** Pintarla en el navegador desde sus COG (servidores de confianza). */
+      cog?: import('@/lib/cogNavegador').CogSpec | null;
       /** S4.4: tool + argumentos que produjeron la capa. */
       provenance?: { capability: string; arguments?: Record<string, unknown> } | null;
     } | null;
