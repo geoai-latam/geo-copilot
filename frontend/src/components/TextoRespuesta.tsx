@@ -3,14 +3,49 @@
  * que señala; clic lo selecciona (autor «usuario», se deshace con Ctrl+Z) y lo encuadra.
  * Un enlace a algo que ya no está en el mapa queda como texto (con el motivo al pasar).
  */
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, type ReactNode, useState } from 'react'
+import { Download } from 'lucide-react'
 
+import { descargarDataset } from '@/lib/exportarCapa'
 import { useOperaciones } from '@/lib/operaciones'
 import { elementos, extensionDe, resolverCapa, type Referencia } from '@/lib/referencias'
 import { bloques, piezas } from '@/lib/textoMarkdown'
 import { useLayers, useMapStore } from '@/stores/mapStore'
 
+/** Un enlace de descarga del agente: baja el archivo con la credencial del usuario. */
+function Descarga({ refe, texto, delTurno }: { refe: Referencia; texto: string; delTurno: string[] }) {
+  const capas = useLayers()
+  const [estado, setEstado] = useState<string | null>(null)
+  const capa = refe.capa.startsWith('ds_') ? undefined : resolverCapa(refe, capas, delTurno, texto)
+  const dataset = refe.capa.startsWith('ds_') ? refe.capa : capa?.datasetId
+  const bajar = async () => {
+    if (!dataset || !refe.descarga) return
+    setEstado('Preparando…')
+    try {
+      const r = await descargarDataset(dataset, refe.descarga.formato, refe.descarga.crs ?? null)
+      setEstado(`${r.archivo} · ${r.elementos.toLocaleString('es')} elementos`)
+    } catch (e) {
+      setEstado(e instanceof Error ? e.message : String(e))
+    }
+  }
+  if (!dataset) return <span className="ref-mapa ref-rota" title="Esa capa ya no está" data-testid="ref-rota">{texto}</span>
+  return (
+    <>
+      <button type="button" className="ref-mapa ref-descarga" data-testid="ref-descarga" onClick={() => void bajar()}
+              title="Descargar el archivo">
+        <Download className="w-3 h-3" /> {texto}
+      </button>
+      {estado && <span className="ref-descarga-estado" role="status"> {estado}</span>}
+    </>
+  )
+}
+
 function Enlace({ refe, texto, delTurno }: { refe: Referencia; texto: string; delTurno: string[] }) {
+  if (refe.descarga) return <Descarga refe={refe} texto={texto} delTurno={delTurno} />
+  return <EnlaceMapa refe={refe} texto={texto} delTurno={delTurno} />
+}
+
+function EnlaceMapa({ refe, texto, delTurno }: { refe: Referencia; texto: string; delTurno: string[] }) {
   const capas = useLayers()
   const capa = resolverCapa(refe, capas, delTurno, texto)
   const el = capa ? elementos(refe, capa) : 'vacio'
