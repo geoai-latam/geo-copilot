@@ -362,12 +362,22 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Chromium para Playwright (apt con tiempos y reintentos)
+        # 2026-10-07: el espejo apt de Azure se colgó sin timeout en dos corridas seguidas y el job
+        # se cancelaba a los 20 min. apt sin respuesta en 20 s reintenta; la instalación entera, 3
+        # intentos de 4 min como mucho.
+        run: |
+          echo 'Acquire::Retries "5"; Acquire::http::Timeout "20"; Acquire::https::Timeout "20";'             | sudo tee /etc/apt/apt.conf.d/80-reintentos-ci
+          for intento in 1 2 3; do
+            timeout 240 npx playwright install --with-deps chromium && exit 0
+            echo "instalación de Chromium: intento $intento falló"; sleep 10
+          done
+          exit 1
+
       - name: Playwright (E2E deterministas)
         # Backend y WS simulados con page.route: sin LLM ni red. Hasta F0 estos
         # ~30 tests solo corrían a mano; ahora un PR que rompe la UI queda rojo.
-        run: |
-          npx playwright install --with-deps chromium
-          npx playwright test
+        run: npx playwright test
 
       - name: Reporte de Playwright si falla
         if: failure()
