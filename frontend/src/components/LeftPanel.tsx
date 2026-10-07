@@ -7,6 +7,7 @@ import {
   Database,
   Compass,
   Layers,
+  Satellite,
   History,
   Settings,
   ShieldCheck,
@@ -23,7 +24,7 @@ import { nuevaConversacion } from '@/lib/nuevaConversacion'
 import { useState, useRef } from 'react'
 import { useClickOutside } from '@/hooks'
 
-type RailAction = 'new' | 'chat' | 'map' | 'data' | 'database' | 'layers' | 'history' | 'tools' | 'connections' | 'auditoria'
+type RailAction = 'new' | 'chat' | 'map' | 'data' | 'sentinel2' | 'database' | 'layers' | 'history' | 'tools' | 'connections' | 'auditoria'
 
 export function LeftPanel() {
   const layers = useLayers()
@@ -63,6 +64,9 @@ export function LeftPanel() {
       case 'data':
         toggleDrawer('data')
         return
+      case 'sentinel2':
+        toggleDrawer('sentinel2')
+        return
       case 'database':
         toggleDrawer('database')
         return
@@ -82,10 +86,11 @@ export function LeftPanel() {
   // 'database' (BD)    → Database: schemas/tablas REALES de la BD conectada.
   // Separamos las dos experiencias porque son distintas (catálogo externo
   // vs. catálogo interno) y antes ambas usaban Database, confuso.
-  const items: { action: RailAction; icon: typeof MessageSquare; label: string; badge?: boolean; drawerId?: 'data' | 'database' | 'layers' | 'history' | 'tools' | 'connections' | 'auditoria' }[] = [
+  const items: { action: RailAction; icon: typeof MessageSquare; label: string; badge?: boolean; drawerId?: 'data' | 'sentinel2' | 'database' | 'layers' | 'history' | 'tools' | 'connections' | 'auditoria' }[] = [
     { action: 'chat',     icon: MessageSquare, label: 'Chat',          badge: true },
     { action: 'map',      icon: Globe2,        label: 'Vista mapa' },
     { action: 'data',     icon: Compass,       label: 'Descubrir',     drawerId: 'data' },
+    { action: 'sentinel2', icon: Satellite,    label: 'Sentinel-2',    drawerId: 'sentinel2' },
     { action: 'tools',    icon: PlugZap,      label: 'Herramientas',  drawerId: 'tools' },
     { action: 'connections', icon: Cable,     label: 'Conexiones',    drawerId: 'connections' },
     { action: 'database', icon: Database,      label: 'Base de datos', drawerId: 'database' },

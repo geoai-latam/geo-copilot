@@ -5,6 +5,7 @@ import {
   Database,
   PlugZap,
   Compass,
+  Satellite,
   History as HistoryIcon,
   Eye,
   EyeOff,
@@ -45,6 +46,7 @@ import { geometriaDeCapa } from './MenuContextual.helpers'
 import { EditorEstilo } from './EditorEstilo'
 import { useResultsStore } from '@/stores/resultsStore'
 import { McpToolsPanel } from './McpToolsPanel'
+import { ExploradorS2 } from './ExploradorS2'
 import { ConnectionsPanel } from './ConnectionsPanel'
 import { DatabaseSchemaPanel } from './DatabaseSchemaPanel'
 
@@ -62,6 +64,7 @@ export function LeftDrawer() { // eslint-disable-line complexity -- deuda congel
   const title =
     drawer === 'layers' ? 'Capas activas'
     : drawer === 'data' ? 'Descubrir datos · ArcGIS Hub'
+    : drawer === 'sentinel2' ? 'Explorador Sentinel-2'
     : drawer === 'database' ? 'Mi base de datos'
     : drawer === 'tools' ? 'Herramientas · Servicios conectados'
     : drawer === 'connections' ? 'Conexiones · Servidores MCP'
@@ -74,6 +77,7 @@ export function LeftDrawer() { // eslint-disable-line complexity -- deuda congel
   const Icon =
     drawer === 'layers' ? LayersIcon
     : drawer === 'data' ? Compass
+    : drawer === 'sentinel2' ? Satellite
     : drawer === 'database' ? Database
     : drawer === 'tools' ? PlugZap
     : drawer === 'connections' ? Cable
@@ -96,6 +100,7 @@ export function LeftDrawer() { // eslint-disable-line complexity -- deuda congel
       <div className="left-drawer-body">
         {drawer === 'layers' && <LayersDrawer />}
         {drawer === 'data' && <DataDiscoveryPanel />}
+        {drawer === 'sentinel2' && <ExploradorS2 />}
         {drawer === 'database' && <DatabaseSchemaPanel />}
         {drawer === 'tools' && <McpToolsPanel />}
         {drawer === 'connections' && <ConnectionsPanel />}

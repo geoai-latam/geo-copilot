@@ -15,7 +15,7 @@ export type ChatDockState = 'collapsed' | 'medium' | 'expanded';
 // Drawer 'database' (nuevo) muestra el schema real de la BD conectada
 // (tablas / columnas / geometrías). 'data' (Discovery) busca datos externos
 // vía Hub. Son experiencias distintas: BD interna vs catálogo externo.
-export type DrawerId = 'layers' | 'data' | 'database' | 'history' | 'tools' | 'connections' | 'auditoria' | null;
+export type DrawerId = 'layers' | 'data' | 'sentinel2' | 'database' | 'history' | 'tools' | 'connections' | 'auditoria' | null;
 
 interface UIState {
   // Panel states
