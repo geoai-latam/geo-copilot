@@ -7,3 +7,4 @@ anyio>=4,<5
 pillow>=12.3,<13  # F7: <12 dejaba CVEs HIGH con arreglo (Trivy)
 uvicorn>=0.30,<1
 rio-tiler>=9,<10
+duckdb>=1.5,<2  # catálogo GeoParquet de escenas (catalogo.py)

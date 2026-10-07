@@ -130,3 +130,31 @@ def search(r: dict) -> dict:
     cols = sorted({k for s in escenas for k in s}) if escenas else []
     return geo_result([table(cols, escenas, name="Escenas")],
                       facts={"escenas": len(escenas)})
+
+
+def cuadricula(r: dict) -> dict:
+    """Teselas MGRS con su disponibilidad → capa para colorear (por defecto, nubes mínima)."""
+    if r.get("error"):
+        return r
+    filas = r.get("filas") or []
+    feats = [{"type": "Feature", "geometry": f["huella"],
+              "properties": {k: v for k, v in f.items() if k != "huella"}}
+             for f in filas if f.get("huella")]
+    hechos = {"teselas": len(feats), "escenas": sum(int(f["escenas"]) for f in filas),
+              "ventana": f"{r.get('desde')}…{r.get('hasta')}",
+              "fuente": "catálogo GeoParquet de Earth Search sentinel-2-c1-l2a (Source Cooperative)",
+              "huella": "la de la escena con más cobertura de cada tesela"}
+    return geo_result(
+        [feature_collection(f"Imágenes Sentinel-2 {r.get('desde')}…{r.get('hasta')}",
+                            {"type": "FeatureCollection", "features": feats}, crs="EPSG:4326")],
+        facts=hechos, style_hint={"field": "nubes_min", "method": "quantile"},
+    )
+
+
+def escenas_catalogo(r: dict) -> dict:
+    if r.get("error"):
+        return r
+    filas = r.get("filas") or []
+    cols = ["id", "tile", "fecha", "nubes", "cobertura", "plataforma", "miniatura"]
+    return geo_result([table(cols, filas, name="Escenas Sentinel-2")],
+                      facts={"escenas": len(filas), "ventana": f"{r.get('desde')}…{r.get('hasta')}"})

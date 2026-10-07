@@ -25,6 +25,9 @@ TOOL_SCOPES: dict[str, str] = {
     "imagery_change": SCOPE_COMPUTE,
     "imagery_zonal_stats": SCOPE_COMPUTE,
     "imagery_composite": SCOPE_COMPUTE,
+    # El catálogo solo lee metadatos (no calcula píxeles): scope de lectura.
+    "imagery_catalog_grid": SCOPE_READ,
+    "imagery_catalog_scenes": SCOPE_READ,
 }
 
 
