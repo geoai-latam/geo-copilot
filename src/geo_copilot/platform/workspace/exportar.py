@@ -47,7 +47,7 @@ def nombre_de_archivo(nombre: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", plano.lower()).strip("_")[:60] or "capa"
 
 
-def _crs(crs: str | None, formato: str) -> str:
+def crs_de_salida(crs: str | None, formato: str) -> str:
     if formato == "kml":
         if crs not in (None, "", "EPSG:4326"):
             raise ExportacionInvalida("KML siempre va en WGS84 (EPSG:4326)")
@@ -92,7 +92,7 @@ def escribir(filas: list[dict[str, Any]], campos: list[str], formato: str, nombr
     if formato not in FORMATOS:
         raise ExportacionInvalida(f"formato desconocido: {formato!r}; válidos: {', '.join(FORMATOS)}")
     f = FORMATOS[formato]
-    destino_crs = _crs(crs, formato)
+    destino_crs = crs_de_salida(crs, formato)
     base = nombre_de_archivo(nombre)
     df = pd.DataFrame([{c: _valor(r.get(c)) for c in campos} for r in filas], columns=campos)
     wkb = [bytes(r["_wkb"]) if r.get("_wkb") is not None else None for r in filas]

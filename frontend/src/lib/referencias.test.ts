@@ -74,3 +74,18 @@ describe('FH.7 — enlaces al mapa en la respuesta', () => {
     expect(filtroResaltado({ seleccion: null })).toEqual(['boolean', false])
   })
 })
+
+describe('enlaces de descarga del agente', () => {
+  it('[[descarga:…]] trae formato y CRS; el texto queda como etiqueta', () => {
+    const t = trocear('Listo: [[descarga:ds_0123456789abcdef?formato=shp&crs=EPSG:9377|Descargar «Cauces» (Shapefile)]].')
+    expect(t[1].ref).toEqual({ capa: 'ds_0123456789abcdef', descarga: { formato: 'shp', crs: 'EPSG:9377' } })
+    expect(t[1].texto).toBe('Descargar «Cauces» (Shapefile)')
+    expect(t[2].texto).toBe('.')
+  })
+
+  it('los enlaces al mapa siguen igual (y un valor con = se conserva)', () => {
+    const t = trocear('[[layer:activa?codigo=a=b|el lote]] y [[layer:ds_x#7|el 7]]')
+    expect(t[0].ref).toEqual({ capa: 'activa', campo: 'codigo', valor: 'a=b' })
+    expect(t[2].ref).toEqual({ capa: 'ds_x', id: '7' })
+  })
+})

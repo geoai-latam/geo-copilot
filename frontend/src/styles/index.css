@@ -2995,3 +2995,7 @@ input, textarea { font: inherit; color: inherit; }
 .imprimir-panel label { display: flex; flex-direction: column; gap: 3px; color: var(--text-mute); }
 .imprimir-acciones { display: flex; gap: 6px; }
 .imprimir-estado { color: var(--text-mute); word-break: break-all; }
+
+/* Enlace de descarga que deja el agente (export_layer). */
+.ref-descarga { display: inline-flex; align-items: center; gap: 4px; }
+.ref-descarga-estado { font-size: 11px; color: var(--text-mute); }

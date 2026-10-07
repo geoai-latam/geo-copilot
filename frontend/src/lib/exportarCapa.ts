@@ -54,6 +54,15 @@ function guardar(blob: Blob, archivo: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+/** Descarga un dataset del workspace (el enlace que deja el agente con `export_layer`). */
+export async function descargarDataset(datasetId: string, formato: string, crs: string | null) {
+  const sessionId = useSessionStore.getState().sessionId
+  if (!sessionId) throw new Error('No hay sesión activa.')
+  const r = await workspaceApi.exportar(sessionId, datasetId, { formato, crs })
+  guardar(r.blob, r.archivo)
+  return { archivo: r.archivo, elementos: r.elementos }
+}
+
 /** Descarga la capa; devuelve el nombre del archivo y cuántos elementos lleva. */
 export async function exportarCapa(capa: MapLayer, formato: string, crs: string | null,
                                    alcance: Alcance): Promise<{ archivo: string; elementos: number }> {
