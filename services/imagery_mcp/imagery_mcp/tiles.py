@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 import threading
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 # F4: el render (NDVI, diferencia, RGB) y sus ayudantes viven en tiles_render (mixin); estos se
 # reexportan porque server, operaciones y las pruebas los importan de aquí.
@@ -32,6 +34,7 @@ from imagery_mcp.tiles_render import (  # noqa: F401
 _SCENE_RE = re.compile(r"^(S2[A-Z]|LC0[89])_[A-Za-z0-9_]{4,120}$")
 
 _READER_POOL_MAX = 4      # escenas calientes simultáneas (2 bandas c/u)
+_LANES_PER_SCENE = 6      # teselas de UNA escena que se leen a la vez (_SceneLanes)
 _TILE_CACHE_MAX = 512     # teselas PNG renderizadas (~25 KB c/u → ~12 MB)
 _SCENE_CACHE_MAX = 256    # escenas registradas + locks por escena (cota anti-leak)
 _NEGATIVE_CACHE_MAX = 512  # ids irresolubles recordados (no re-POSTear al STAC)
@@ -60,22 +63,62 @@ class _ReaderEntry:
     una escena que otro hilo está usando en ``.tile()`` — se cierra recién
     cuando ``refs`` vuelve a 0 (auditoría 2026-07-20, hallazgo H2).
 
-    Invariante: ``refs`` se incrementa antes de tomar el ``scene_lock`` y se
-    decrementa al soltarlo; por eso ``refs == 0`` implica que ningún hilo está
-    dentro del ``scene_lock`` de esa escena ⇒ es seguro cerrar sus readers. Las
-    bandas se abren perezosamente BAJO el scene_lock (NDVI usa red/nir/scl;
-    los composites RGB, otras) y se cachean en ``readers``.
+    Invariante: ``refs`` se incrementa antes de tomar un carril de la escena y
+    se decrementa al soltarlo; por eso ``refs == 0`` implica que ningún hilo
+    está en ningún carril de esa escena ⇒ es seguro cerrar sus readers. Las
+    bandas se abren perezosamente con el carril tomado (NDVI usa red/nir/scl;
+    los composites RGB, otras) y se cachean en ``readers[carril]``.
     """
 
     __slots__ = ("readers", "refs", "scene")
 
     def __init__(self, scene) -> None:
-        self.readers: dict = {}   # nombre de banda → Reader (perezoso)
+        # Un dict por carril (_SceneLanes): nombre de banda → Reader (perezoso).
+        # Cada carril tiene SUS datasets GDAL, así que dos hilos nunca leen el mismo.
+        self.readers: list[dict] = [{} for _ in range(_LANES_PER_SCENE)]
         self.refs = 0
         self.scene = scene
 
     def close_all(self) -> None:
-        _close_readers(list(self.readers.values()))
+        _close_readers([r for lane in self.readers for r in lane.values()])
+
+
+class _SceneLanes:
+    """Carriles de lectura de una escena: cada uno con SU lock y SUS readers.
+
+    GDAL no es thread-safe por dataset, no por proceso: varios hilos pueden leer
+    la misma escena a la vez si cada uno usa sus propios datasets. Con un solo lock
+    por escena sus teselas se dibujaban una por una (16 teselas z12 en frío:
+    13,8 s con Planetary Computer y 20 s con Earth Search, medido 2026-10-06).
+    """
+
+    __slots__ = ("_next", "locks")
+
+    def __init__(self, n: int = _LANES_PER_SCENE) -> None:
+        self.locks = [threading.Lock() for _ in range(n)]
+        self._next = 0
+
+    def locked(self) -> bool:
+        """¿Algún carril en uso? (la poda LRU no evicta una escena activa)."""
+        return any(lk.locked() for lk in self.locks)
+
+    @contextmanager
+    def take(self) -> Iterator[int]:
+        """Toma un carril libre (o espera uno por turnos) y devuelve su índice."""
+        for i, lk in enumerate(self.locks):
+            if lk.acquire(blocking=False):
+                break
+        else:
+            # Todos ocupados: esperar en uno por turnos. La carrera sobre _next solo
+            # reparte peor la espera; cada carril sigue siendo exclusivo por su lock.
+            i = self._next % len(self.locks)
+            self._next += 1
+            lk = self.locks[i]
+            lk.acquire()
+        try:
+            yield i
+        finally:
+            lk.release()
 
 
 class TilePool(TilesRenderMixin):
@@ -88,10 +131,11 @@ class TilePool(TilesRenderMixin):
         # Escenas expulsadas del pool cuyo close() se difirió porque estaban
         # en uso (refs>0); se cierran al drenar cuando refs vuelve a 0 (H2).
         self._pending_close: list[_ReaderEntry] = []
-        # GDAL datasets NO son thread-safe: un lock por escena serializa
-        # SUS teselas (escenas distintas van en paralelo); el caché VSI
-        # compartido hace casi gratis a las vecinas. OrderedDict → cota LRU.
-        self._scene_locks: OrderedDict[str, threading.Lock] = OrderedDict()
+        # GDAL datasets NO son thread-safe: cada escena tiene carriles con su
+        # lock y sus readers (_SceneLanes), así sus teselas se leen en paralelo
+        # sin compartir dataset; el caché VSI compartido abarata a las vecinas.
+        # OrderedDict → cota LRU.
+        self._scene_locks: OrderedDict[str, _SceneLanes] = OrderedDict()
         self._png_cache: OrderedDict[str, bytes] = OrderedDict()
         self._scenes: OrderedDict[str, object] = OrderedDict()  # scene_id → Scene
         # Ids que el STAC NO resuelve: recordarlos evita re-POSTear en cada
@@ -151,13 +195,14 @@ class TilePool(TilesRenderMixin):
             while len(self._scenes) > _SCENE_CACHE_MAX:
                 self._scenes.popitem(last=False)
 
-    def _ensure_band(self, entry: _ReaderEntry, band: str):
-        """Reader rio-tiler de la banda, abierto perezoso y cacheado en la entry.
+    def _ensure_band(self, entry: _ReaderEntry, band: str, lane: int = 0):
+        """Reader rio-tiler de la banda en el carril, abierto perezoso y cacheado.
 
-        Se llama BAJO el ``scene_lock``, de modo que la apertura de las bandas de
-        una escena queda serializada (sin carrera sobre ``entry.readers``). El
-        SCL/composite que la escena no trae devuelve None (best-effort)."""
-        r = entry.readers.get(band)
+        Se llama con el carril ``lane`` tomado (``_SceneLanes.take``), de modo que
+        nadie más toca ``entry.readers[lane]`` mientras tanto. El SCL/composite que
+        la escena no trae devuelve None (best-effort)."""
+        readers = entry.readers[lane]
+        r = readers.get(band)
         if r is not None:
             return r
         href = _band_href(entry.scene, band)
@@ -165,7 +210,7 @@ class TilePool(TilesRenderMixin):
             return None
         from rio_tiler.io import Reader
         reader = Reader(self._provider.sign(href) if self._provider else href)
-        entry.readers[band] = reader
+        readers[band] = reader
         return reader
 
     def _drain_pending_locked(self) -> None:
@@ -241,8 +286,8 @@ class TilePool(TilesRenderMixin):
             entry.refs -= 1
             self._drain_pending_locked()
 
-    def _get_scene_lock(self, scene_id: str) -> threading.Lock:
-        """Lock por escena (serializa sus teselas), con cota LRU anti-leak.
+    def _get_scene_lock(self, scene_id: str) -> _SceneLanes:
+        """Carriles de lectura de la escena (_SceneLanes), con cota LRU anti-leak.
 
         Se pide DESPUÉS de `_acquire`, de modo que un id irresoluble (que ya
         lanzó KeyError) nunca cree un lock huérfano. NUNCA se evicta un lock en
@@ -252,7 +297,7 @@ class TilePool(TilesRenderMixin):
         with self._lock:
             lk = self._scene_locks.get(scene_id)
             if lk is None:
-                lk = threading.Lock()
+                lk = _SceneLanes()
                 self._scene_locks[scene_id] = lk
             self._scene_locks.move_to_end(scene_id)
             while len(self._scene_locks) > _SCENE_CACHE_MAX:

@@ -115,17 +115,17 @@ class TilesRenderMixin:
                 # rasterio.Env: aplica GDAL_HTTP_TIMEOUT a la apertura y lectura
                 # del COG — sin él un tile lento fija el scene_lock y agota el
                 # thread-pool de anyio (B4 re-auditoría 2026-07-20).
-                with scene_lock, rasterio.Env(**_GDAL_ENV):
+                with scene_lock.take() as lane, rasterio.Env(**_GDAL_ENV):
                     # T5.5: las dos bandas del índice (NDVI: nir, red; NDWI: green, nir…);
                     # rio-tiler lleva cada una al MISMO grid de la tesela, así que bandas de
                     # resolución distinta (SWIR 20 m) quedan alineadas sin más.
                     b_a, b_b = INDICES[index]["bandas"]
-                    red_r = self._ensure_band(entry, b_b)
-                    nir_r = self._ensure_band(entry, b_a)
+                    red_r = self._ensure_band(entry, b_b, lane)
+                    nir_r = self._ensure_band(entry, b_a, lane)
                     # SCL best-effort también al ABRIR: un fallo transitorio de la
                     # SCL NO debe envenenar la entry ni tumbar la tesela NDVI (B1).
                     try:
-                        scl_r = self._ensure_band(entry, "scl")
+                        scl_r = self._ensure_band(entry, "scl", lane)
                     except Exception:  # noqa: BLE001 — sin SCL no se enmascara
                         scl_r = None
                     if red_r is None or nir_r is None:
@@ -275,15 +275,15 @@ class TilesRenderMixin:
             scene_lock = self._get_scene_lock(scene_id)
             visual_tile = composite_tiles = None
             try:
-                with scene_lock, rasterio.Env(**_GDAL_ENV):   # timeout GDAL (B4)
+                with scene_lock.take() as lane, rasterio.Env(**_GDAL_ENV):   # timeout GDAL (B4)
                     if combo == "true_color" and _band_href(entry.scene, "visual"):
-                        vis = self._ensure_band(entry, "visual")
+                        vis = self._ensure_band(entry, "visual", lane)
                         visual_tile = vis.tile(x, y, z, tilesize=_TILESIZE)
                     else:
                         names = _COMPOSITES.get(combo)
                         if names is None:
                             raise RuntimeError(f"combinación desconocida: {combo}")
-                        readers = [self._ensure_band(entry, b) for b in names]
+                        readers = [self._ensure_band(entry, b, lane) for b in names]
                         if any(r is None for r in readers):
                             return None   # la escena no trae esas bandas
                         composite_tiles = [r.tile(x, y, z, tilesize=_TILESIZE)
