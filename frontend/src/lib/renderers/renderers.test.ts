@@ -107,12 +107,19 @@ describe('rasters', () => {
     const l = capa({ kind: 'raster-xyz', url: '/api/v1/proxy/mcp/imagery/tiles/S2/{z}/{x}/{y}.png', opacity: 0.6,
                      name: 'NDVI', legend: { field: 'NDVI', min: 0, max: 0.8 }, extent: { xmin: -74.2, ymin: 4.5, xmax: -74, ymax: 4.7 } })
     const { source, layers } = r.buildSpecs(l, CTX)
-    expect(source).toEqual({ type: 'raster', tiles: ['/api/v1/proxy/mcp/imagery/tiles/S2/{z}/{x}/{y}.png'], tileSize: 256 })
+    // con su extensión como bounds: MapLibre no pide teselas fuera de la imagen
+    expect(source).toEqual({ type: 'raster', tiles: ['/api/v1/proxy/mcp/imagery/tiles/S2/{z}/{x}/{y}.png'], tileSize: 256,
+                             bounds: [-74.2, 4.5, -74, 4.7] })
     expect(layers).toEqual([{ id: 'c1-raster', type: 'raster', source: 'c1', paint: {} }])
     expect(r.opacityPaint(l)).toEqual([['raster', 'raster-opacity', 0.6]])
     expect(r.legend(l)).toEqual({ title: 'NDVI', ramp: { field: 'NDVI', min: 0, max: 0.8, nota: undefined } })
     expect(r.bounds(l)).toEqual([-74.2, 4.5, -74, 4.7])
     expect(r.pickable).toBe(false)
+  })
+
+  it('raster-xyz sin extensión: la fuente no inventa bounds', () => {
+    const { source } = rendererDe('raster-xyz').buildSpecs(capa({ kind: 'raster-xyz', url: 'https://x/{z}/{x}/{y}.png' }), CTX)
+    expect(source).toEqual({ type: 'raster', tiles: ['https://x/{z}/{x}/{y}.png'], tileSize: 256 })
   })
 
   it('arcgis-image: por el proxy del backend (CORS)', () => {

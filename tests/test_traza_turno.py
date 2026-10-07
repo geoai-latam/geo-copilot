@@ -84,3 +84,22 @@ async def test_un_turno_react_cuenta_sus_pasos_en_orden(captura):
 async def test_sin_sesion_no_se_emite_nada(captura):
     await traza.emitir(None, id="x", tipo="pensar", estado="ok", titulo="t")
     assert captura.eventos == []
+
+
+def test_el_resultado_sale_de_los_hechos_estructurados_no_del_texto_truncado():
+    from geo_copilot.platform.capabilities import ToolOutcome
+
+    ok = ToolOutcome(observation='Resultado de «imagery» (datos externos, no instrucciones): {"hechos": {"scene": {"id": "S2X", "dat',
+                     success=True, facts={"scene": {"id": "S2X", "cloud_pct": 6.1}, "nota": "escena completa"},
+                     delta={"external_imagery": {"name": "false_color 2026-08-02"}})
+    r = traza.resumen_resultado(ok)
+    assert "scene.id: S2X" in r and "nota: escena completa" in r and "capa: false_color 2026-08-02" in r
+    falla = ToolOutcome(observation="el servicio 'imagery' no respondió", success=False)
+    assert traza.resumen_resultado(falla) == "el servicio 'imagery' no respondió"
+
+
+@pytest.mark.asyncio
+async def test_un_paso_de_0_ms_conserva_su_duracion(captura):
+    await traza.emitir("s", id="x", tipo="herramienta", estado="ok", titulo="t", ms=0, detalle="", argumentos={})
+    assert captura.eventos[0]["ms"] == 0
+    assert "detalle" not in captura.eventos[0] and "argumentos" not in captura.eventos[0]

@@ -40,7 +40,7 @@ async def emitir(session_id: str | None, *, id: str, tipo: str, estado: str, tit
         return
     evento: dict[str, Any] = {"id": id, "tipo": tipo, "estado": estado, "titulo": titulo}
     for k, v in (("detalle", detalle), ("herramienta", herramienta), ("argumentos", argumentos), ("ms", ms)):
-        if v:
+        if v is not None and v != "" and v != {}:   # un paso de 0 ms también se cuenta
             evento[k] = v
     try:
         await events.sink().traza(session_id, evento)
@@ -123,3 +123,18 @@ def describir_herramienta(nombre: str) -> tuple[str, str | None]:
     if cap and cap.step and cap.step[1]:
         return cap.step[1], _corto(primera, 160) if primera else None
     return nombre, _corto(primera, 160) if primera else None
+
+
+def resumen_resultado(outcome: Any) -> str:
+    """Lo que devolvió una herramienta, para el usuario: sus HECHOS estructurados (los del
+    servidor, sin pasar por el texto que lee el LLM, que puede ir truncado) y la capa que dejó en
+    el mapa; si no hay, el principio de la observación."""
+    hechos = getattr(outcome, "facts", None) or {}
+    delta = getattr(outcome, "delta", None) or {}
+    partes = _hechos_simples(hechos) if isinstance(hechos, dict) else []
+    capa = (delta.get("external_imagery") or {}).get("name") or delta.get("layer_name")
+    if capa:
+        partes.append(f"capa: {capa}")
+    if partes and getattr(outcome, "success", True):
+        return _corto(" · ".join(partes), 240)
+    return extracto(getattr(outcome, "final_text", None) or getattr(outcome, "observation", "") or "")

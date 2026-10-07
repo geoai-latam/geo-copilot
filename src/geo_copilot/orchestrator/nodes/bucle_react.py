@@ -278,7 +278,7 @@ class BucleReAct:
             outcome = ToolOutcome(observation=f"la herramienta {name} falló: {str(exc)[:200]}", success=False)
         await traza.emitir(session_id, id=id_tool, tipo="herramienta", estado="ok" if outcome.success else "fallo",
                            titulo=titulo, herramienta=name, argumentos=traza.resumen_argumentos(args),
-                           detalle=traza.extracto(outcome.final_text or outcome.observation or ""),
+                           detalle=traza.resumen_resultado(outcome),
                            ms=int((time.monotonic() - t0) * 1000))
         if outcome.is_final:  # p. ej. request_map_input: cierra el turno CON su orden al mapa
             self.working.update(outcome.delta)

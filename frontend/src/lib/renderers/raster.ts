@@ -39,10 +39,16 @@ const base = {
 export const rasterXyz: Renderer = {
   ...base,
   kind: 'raster-xyz',
-  buildSpecs: (layer): MapSpecs => ({
-    source: { type: 'raster', tiles: [layer.url ?? ''], tileSize: 256 },
-    layers: [capaRaster(layer)],
-  }),
+  buildSpecs: (layer): MapSpecs => {
+    // Con su extensión como `bounds`, MapLibre solo pide las teselas que la tocan. Sin ella, una
+    // escena de 110 km pedía TODA la vista (a escala de país, cientos de PNG transparentes que
+    // se componen en el servidor) y la cola de imágenes, compartida, dejaba el mapa base en blanco.
+    const b = extension(layer)
+    return {
+      source: { type: 'raster', tiles: [layer.url ?? ''], tileSize: 256, ...(b ? { bounds: b } : {}) },
+      layers: [capaRaster(layer)],
+    }
+  },
   panelRow: fila('imagen · teselas'),
 }
 
