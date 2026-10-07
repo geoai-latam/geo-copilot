@@ -28,6 +28,11 @@ TOOL_SCOPES: dict[str, str] = {
     # El catálogo solo lee metadatos (no calcula píxeles): scope de lectura.
     "imagery_catalog_grid": SCOPE_READ,
     "imagery_catalog_scenes": SCOPE_READ,
+    "imagery_catalog_world": SCOPE_READ,
+    # Ver, mirar el histograma y leer un píxel abren los COG de la escena: cómputo.
+    "imagery_scene_view": SCOPE_COMPUTE,
+    "imagery_band_histogram": SCOPE_COMPUTE,
+    "imagery_pixel": SCOPE_COMPUTE,
 }
 
 

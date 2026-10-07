@@ -30,6 +30,10 @@ _BASE = "https://data.source.coop/tge-labs/s2-stac-geoparquet/sentinel-2-c1-l2a"
 # Listado S3 del bucket público (el glob `year=*/*.parquet` no funciona sobre https).
 _LISTADO = "https://data.source.coop/tge-labs/s2-stac-geoparquet/?prefix=sentinel-2-c1-l2a/year={anio}/"
 _LISTADO_TTL_S = 3600.0
+# Agregados por tesela y mes del mismo índice (`stats-c1`): un archivo de ~120 KB por mes con
+# todas las teselas del mundo. Lo que permite pintar el planeta en segundos.
+_STATS = "https://data.source.coop/tge-labs/s2-stac-geoparquet/stats-c1"
+_LISTADO_MESES = "https://data.source.coop/tge-labs/s2-stac-geoparquet/?prefix=stats-c1/months/"
 _HTTP_TIMEOUT = 30.0
 
 #: Id de escena de Collection 1: S2B_T18NWL_20260810T152745_L2A (tesela y fecha dentro).
@@ -75,9 +79,12 @@ class Catalogo:
     rápida tras la primera consulta). Cada consulta usa su propio cursor: DuckDB permite
     cursores concurrentes sobre una conexión."""
 
-    def __init__(self, base: str = _BASE, listar=None) -> None:
+    def __init__(self, base: str = _BASE, listar=None, *, base_stats: str = _STATS, listar_meses=None) -> None:
         self._base = base.rstrip("/")
         self._listar = listar or self._listar_remoto
+        self._base_stats = base_stats.rstrip("/")
+        self._listar_meses = listar_meses or self._meses_remotos
+        self._meses: tuple[float, list[str]] | None = None
         self._lock = threading.Lock()
         self._con: Any = None
         self._listados: dict[int, tuple[float, list[str]]] = {}
@@ -126,6 +133,58 @@ class Catalogo:
         if not rutas:
             raise CatalogoError(f"el catálogo no tiene escenas entre {desde} y {hasta}")
         return "[" + ", ".join("'" + r.replace("'", "''") + "'" for r in rutas) + "]"
+
+    # -- el mundo: agregados mensuales ---------------------------------------------------
+    @staticmethod
+    def _meses_remotos() -> list[str]:
+        resp = httpx.get(_LISTADO_MESES, timeout=_HTTP_TIMEOUT)
+        resp.raise_for_status()
+        return re.findall(r"months/(\d{4}-\d{2})\.parquet</Key>", resp.text)
+
+    def meses_publicados(self) -> list[str]:
+        ahora = time.time()
+        with self._lock:
+            if self._meses and ahora - self._meses[0] < _LISTADO_TTL_S:
+                return self._meses[1]
+        meses = sorted(self._listar_meses())
+        with self._lock:
+            self._meses = (ahora, meses)
+        return meses
+
+    def mundo(self, desde: str, hasta: str, max_nubes: float | None = None,
+              min_cobertura: float | None = None, min_escenas: int | None = None) -> dict:
+        """Una fila por tesela MGRS del mundo con sus escenas en los MESES que toca la ventana:
+        cuántas, nubes mínima, mediana de las medianas mensuales y cobertura máxima. Los
+        agregados son por mes completo (así los publica `stats-c1`) y los filtros se aplican a
+        la tesela (pasa si su escena más despejada cumple), no a cada escena."""
+        d0, d1 = date.fromisoformat(desde), date.fromisoformat(hasta)
+        pedidos = [f"{a:04d}-{m:02d}" for a in range(d0.year, d1.year + 1) for m in range(1, 13)
+                   if (a, m) >= (d0.year, d0.month) and (a, m) <= (d1.year, d1.month)]
+        publicados = set(self.meses_publicados())
+        meses = [m for m in pedidos if m in publicados]
+        if not meses:
+            raise CatalogoError(f"no hay agregados publicados para {desde}…{hasta}")
+        rutas = "[" + ", ".join(f"'{self._base_stats}/months/{m}.parquet'" for m in meses) + "]"
+        donde, params = [], []
+        if max_nubes is not None:
+            donde.append("nubes_min <= ?")
+            params.append(float(max_nubes))
+        if min_cobertura is not None:
+            donde.append("cobertura_max >= ?")
+            params.append(float(min_cobertura))
+        if min_escenas:
+            donde.append("escenas >= ?")
+            params.append(int(min_escenas))
+        sql = f"""
+SELECT mgrs_tile AS tile, CAST(sum(scene_count) AS INTEGER) AS escenas,
+       CAST(min(min_cloud_cover) AS INTEGER) AS nubes_min,
+       CAST(round(median(median_cloud_cover)) AS INTEGER) AS nubes_mediana,
+       CAST(max(max_cover) AS INTEGER) AS cobertura_max
+FROM read_parquet({rutas}) GROUP BY mgrs_tile
+{"HAVING " + " AND ".join(donde) if donde else ""} ORDER BY tile"""
+        filas = self._conexion().execute(sql, params).fetchall()
+        cols = ("tile", "escenas", "nubes_min", "nubes_mediana", "cobertura_max")
+        return {"filas": [dict(zip(cols, f, strict=True)) for f in filas], "meses": meses}
 
     def precalentar(self, anios: list[int]) -> None:
         """Lee en segundo plano los pies de los archivos de esos años (best-effort)."""

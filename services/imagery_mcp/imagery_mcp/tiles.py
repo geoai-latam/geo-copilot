@@ -17,6 +17,7 @@ from contextlib import contextmanager
 
 # F4: el render (NDVI, diferencia, RGB) y sus ayudantes viven en tiles_render (mixin); estos se
 # reexportan porque server, operaciones y las pruebas los importan de aquí.
+from imagery_mcp.tiles_bandas import TilesBandasMixin
 from imagery_mcp.tiles_render import (  # noqa: F401
     _COMPOSITES,
     _TILESIZE,
@@ -121,7 +122,7 @@ class _SceneLanes:
             lk.release()
 
 
-class TilePool(TilesRenderMixin):
+class TilePool(TilesRenderMixin, TilesBandasMixin):
     """Readers rio-tiler calientes por escena + caché de PNGs renderizados."""
 
     def __init__(self, provider) -> None:

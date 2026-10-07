@@ -38,6 +38,10 @@ export interface RasterLegend {
   min?: number;
   max?: number;
   nota?: string;
+  /** Paradas de la rampa (si el servidor la declara; si no, la del índice). */
+  colores?: string[];
+  /** Raster de clases (la SCL de Sentinel-2): cada valor con su etiqueta y color. */
+  clases?: { valor: number; etiqueta: string; color: string }[];
 }
 
 export interface MapLayer {
@@ -238,6 +242,9 @@ interface MapState {
   selectedFeature: unknown | null;
   /** Último punto donde el usuario hizo click en el mapa (S4.4, E4.5). */
   puntoMarcado: PuntoMarcado | null;
+  /** Globo o plano (Mercator). */
+  proyeccion: 'mercator' | 'globe';
+  setProyeccion: (p: 'mercator' | 'globe') => void;
   flyToLayerId: string | null;
   /** FH.1: `zoom_to` sin capa — encuadrar esta extensión (EPSG:4326). */
   encuadrePedido: [number, number, number, number] | null;
@@ -305,6 +312,7 @@ export const useMapStore = create<MapState>((set, get) => ({
   mapZoom: 10,
   selectedFeature: null,
   puntoMarcado: null,
+  proyeccion: 'mercator',
   flyToLayerId: null,
   encuadrePedido: null,
   modoSeleccion: null,
@@ -433,6 +441,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     layers: s.layers.map((l) => (l.id === layerId ? { ...l, resaltado } : l)),
   })),
   setPuntoMarcado: (p) => set({ puntoMarcado: p }),
+  setProyeccion: (p) => set({ proyeccion: p }),
   flyToLayer: (id) => set({ flyToLayerId: id }),
   clearFlyToLayer: () => set({ flyToLayerId: null }),
   pedirEncuadre: (bbox) => set({ encuadrePedido: bbox }),

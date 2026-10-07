@@ -8,7 +8,6 @@
   "scripts/prueba_carga.py::main": 86,
   "services/arcgis_mcp/arcgis_mcp/rest.py::consultar": 74,
   "services/imagery_mcp/imagery_mcp/engine.py::_ndvi_window": 62,
-  "services/imagery_mcp/imagery_mcp/server.py::_rutas_de_teselas": 69,
   "services/imagery_mcp/imagery_mcp/tiles_render.py::TilesRenderMixin._read_scene_ndvi": 96,
   "services/postgis_mcp/postgis_mcp/server.py::_consultar": 73,
   "src/geo_copilot/agents/data_agent/catalogo.py::CatalogoMixin.profile_dataset": 61,

@@ -123,6 +123,11 @@ _PC_BANDS = {"blue": "B02", "green": "B03", "red": "B04", "nir": "B08",
              "swir16": "B11", "swir22": "B12", "visual": "visual"}
 _ES_BANDS = {"blue": "blue", "green": "green", "red": "red", "nir": "nir",
              "swir16": "swir16", "swir22": "swir22", "visual": "visual"}
+# Collection 1 (el catálogo del explorador): además, el resto de bandas y las capas de calidad,
+# para verlas sueltas, leer un píxel y descargarlas. Las 7 de arriba siguen igual.
+_ES_C1_BANDS = {**_ES_BANDS, "coastal": "coastal", "rededge1": "rededge1", "rededge2": "rededge2",
+                "rededge3": "rededge3", "nir08": "nir08", "nir09": "nir09", "aot": "aot", "wvp": "wvp",
+                "scl": "scl", "cloud": "cloud", "snow": "snow"}
 # Landsat Collection 2 Level-2 (Planetary Computer): 30 m, factor publicado en cada asset
 # (scale 2.75e-05, offset -0.2), máscara por bits en `qa_pixel`.
 _PC_LANDSAT_BANDS = {"blue": "blue", "green": "green", "red": "red", "nir": "nir08",
@@ -159,7 +164,7 @@ COLECCIONES: dict[str, Coleccion] = {
     # reprocesada por ESA con un solo baseline. Mismas claves de asset que sentinel-2-l2a.
     "sentinel-2-c1-l2a": Coleccion(
         id="sentinel-2-c1-l2a", etiqueta="Sentinel-2 L2A (Collection 1)", resolucion_m=10,
-        bandas={"earth-search": _ES_BANDS}, mascara={"earth-search": "scl"},
+        bandas={"earth-search": _ES_C1_BANDS}, mascara={"earth-search": "scl"},
         mask_kind="scl", baseline_esa=True),
 }
 COLECCION_DEFECTO = "sentinel-2-l2a"

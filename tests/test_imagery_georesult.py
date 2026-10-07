@@ -71,7 +71,13 @@ def test_las_tools_declaran_meta_geo_y_solo_lectura():
     from imagery_mcp import server
 
     tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    # Toda tool declara su `_meta.geo` (inputs puede ir vacío: ver una escena por id no recibe
+    # geometría); las que reciben geometría la declaran, para las referencias y el menú contextual.
     for nombre, t in tools.items():
-        assert t.meta["geo"]["inputs"], nombre
+        assert isinstance(t.meta["geo"]["inputs"], dict), nombre
+        props = (t.inputSchema or {}).get("properties", {})
+        for arg in ("aoi_geojson", "features_geojson", "point_geojson"):
+            if arg in props:
+                assert arg in t.meta["geo"]["inputs"], (nombre, arg)
         assert t.annotations.readOnlyHint and t.annotations.openWorldHint, nombre
     assert tools["imagery_zonal_stats"].meta["geo"]["outputs"] == ["feature_collection"]

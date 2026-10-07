@@ -169,6 +169,10 @@ def _scaling_from_assets(assets: dict, mapping: dict, *,
     return out
 
 
+#: Assets que no son reflectancia: no se les deriva factor del baseline.
+_NO_REFLECTANCIA = frozenset({"visual", "scl", "cloud", "snow"})
+
+
 def _resolve_scaling(assets: dict, mapping: dict, baseline: str | None,
                      coll_lookup=None, *, derivar_baseline: bool = True) -> dict:
     """Factor por banda, resolviendo los TRES escalones por orden de confianza
@@ -195,10 +199,11 @@ def _resolve_scaling(assets: dict, mapping: dict, baseline: str | None,
             if coll is None:
                 coll = coll_lookup() or {}
             sc = coll.get(canon)
-        if sc is None and canon != "visual":
+        if sc is None and canon not in _NO_REFLECTANCIA:
             # `visual` es el TCI: 8-bit ya renderizado, NO reflectancia. El
             # BOA_ADD_OFFSET de la especificación no le aplica y derivárselo
-            # sería un factor sencillamente falso.
+            # sería un factor sencillamente falso. Igual las capas de calidad: la
+            # clasificación SCL y las probabilidades de nube y nieve (0–100).
             sc = derived
         if sc is not None:
             out[canon] = sc

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { McpRunResult } from '@/services/api'
 import {
-  cajaParaVer, escenasDe, fechaCorta, simbologiaCuadricula, teselasDe, ventanaPorDefecto, vistaDeBbox,
+  ajustable, escenasDe, fechaCorta, productoS2, rangoPorDefecto, simbologiaCuadricula, teselasDe, teselasDelMundo,
+  ventanaPorDefecto, vistaDeBbox,
 } from './exploradorS2'
 
 const poligono = (w: number, s: number, e: number, n: number) => ({
@@ -45,26 +46,27 @@ describe('exploradorS2', () => {
     expect(cortes[cortes.length - 1].label).toBe('40+')
   })
 
-  it('cajaParaVer: centrada en la vista si cae en la tesela, si no en la tesela; recortada a ella', () => {
-    const tesela: [number, number, number, number] = [-74.5, 4.5, -73.5, 5.4]
-    const enVista = cajaParaVer(tesela, [-74.2, 4.6, -74.0, 4.7])
-    expect(enVista.coordinates[0][0]).toEqual([-74.3, 4.5])   // 4,45 se recorta al sur de la tesela
-    const fuera = cajaParaVer(tesela, [-60, 0, -59, 1])
-    const xs = fuera.coordinates[0].map((c) => c[0])
-    expect(Math.min(...xs)).toBeCloseTo(-74.2)
-    expect(Math.max(...xs)).toBeCloseTo(-73.8)
-    const borde = cajaParaVer(tesela, [-74.5, 5.3, -74.45, 5.4])   // esquina: recorta a la tesela
-    const ys = borde.coordinates[0].map((c) => c[1])
-    expect(Math.max(...ys)).toBeLessThanOrEqual(5.4)
-    expect(Math.min(...borde.coordinates[0].map((c) => c[0]))).toBeGreaterThanOrEqual(-74.5)
-  })
-
   it('vistaDeBbox encuadra con un zoom razonable', () => {
     const tesela = vistaDeBbox([-74.5, 4.5, -73.5, 5.4])
     expect(tesela.centro).toEqual([-74, 4.95])
     expect(tesela.zoom).toBeGreaterThan(7)
     expect(tesela.zoom).toBeLessThan(10)
     expect(vistaDeBbox([-74.2, 4.5, -73.8, 4.9]).zoom).toBeGreaterThan(tesela.zoom)
+  })
+
+  it('teselasDelMundo lee las más despejadas de los hechos', () => {
+    const res = { success: true, message: null, results: {},
+      facts: { mas_despejadas: [{ tile: '22XEP', nubes_min: 0, escenas: 727 }] } } as never
+    expect(teselasDelMundo(res)).toEqual([{ tile: '22XEP', nubes_min: 0, escenas: 727, nubes_mediana: NaN, cobertura_max: NaN, bbox: null }])
+  })
+
+  it('productos: rango por defecto y bandas de cada uno', () => {
+    expect(rangoPorDefecto(productoS2('ndwi'))).toEqual([-1, 1])
+    expect(rangoPorDefecto(productoS2('cloud'))).toEqual([0, 100])
+    expect(rangoPorDefecto(productoS2('false_color'))).toEqual([0, 0.4])
+    expect(productoS2('agriculture').bandas).toEqual(['swir16', 'nir', 'blue'])
+    expect(ajustable(productoS2('scl'))).toBe(false)
+    expect(productoS2('inventado').id).toBe('true_color')
   })
 
   it('ventanaPorDefecto y fechaCorta', () => {

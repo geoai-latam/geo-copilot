@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from geo_mcp_kit import feature_collection, geo_result, raster_tiles, stats, table
+from geo_mcp_kit import feature_collection, feature_ref, geo_result, raster_tiles, stats, table
 
 _HECHOS = ("index", "collection", "scene", "scene_a", "scene_b", "stats", "diff_stats", "facts", "cloud_mask",
            "reflectance", "descartes", "alternatives", "degraded", "skipped", "combo")
@@ -158,3 +158,59 @@ def escenas_catalogo(r: dict) -> dict:
     cols = ["id", "tile", "fecha", "nubes", "cobertura", "plataforma", "miniatura"]
     return geo_result([table(cols, filas, name="Escenas Sentinel-2")],
                       facts={"escenas": len(filas), "ventana": f"{r.get('desde')}…{r.get('hasta')}"})
+
+
+def mundo(r: dict) -> dict:
+    """Todas las teselas MGRS del mundo con su disponibilidad (huella calculada desde el id)."""
+    if r.get("error"):
+        return r
+    from imagery_mcp.mgrs import huella
+
+    filas = r.get("filas") or []
+    feats = [{"type": "Feature", "geometry": h, "properties": f}
+             for f in filas if (h := huella(f["tile"])) is not None]
+    despejadas = sorted(filas, key=lambda f: (f["nubes_min"] if f["nubes_min"] is not None else 101, -f["escenas"]))
+    hechos = {"teselas": len(feats), "escenas": sum(int(f["escenas"] or 0) for f in filas),
+              "meses": r.get("meses"), "ventana": f"{r.get('desde')}…{r.get('hasta')}",
+              "agregado": "por meses completos (stats-c1 de Source Cooperative); nubes_mediana = "
+                          "mediana de las medianas mensuales",
+              "sin_huella": len(filas) - len(feats),
+              "mas_despejadas": [{k: f[k] for k in ("tile", "nubes_min", "escenas")} for f in despejadas[:10]]}
+    from imagery_mcp import resultados
+
+    # ~29.000 polígonos: por referencia (el núcleo descarga el GeoJSON de este servicio)
+    uri = resultados.guardar({"type": "FeatureCollection", "features": feats})
+    return geo_result(
+        [feature_ref(f"Sentinel-2 en el mundo {r.get('desde')}…{r.get('hasta')}", uri, fmt="geojson",
+                     crs="EPSG:4326", feature_count=len(feats))],
+        facts=hechos, style_hint={"field": "nubes_min", "method": "quantile"},
+    )
+
+
+def vista(r: dict) -> dict:
+    """La escena entera como capa de teselas, con su leyenda y sus descargas."""
+    if r.get("error"):
+        return r
+    t = r.get("tiles") or {}
+    escena = r.get("scene") or {}
+    prod = r.get("producto") or {}
+    capa = raster_tiles(f"{prod.get('id')} {_fecha(escena)} · {escena.get('id', '')[-25:]}", t["url_template"],
+                        bounds=t.get("bounds"), legend=t.get("legend"), datetime=_fecha(escena) or None)
+    hechos = {"scene": escena, "producto": prod, "descargas": r.get("descargas"), "nota": r.get("nota")}
+    return geo_result([capa], facts=hechos)
+
+
+def histograma(r: dict) -> dict:
+    if r.get("error"):
+        return r
+    filas = [{"banda": b["banda"], **{k: b.get(k) for k in ("p2", "p98", "min", "max", "unidad")}}
+             for b in r.get("bandas") or [] if "clases" not in b]
+    return geo_result([table(["banda", "p2", "p98", "min", "max", "unidad"], filas, name="Bandas")], facts=r)
+
+
+def pixel(r: dict) -> dict:
+    if r.get("error"):
+        return r
+    filas = [{"banda": b, "codigo": v["codigo"], "nombre": v["nombre"], "valor": v["valor"],
+              "unidad": v.get("unidad") or v.get("clase") or ""} for b, v in (r.get("bandas") or {}).items()]
+    return geo_result([table(["banda", "codigo", "nombre", "valor", "unidad"], filas, name="Píxel")], facts=r)

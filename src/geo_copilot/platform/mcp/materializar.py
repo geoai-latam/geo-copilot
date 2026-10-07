@@ -119,7 +119,15 @@ def _observacion(cfg: ServerConfig, gr: dict, capas: list[dict], tabla: list | N
         # FH.10: la capa raster que queda en el mapa, por su nombre (con él se compara o se
         # anima la serie: map_command compare / set_time) y el instante que retrata
         img = delta["external_imagery"]
-        obs["capa_raster"] = {"nombre": img.get("name"), **({"fecha": img["time"]} if img.get("time") else {})}
+        # V5 (explorador S2): con solo el nombre, el LLM encuadró «la escena» con el id de OTRA capa
+        # raster del mapa, concluyó que la suya no estaba y repitió la llamada (capa duplicada).
+        # Hechos: ya está en el mapa del usuario y dónde (su extensión, para un zoom_to por bbox).
+        e = img.get("extent") or {}
+        obs["capa_raster"] = {
+            "nombre": img.get("name"), "estado": "añadida al mapa del usuario en este paso",
+            **({"fecha": img["time"]} if img.get("time") else {}),
+            **({"bbox": [e["xmin"], e["ymin"], e["xmax"], e["ymax"]]} if {"xmin", "ymin", "xmax", "ymax"} <= e.keys() else {}),
+        }
     if gr.get("style_hint"):
         obs["sugerencia_de_estilo_del_servidor"] = gr["style_hint"]
     if avisos:
