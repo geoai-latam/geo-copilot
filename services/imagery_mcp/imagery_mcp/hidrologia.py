@@ -191,26 +191,52 @@ def _dilatar(m: np.ndarray, n: int) -> np.ndarray:
     return out
 
 
+def _modo_y_ventana(geoms: list[dict], radio_km: float) -> tuple[str, float, float, float]:
+    """Qué se señaló (punto, línea o área) y la ventana que lo contiene: (modo, lon, lat, radio km)."""
+    from imagery_mcp.aoi import aoi_bbox
+
+    tipos = {g.get("type") for g in geoms}
+    if tipos <= {"Point"} and len(geoms) == 1:
+        lon, lat = geoms[0]["coordinates"][:2]
+        modo, radio = "punto", radio_km
+    else:
+        modo = "linea" if tipos <= {"LineString", "MultiLineString"} else "area"
+        minx, miny, maxx, maxy = aoi_bbox({"type": "GeometryCollection", "geometries": geoms})
+        lon, lat = (minx + maxx) / 2, (miny + maxy) / 2
+        semidiag = math.hypot((maxx - minx) * 111.320 * math.cos(math.radians(lat)), (maxy - miny) * 110.574) / 2
+        radio = max(radio_km, semidiag * 1.2 + 2)
+    if not (0.5 <= radio <= RADIO_MAX_KM):
+        raise ImageryError(f"la ventana necesaria ({radio:.0f} km de radio) sale de 0,5–{RADIO_MAX_KM:g} km: "
+                           "señala un punto, un tramo de río o un área más pequeña")
+    return modo, float(lon), float(lat), radio
+
+
+def _celda_de_salida(modo: str, geoms: list[dict], acc: np.ndarray, transform, ajuste_px: int) -> tuple[int, int]:
+    """(fila, columna) de la salida: el cauce junto al punto, o la mayor acumulación sobre la
+    línea (ensanchada: el trazo vectorial no cae justo en el cauce del DEM) o dentro del área."""
+    from rasterio.features import rasterize
+
+    if modo == "punto":
+        col, fila = (~transform) * tuple(geoms[0]["coordinates"][:2])
+        return _ajustar(acc, int(fila), int(col), radio_px=ajuste_px)
+    candidatos = rasterize(geoms, out_shape=acc.shape, transform=transform, all_touched=True).astype(bool)
+    if modo == "linea":
+        candidatos = _dilatar(candidatos, ajuste_px)
+    if not candidatos.any():
+        raise ImageryError("la geometría no cae dentro del modelo de elevación")
+    k = int(np.argmax(np.where(candidatos, acc, -1)))
+    fila, col = divmod(k, acc.shape[1])
+    return fila, col
+
+
 def cuenca_de(geojson: dict, radio_km: float = 15.0, umbral_km2: float = 1.0) -> dict[str, Any]:
     """La cuenca y su red de drenaje según lo que se señale: un PUNTO (la que drena a él, con el
     punto ajustado al cauce a ≤300 m), una LÍNEA — un río — (la de su punto aguas abajo: el de
     mayor acumulación sobre la línea) o un ÁREA (la del cauce principal que sale de ella)."""
-    from rasterio.features import rasterize
-
-    from imagery_mcp.aoi import aoi_bbox
-
     geoms = _geometrias(geojson)
     if not geoms:
         raise ImageryError("hace falta un punto, una línea (un río) o un área en GeoJSON")
-    tipos = {g.get("type") for g in geoms}
-    modo = "punto" if tipos <= {"Point"} and len(geoms) == 1 else         "linea" if tipos <= {"LineString", "MultiLineString"} else "area"
-    minx, miny, maxx, maxy = aoi_bbox({"type": "GeometryCollection", "geometries": geoms})         if modo != "punto" else (*geoms[0]["coordinates"][:2], *geoms[0]["coordinates"][:2])
-    lon, lat = (minx + maxx) / 2, (miny + maxy) / 2
-    semidiag = math.hypot((maxx - minx) * 111.320 * math.cos(math.radians(lat)), (maxy - miny) * 110.574) / 2
-    radio = max(radio_km, semidiag * 1.2 + 2) if modo != "punto" else radio_km
-    if not (0.5 <= radio <= RADIO_MAX_KM):
-        raise ImageryError(f"la ventana necesaria ({radio:.0f} km de radio) sale de 0,5–{RADIO_MAX_KM:g} km: "
-                           "señala un punto, un tramo de río o un área más pequeña")
+    modo, lon, lat, radio = _modo_y_ventana(geoms, radio_km)
     dlat = radio / 110.574
     dlon = radio / (111.320 * max(0.05, math.cos(math.radians(lat))))
     dem, transform, (dx, dy) = leer_zona((lon - dlon, lat - dlat, lon + dlon, lat + dlat), max_px=1500)
@@ -219,18 +245,7 @@ def cuenca_de(geojson: dict, radio_km: float = 15.0, umbral_km2: float = 1.0) ->
     lleno = rellenar(dem)
     receptor = direcciones(lleno, dx, dy)
     acc = acumulacion(lleno, receptor)
-    ajuste_px = max(1, int(300 / max(dx, dy)))
-    if modo == "punto":
-        col, fila = (~transform) * (geoms[0]["coordinates"][0], geoms[0]["coordinates"][1])
-        fila, col = _ajustar(acc, int(fila), int(col), radio_px=ajuste_px)
-    else:
-        candidatos = rasterize(geoms, out_shape=dem.shape, transform=transform, all_touched=True).astype(bool)
-        if modo == "linea":   # el trazo vectorial no cae justo en el cauce del DEM
-            candidatos = _dilatar(candidatos, ajuste_px)
-        if not candidatos.any():
-            raise ImageryError("la geometría no cae dentro del modelo de elevación")
-        k = int(np.argmax(np.where(candidatos, acc, -1)))
-        fila, col = divmod(k, dem.shape[1])
+    fila, col = _celda_de_salida(modo, geoms, acc, transform, max(1, int(300 / max(dx, dy))))
     salida = fila * dem.shape[1] + col
     mascara = cuenca(receptor, salida).reshape(dem.shape) & np.isfinite(dem)
     area_px_km2 = dx * dy / 1e6
