@@ -120,8 +120,8 @@ def _ruta_banda(pool: TilePool):
     return banda
 
 
-def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:  # noqa: C901
-    """Teselas NDVI, de cambio, RGB y de banda: heredan el scope de imagery_ndvi y pesan 0.05."""
+def _ruta_ndvi(pool: TilePool):
+    """Teselas NDVI / índice de una escena."""
     import anyio
 
     async def ndvi(scope, send, tile, _key):
@@ -147,6 +147,13 @@ def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:  # noqa: C901
             return
         await respond_png(send, png)
 
+    return ndvi
+
+
+def _ruta_diff(pool: TilePool):
+    """Teselas del cambio de NDVI entre dos escenas."""
+    import anyio
+
     async def diff(scope, send, dtile, _key):
         if not (_SCENE_RE.match(dtile[0]) and _SCENE_RE.match(dtile[1])):
             await respond_json(send, 400, {"error": "scene_id con formato inválido"})
@@ -168,6 +175,13 @@ def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:  # noqa: C901
             return
         await respond_png(send, png)
 
+    return diff
+
+
+def _ruta_rgb(pool: TilePool):
+    """Teselas de color (con contraste por canal opcional)."""
+    import anyio
+
     async def rgb(scope, send, rgbt, _key):
         if not _SCENE_RE.match(rgbt[0]):
             await respond_json(send, 400, {"error": "scene_id con formato inválido"})
@@ -186,10 +200,16 @@ def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:  # noqa: C901
             return
         await respond_png(send, png)
 
+    return rgb
+
+
+def rutas_de_teselas(pool: TilePool) -> tuple[ExtraRoute, ...]:
+    """Teselas NDVI, de cambio, RGB y de banda, y los resultados grandes: heredan el scope de su
+    tool y pesan poco en el límite de peticiones."""
     return (
         ExtraRoute(resultados.parse_ruta, resultados.servir, requires_tool="imagery_catalog_world", weight=0.2),
         ExtraRoute(parse_band_tile_path, _ruta_banda(pool), requires_tool="imagery_ndvi", weight=0.05),
-        ExtraRoute(parse_tile_path, ndvi, requires_tool="imagery_ndvi", weight=0.05),
-        ExtraRoute(parse_diff_tile_path, diff, requires_tool="imagery_ndvi", weight=0.05),
-        ExtraRoute(parse_rgb_tile_path, rgb, requires_tool="imagery_ndvi", weight=0.05),
+        ExtraRoute(parse_tile_path, _ruta_ndvi(pool), requires_tool="imagery_ndvi", weight=0.05),
+        ExtraRoute(parse_diff_tile_path, _ruta_diff(pool), requires_tool="imagery_ndvi", weight=0.05),
+        ExtraRoute(parse_rgb_tile_path, _ruta_rgb(pool), requires_tool="imagery_ndvi", weight=0.05),
     )
