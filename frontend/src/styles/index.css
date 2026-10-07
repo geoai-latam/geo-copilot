@@ -2829,6 +2829,16 @@ input, textarea { font: inherit; color: inherit; }
 /* el filtro y el editor de estilo van a lo ancho, debajo de la fila de la capa */
 .layer-extra { flex-basis: 100%; min-width: 0; padding-left: 18px; }
 .layer-extra:empty { display: none; }
+/* Exportar una capa a archivo: formato, sistema de referencia y alcance, en columna. */
+.exportar-capa { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; padding: 8px;
+  border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.exportar-capa label { display: flex; flex-direction: column; gap: 3px; color: var(--text-mute); }
+.exportar-capa .input { width: 100%; }
+.exportar-alcance { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.exportar-alcance label { flex-direction: row; align-items: center; gap: 4px; color: var(--text); }
+.exportar-capa .gc-btn { align-self: flex-start; }
+.exportar-estado { font-size: 11px; color: var(--text-mute); word-break: break-all; }
+.exportar-estado.error { color: var(--danger, #c0392b); }
 
 /* fila de capa en tres líneas: nombre · controles (opacidad, etiquetas) · iconos */
 .layer-item > .layer-meta { flex-basis: calc(100% - 26px); margin-left: 24px; display: flex; flex-wrap: wrap;
@@ -2975,3 +2985,13 @@ input, textarea { font: inherit; color: inherit; }
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .traza-detalle { color: var(--text-mute); overflow-wrap: anywhere; }
 .traza-viva { margin-top: 6px; }
+
+/* Imprimir el mapa: panel corto bajo su botón en la cabecera del lienzo. */
+.imprimir-mapa { position: relative; display: inline-flex; }
+.imprimir-panel { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 280px;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px; font-size: 12px;
+  background: var(--surface, var(--bg)); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px #0002; }
+.imprimir-panel label { display: flex; flex-direction: column; gap: 3px; color: var(--text-mute); }
+.imprimir-acciones { display: flex; gap: 6px; }
+.imprimir-estado { color: var(--text-mute); word-break: break-all; }

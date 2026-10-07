@@ -245,6 +245,10 @@ def _rutas(app: FastAPI) -> None:
     from geo_copilot.api.routes.workspace import router as workspace_router
 
     app.include_router(workspace_router, prefix="/api/v1")
+    # Descargar una capa como archivo (GeoPackage, Shapefile, KML, GeoJSON, CSV, DXF).
+    from geo_copilot.api.routes.exportar import router as exportar_router
+
+    app.include_router(exportar_router, prefix="/api/v1")
     # F3: servidores MCP conectados (estado + re-aprobación de tools).
     from geo_copilot.api.routes.connections import router as connections_router
 

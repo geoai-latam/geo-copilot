@@ -23,6 +23,7 @@ import { GeoDataTable } from './GeoDataTable'
 import { Chart } from './Chart'
 import { DeshacerRehacer } from './DeshacerRehacer'
 import { ErrorBoundary } from './ErrorBoundary'
+import { ImprimirMapa } from './ImprimirMapa'
 import {
   cuentaDePanel,
   etiquetaDeTurno,
@@ -167,6 +168,7 @@ export function CanvasTabs({ children }: CanvasTabsProps) {
           >
             <Download className="w-3.5 h-3.5" />
           </button>
+          <ImprimirMapa />
           <button
             className="gc-btn gc-btn-ghost"
             title="Copiar enlace"
