@@ -122,7 +122,8 @@ def _capa_raster(imagery: dict) -> LayerArtifact | None:
     m = re.match(r"^/api/v1/proxy/mcp/([a-z][a-z0-9_]*)/", url)
     if "{z}" in url:
         storage: dict[str, Any] = {"kind": "raster-tiles", "url_template": url,
-                                   "legend": imagery.get("legend") or None}
+                                   "legend": imagery.get("legend") or None,
+                                   **({"cog": imagery["cog"]} if imagery.get("cog") else {})}
     else:
         storage = {"kind": "arcgis-image", "service_url": url}
     ref = LayerRef.model_validate({

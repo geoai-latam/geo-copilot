@@ -303,3 +303,40 @@ def test_el_punto_llega_en_cualquier_forma_geojson():
     assert punto_de({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": pt}]}) == (-74.08, 4.65)
     assert punto_de({"type": "Polygon", "coordinates": []}) is None
     assert punto_de({"type": "FeatureCollection", "features": []}) is None
+
+
+# --- pintar en el cliente desde los COG ---------------------------------------------------
+_S3 = "https://e84-earth-search-sentinel-data.s3.us-west-2.amazonaws.com/sentinel-2-c1-l2a/19/N/BD/2026/8/S2X"
+
+
+def _escena_publica(**extra):
+    bandas = {b: f"{_S3}/{c}.tif" for b, c in (("red", "B04"), ("green", "B03"), ("blue", "B02"), ("nir", "B08"),
+                                                ("visual", "TCI"), ("scl", "SCL"), ("cloud", "CLD"))}
+    return Scene(id="S2C_T19NBD_20260802T151752_L2A", datetime="2026-08-02", cloud_pct=6, bbox=[-71.7, 2.6, -71.1, 3.6],
+                 red_href=bandas["red"], nir_href=bandas["nir"], provider="earth-search", scl_href=bandas["scl"],
+                 bands=bandas, scaling=dict.fromkeys(("red", "green", "blue", "nir"), C1), **extra)
+
+
+def test_cada_producto_trae_como_pintarlo_en_el_cliente():
+    from imagery_mcp.vista import cog_del_producto
+
+    e, p = _escena_publica(), MagicMock(sign=lambda h: h)
+    tci = cog_del_producto(p, e, "true_color")
+    assert tci["tipo"] == "rgb8" and tci["bandas"][0]["url"].endswith("/TCI.tif")
+    estirado = cog_del_producto(p, e, "true_color", estiramiento=[[0, 0.3]] * 3)
+    assert estirado["tipo"] == "rgb" and [b["banda"] for b in estirado["bandas"]] == ["red", "green", "blue"]
+    assert estirado["bandas"][0]["escala"] == 0.0001 and estirado["bandas"][0]["offset"] == -0.1
+    ndwi = cog_del_producto(p, e, "ndwi")
+    assert [b["banda"] for b in ndwi["bandas"]] == ["green", "nir"] and ndwi["rangos"] == [[-1.0, 1.0]]
+    assert ndwi["mascara"]["excluir"] == [3, 8, 9, 10] and len(ndwi["colores"]) == 9   # la máscara del servidor
+    assert cog_del_producto(p, e, "scl")["clases"]["6"] == "#0000ff"
+    nube = cog_del_producto(p, e, "cloud")
+    assert nube["rangos"] == [[0.0, 100.0]] and nube["bandas"][0]["escala"] == 1.0
+
+
+def test_sin_cog_si_la_url_hay_que_firmarla_o_falta_la_banda():
+    from imagery_mcp.vista import cog_del_producto
+
+    firmada = MagicMock(sign=lambda h: h + "?sas=caduca")
+    assert cog_del_producto(firmada, _escena_publica(), "ndvi") is None
+    assert cog_del_producto(MagicMock(sign=lambda h: h), _escena_publica(), "swir22") is None

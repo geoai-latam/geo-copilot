@@ -10,6 +10,7 @@
 import type { Predicado } from '@/contracts';
 import type { SeleccionCapa } from '@/lib/seleccion';
 import { create } from 'zustand';
+import type { CogSpec } from '@/lib/cogNavegador';
 import type { GeoJSONFeatureCollection, LayerSymbology } from '@/types';
 
 /** Tipos de capa que sabe dibujar el mapa (uno por archivo en `lib/renderers`). */
@@ -71,6 +72,8 @@ export interface MapLayer {
   labelField?: string | null;
   /** S4.4: de dónde salió (tool + argumentos): viaja al agente en el map_context. */
   origen?: OrigenCapa | null;
+  /** Pintarla en el navegador desde sus COG (raster-xyz de un servidor de confianza). */
+  cog?: CogSpec | null;
   /** FH.2: lo seleccionado en esta capa (ids o condición). Lo cambia el reducer (`select`). */
   seleccion?: SeleccionCapa | null;
   /** FH.10: el instante que retrata (YYYY-MM-DD): las capas con fecha forman una serie temporal. */
@@ -231,6 +234,8 @@ export interface RasterInput {
   origen?: OrigenCapa | null;
   /** FH.10: el instante que retrata (serie temporal). */
   fecha?: string | null;
+  /** Cómo pintarla en el navegador desde sus COG (las teselas de `url` quedan de respaldo). */
+  cog?: CogSpec | null;
 }
 
 interface MapState {
@@ -273,6 +278,8 @@ interface MapState {
   setLayerLabelField: (id: string, field: string | null) => void;
   /** Re-estilo in situ (misma capa, mismo lugar en el orden). */
   setLayerStyle: (id: string, symbology: LayerSymbology) => void;
+  /** El `cog` de una escena pintada en el navegador (p. ej. otro contraste: se repinta al instante). */
+  setLayerCog: (id: string, cog: CogSpec) => void;
   clearAllLayers: () => void;
   /** Mueve una capa a la posición `toIndex` del orden de dibujo (entre todos los tipos). */
   moveLayer: (id: string, toIndex: number) => void;
@@ -340,7 +347,7 @@ export const useMapStore = create<MapState>((set, get) => ({
     return id;
   },
 
-  addRasterLayer: ({ url, name, extent, legend, kind, wmsLayers, origen, fecha }) => {
+  addRasterLayer: ({ url, name, extent, legend, kind, wmsLayers, origen, fecha, cog }) => {
     const id = `raster-${++layerCounter}-${Date.now()}`;
     const layer: MapLayer = {
       id,
@@ -357,6 +364,7 @@ export const useMapStore = create<MapState>((set, get) => ({
       legend: legend ?? null,
       origen: origen ?? null,
       fecha: fecha ?? null,
+      ...(cog ? { cog } : {}),
       ...(wmsLayers ? { wmsLayers } : {}),
     };
     set((state) => {
@@ -420,6 +428,9 @@ export const useMapStore = create<MapState>((set, get) => ({
       ),
     })),
 
+  setLayerCog: (id, cog) => set((state) => ({
+    layers: state.layers.map((l) => (l.id === id ? { ...l, cog } : l)),
+  })),
   clearAllLayers: () => set({ layers: [] }),
 
   moveLayer: (id, toIndex) =>

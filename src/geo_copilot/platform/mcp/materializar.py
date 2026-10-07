@@ -63,7 +63,23 @@ def _teselas(cfg: ServerConfig, art: dict, nombre: str, prov: Any, delta: dict, 
         "provenance": prov.model_dump(mode="json"),
         # FH.10: el instante que retrata (serie temporal / comparar fechas)
         **({"time": str(art["datetime"])[:40]} if art.get("datetime") else {}),
+        # pintarla en el cliente desde sus COG: solo si el servidor es de confianza y todas sus
+        # URLs son https (el navegador del usuario las pedirá directamente)
+        **({"cog": art["cog"]} if _cog_aceptable(cfg, art.get("cog"), avisos) else {}),
     }
+
+
+def _cog_aceptable(cfg: ServerConfig, cog: Any, avisos: list[str]) -> bool:
+    if not isinstance(cog, dict):
+        return False
+    if getattr(cfg, "trust", "untrusted") != "trusted":
+        avisos.append("el servidor no es de confianza: su imagen se pinta con sus teselas, no desde sus COG")
+        return False
+    urls = [b.get("url") for b in (cog.get("bandas") or []) if isinstance(b, dict)]
+    mascara = cog.get("mascara") if isinstance(cog.get("mascara"), dict) else None
+    if mascara:
+        urls.append(mascara.get("url"))
+    return bool(urls) and all(isinstance(u, str) and u.startswith("https://") for u in urls)
 
 
 async def _cargar_artefacto(cfg: ServerConfig, art: dict, nombre: str, store: Any, sesion: str, prov: Any,

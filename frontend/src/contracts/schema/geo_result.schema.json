@@ -186,6 +186,19 @@
           "title": "Bounds",
           "type": "array"
         },
+        "cog": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cog"
+        },
         "crs": {
           "pattern": "^(EPSG|OGC|ESRI|IAU_2015):[A-Za-z0-9_.]+$",
           "title": "Crs",
@@ -376,7 +389,7 @@
       "type": "object"
     }
   },
-  "$id": "geo-copilot/geo_result/1.8.0",
+  "$id": "geo-copilot/geo_result/1.9.0",
   "additionalProperties": false,
   "description": "Lo que devuelve una tool geo-consciente.",
   "properties": {

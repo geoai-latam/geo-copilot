@@ -25,3 +25,40 @@ def test_sin_extension_no_se_inventa_un_bbox():
     texto = _observacion(SimpleNamespace(id="imagery"), {"facts": {}}, [], None,
                          {"external_imagery": {"name": "x", "extent": None}}, [])
     assert '"bbox"' not in texto
+
+
+def _cfg(trust: str):
+    return SimpleNamespace(id="imagery", trust=trust, tiles=SimpleNamespace(prefixes=["/tiles-rgb/"]))
+
+
+def _prov():
+    return SimpleNamespace(model_dump=lambda mode=None: {"capability": "mcp.imagery.imagery_scene_view"})
+
+
+_COG = {"version": 1, "tipo": "rgb8", "bandas": [{"url": "https://bucket.s3.test/TCI.tif"}]}
+_ART = {"kind": "raster_tiles", "tiles": "/tiles-rgb/S2X/true_color/{z}/{x}/{y}.png", "bounds": [0, 0, 1, 1], "cog": _COG}
+
+
+def test_el_cog_llega_a_la_capa_solo_desde_un_servidor_de_confianza_y_por_https():
+    from geo_copilot.platform.mcp.materializar import _teselas
+
+    delta: dict = {}
+    _teselas(_cfg("trusted"), _ART, "color", _prov(), delta, [])
+    assert delta["external_imagery"]["cog"] == _COG
+
+    delta, avisos = {}, []
+    _teselas(_cfg("untrusted"), _ART, "color", _prov(), delta, avisos)
+    assert "cog" not in delta["external_imagery"] and avisos                # pinta con sus teselas
+
+    delta = {}
+    inseguro = {**_ART, "cog": {**_COG, "bandas": [{"url": "http://intranet/x.tif"}]}}
+    _teselas(_cfg("trusted"), inseguro, "color", _prov(), delta, [])
+    assert "cog" not in delta["external_imagery"]
+
+
+def test_la_capa_del_contrato_lleva_su_cog():
+    from geo_copilot.platform.artefactos import _capa_raster
+
+    ref = _capa_raster({"service_url": "/api/v1/proxy/mcp/imagery/tiles-rgb/S2X/true_color/{z}/{x}/{y}.png",
+                        "name": "color", "extent": {"xmin": 0, "ymin": 0, "xmax": 1, "ymax": 1}, "cog": _COG})
+    assert ref.layer.storage.cog == _COG

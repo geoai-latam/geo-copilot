@@ -195,7 +195,8 @@ def vista(r: dict) -> dict:
     escena = r.get("scene") or {}
     prod = r.get("producto") or {}
     capa = raster_tiles(f"{prod.get('id')} {_fecha(escena)} · {escena.get('id', '')[-25:]}", t["url_template"],
-                        bounds=t.get("bounds"), legend=t.get("legend"), datetime=_fecha(escena) or None)
+                        bounds=t.get("bounds"), legend=t.get("legend"), datetime=_fecha(escena) or None,
+                        cog=t.get("cog"))
     hechos = {"scene": escena, "producto": prod, "descargas": r.get("descargas"), "nota": r.get("nota")}
     return geo_result([capa], facts=hechos)
 

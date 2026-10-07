@@ -8,6 +8,7 @@
  * estadísticas, informes) va al panel de resultados, no aquí.
  */
 import type { Artifact, LayerArtifact, LayerRef, MapCommand, QueryResponse, StyleSpec } from '@/contracts'
+import type { CogSpec } from '@/lib/cogNavegador'
 import { useOperaciones } from '@/lib/operaciones'
 import { pedidoDe, usePedidoMapa } from '@/lib/pedidoMapa'
 import { useComparacion } from '@/lib/comparacion'
@@ -47,7 +48,8 @@ function anadirRaster(ref: LayerRef): string | null {
   switch (s.kind) {
     case 'raster-tiles':
       return map.addRasterLayer({ ...comun, url: s.url_template,
-                                  legend: (s.legend ?? null) as RasterLegend | null, kind: 'raster-xyz' })
+                                  legend: (s.legend ?? null) as RasterLegend | null, kind: 'raster-xyz',
+                                  cog: (s.cog ?? null) as CogSpec | null })
     case 'arcgis-image':
       return map.addRasterLayer({ ...comun, url: s.service_url, kind: 'arcgis-image' })
     case 'wms':

@@ -13,7 +13,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, StringConstraints
 
 #: Versión del contrato (semver). Sube el MAJOR cuando un consumidor que sólo
 #: conoce la versión anterior pueda interpretar mal un documento nuevo.
-CONTRACT_VERSION = "1.8.0"  # FH.10: vistas, comparar (cortina), tiempo; fecha de los rasters
+CONTRACT_VERSION = "1.9.0"  # rasters con `cog`: pintarlos en el cliente desde sus COG (teselas de respaldo)
 
 #: Tope de features que pueden viajar INLINE (GeoJSON en el cuerpo). Por encima,
 #: el productor devuelve una referencia (`feature_ref`) y el núcleo la ingiere.

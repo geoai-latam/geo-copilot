@@ -32,6 +32,7 @@ export function aplicarResultado(res: McpRunResult, nombrePorDefecto: string, ra
     raster = capaDelUsuario(map.addRasterLayer({
       url: r.external_imagery.service_url, name: r.external_imagery.name ?? nombre,
       extent: r.external_imagery.extent ?? null, legend: r.external_imagery.legend ?? null,
+      cog: r.external_imagery.cog ?? null,
       origen: r.external_imagery.provenance
         ? { capability: r.external_imagery.provenance.capability, arguments: r.external_imagery.provenance.arguments }
         : null,

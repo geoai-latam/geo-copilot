@@ -947,6 +947,19 @@
       "additionalProperties": false,
       "description": "Capa raster servida como teselas XYZ (imagery NDVI/RGB, ImageServer…).",
       "properties": {
+        "cog": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cog"
+        },
         "kind": {
           "const": "raster-tiles",
           "default": "raster-tiles",
@@ -1000,7 +1013,8 @@
         "minzoom",
         "maxzoom",
         "tile_size",
-        "legend"
+        "legend",
+        "cog"
       ],
       "title": "RasterTiles",
       "type": "object"
@@ -2748,7 +2762,7 @@
       "type": "object"
     }
   },
-  "$id": "geo-copilot/query_response/1.8.0",
+  "$id": "geo-copilot/query_response/1.9.0",
   "additionalProperties": false,
   "properties": {
     "artifacts": {
@@ -2805,7 +2819,7 @@
       "title": "Confidence"
     },
     "contract_version": {
-      "default": "1.8.0",
+      "default": "1.9.0",
       "title": "Contract Version",
       "type": "string"
     },

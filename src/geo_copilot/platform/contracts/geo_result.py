@@ -59,6 +59,8 @@ class RasterTilesArtifact(Strict):
     legend: dict[str, Any] | None = None
     #: FH.10: el instante que retrata (fecha de la escena, ISO). Arma series temporales.
     datetime: str | None = Field(default=None, max_length=40)
+    #: Cómo pintarla en el cliente desde sus COG (las teselas quedan de respaldo).
+    cog: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _plantilla_xyz(self) -> RasterTilesArtifact:

@@ -55,16 +55,21 @@ def feature_ref(name: str, uri: str, *, fmt: str, crs: str, feature_count: int |
 
 
 def raster_tiles(name: str, tiles: str, *, bounds: list[float] | None = None, minzoom: int = 0,
-                 maxzoom: int = 22, legend: dict | None = None, datetime: str | None = None) -> dict[str, Any]:
+                 maxzoom: int = 22, legend: dict | None = None, datetime: str | None = None,
+                 cog: dict | None = None) -> dict[str, Any]:
     """Teselas XYZ servidas por el propio servidor (ruta relativa a su host).
 
     `datetime` (ISO, opcional): el instante que retrata (p. ej. la fecha de la escena). Con él
     el cliente arma series temporales (control de tiempo) y compara fechas.
+    `cog` (opcional): cómo pintar la misma imagen EN EL CLIENTE leyendo los COG por HTTP range
+    (URLs https públicas, escala, rangos, rampa); las teselas quedan de respaldo.
     """
     art = {"kind": "raster_tiles", "name": name, "tiles": tiles, "bounds": bounds,
            "minzoom": minzoom, "maxzoom": maxzoom, "legend": legend}
     if datetime:
         art["datetime"] = datetime
+    if cog:
+        art["cog"] = cog
     return art
 
 
