@@ -27,7 +27,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from imagery_mcp import georesult as gr
-from imagery_mcp import tools_terreno, vista
+from imagery_mcp import tools_globales, tools_terreno, vista
 from imagery_mcp.aoi import aoi_bbox, bbox_area_km2, rango_fechas
 from imagery_mcp.auth import KeyRing, RateLimiter
 from imagery_mcp.catalogo import ORDENES, Catalogo, CatalogoError, ConCatalogo
@@ -413,6 +413,7 @@ def imagery_pixel(scene_id: str, point_geojson: dict) -> dict[str, Any]:
 
 # El relieve (Copernicus DEM): elevación, pendiente, sombreado y la cuenca de un punto.
 tools_terreno.registrar(mcp, _wrap)
+tools_globales.registrar(mcp, _wrap)
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,10 @@ TOOL_SCOPES: dict[str, str] = {
     # El relieve abre los COG del DEM y calcula (la cuenca, un relleno de depresiones): cómputo.
     "imagery_terrain": SCOPE_COMPUTE,
     "imagery_watershed": SCOPE_COMPUTE,
+    # Capas globales: abren COG (WorldCover, Sentinel-1) o un GeoTIFF de país (WorldPop) y calculan.
+    "imagery_land_cover": SCOPE_COMPUTE,
+    "imagery_population": SCOPE_COMPUTE,
+    "imagery_sar": SCOPE_COMPUTE,
 }
 
 
