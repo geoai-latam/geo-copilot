@@ -1,0 +1,6 @@
+# rutas-mcp — ruteo con Valhalla (el kit se instala aparte en el Dockerfile)
+mcp>=1.28,<2
+uvicorn>=0.30
+httpx>=0.27,<1
+shapely>=2.0,<3
+pyproj>=3.6,<4

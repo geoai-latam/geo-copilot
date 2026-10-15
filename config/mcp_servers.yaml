@@ -107,3 +107,13 @@ servers:
     tools: { allow: ["datos_*"] }
     recursos: { prefixes: ["/resultados/"] }
     policy: { default_risk: read, timeout_s: 180, max_result_mb: 100 }
+
+  # Rutas, isócronas y matrices de tiempo sobre la red vial de OpenStreetMap (Valhalla).
+  - id: rutas
+    url: http://rutas-mcp:9910/mcp
+    description: "Rutas por la red vial (OpenStreetMap, Valhalla): ruta entre puntos con distancia, tiempo e indicaciones; isócronas (zona alcanzable en N minutos); matriz de tiempos de varios orígenes a varios destinos y el más cercano. Modos: auto, a pie, bicicleta, camión, moto."
+    auth: { type: bearer, secret_ref: env:RUTAS_MCP_APP_KEY }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["rutas_*"] }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 20 }

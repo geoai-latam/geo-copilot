@@ -565,6 +565,61 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # rutas-mcp: rutas, isócronas y matrices de tiempo/distancia sobre la red vial de OpenStreetMap
+  # (Valhalla). VALHALLA_URL: el motor autoalojado de abajo (perfil `rutas`) o, en desarrollo y sin él,
+  # la instancia pública de FOSSGIS (política de uso: poco tráfico; NO para producción).
+  rutas-mcp:
+    build:
+      context: ..
+      dockerfile: services/rutas_mcp/Dockerfile
+    container_name: geo_copilot_rutas
+    restart: unless-stopped
+    environment:
+      - RUTAS_MCP_PORT=9910
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE RUTAS_MCP_APP_KEY (la que usa la app)
+      - RUTAS_MCP_KEYS=${RUTAS_MCP_KEYS:?define RUTAS_MCP_KEYS (JSON) en .env - ver .env.example}
+      - VALHALLA_URL=${VALHALLA_URL:-https://valhalla1.openstreetmap.de}
+      - RUTAS_USER_AGENT=${RUTAS_USER_AGENT:-geo-copilot/1.0 (rutas-mcp)}
+    tmpfs:
+      - /tmp:size=32m,uid=10010
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # valhalla: el motor de rutas AUTOALOJADO (perfil `rutas`, no arranca por defecto). La primera vez
+  # descarga el extracto de Colombia de Geofabrik (~300 MB) y construye las teselas: pide varios GB de
+  # RAM y tiempo de CPU; después arranca en segundos desde el volumen. Con él: VALHALLA_URL=http://valhalla:8002
+  valhalla:
+    profiles: ["rutas"]
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.1
+    container_name: geo_copilot_valhalla
+    restart: unless-stopped
+    environment:
+      - tile_urls=${VALHALLA_PBF_URL:-https://download.geofabrik.de/south-america/colombia-latest.osm.pbf}
+      - use_tiles_ignore_pbf=True
+      - build_admins=True
+      - build_time_zones=True
+      - build_elevation=False
+      - server_threads=2
+    volumes:
+      - valhalla_tiles:/custom_files
+    networks:
+      - geo_network
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
   # ---------------------------------------------------------------------------
   # hello-geo (S3.3): servidor GeoMCP de EJEMPLO sobre packages/geo_mcp_kit.
   # Perfil `examples`: no arranca por defecto. Para probar el enchufe de un MCP:
@@ -791,6 +846,7 @@ volumes:
   redis_data:
   # S2.4: GeoParquet de los datasets del workspace (app rw, sandbox ro).
   ws_exports:
+  valhalla_tiles:
   # F7 (auditoría): trazas de Jaeger (badger), perfil `observabilidad`
   jaeger_datos:
 
