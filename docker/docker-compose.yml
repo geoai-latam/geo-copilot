@@ -596,6 +596,35 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # dane-mcp: Censo Nacional de Población y Vivienda 2018 integrado al Marco Geoestadístico (DANE):
+  # totales oficiales por municipio y variables por manzana con su geometría del MGN 2025.
+  dane-mcp:
+    build:
+      context: ..
+      dockerfile: services/dane_mcp/Dockerfile
+    container_name: geo_copilot_dane
+    restart: unless-stopped
+    environment:
+      - DANE_MCP_PORT=9920
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE DANE_MCP_APP_KEY (la que usa la app)
+      - DANE_MCP_KEYS=${DANE_MCP_KEYS:?define DANE_MCP_KEYS (JSON) en .env - ver .env.example}
+      - DANE_RESULTADOS_DIR=/tmp/dane-resultados
+    tmpfs:
+      - /tmp:size=256m,uid=10011
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 768M   # hasta 20.000 manzanas con geometría y variables se arman en memoria
+
   # valhalla: el motor de rutas AUTOALOJADO (perfil `rutas`, no arranca por defecto). La primera vez
   # descarga el extracto de Colombia de Geofabrik (~300 MB) y construye las teselas: pide varios GB de
   # RAM y tiempo de CPU; después arranca en segundos desde el volumen. Con él: VALHALLA_URL=http://valhalla:8002

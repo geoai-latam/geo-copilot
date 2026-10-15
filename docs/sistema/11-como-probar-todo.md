@@ -76,6 +76,7 @@ flowchart TD
 | **Servicios OGC / ogc-mcp** | `tests/test_ogc_mcp.py` (servidor, servicios simulados); `tests/test_ogc_mcp_vivo.py` (contra IGAC/PNN/SGC/DANE reales) | `pytest` (default); `pytest -m integration tests/test_ogc_mcp_vivo.py` | nada extra; el vivo necesita Internet |
 | **Datos abiertos / datos-abiertos-mcp** | `tests/test_datos_abiertos_mcp.py` (portales simulados); `tests/test_datos_abiertos_mcp_vivo.py` (datos.gov.co y Datos Abiertos Bogotá reales) | `pytest` (default); `pytest -m integration tests/test_datos_abiertos_mcp_vivo.py` | nada extra; el vivo necesita Internet |
 | **Rutas / rutas-mcp** | `tests/test_rutas_mcp.py` (motor simulado); `tests/test_rutas_mcp_vivo.py` (Valhalla real contra OSRM y consistencia de isócronas) | `pytest` (default); `pytest -m integration tests/test_rutas_mcp_vivo.py` | nada extra; el vivo necesita Internet |
+| **Censo DANE / dane-mcp** | `tests/test_dane_mcp.py` (fuentes simuladas); `tests/test_dane_mcp_vivo.py` (DANE real: Bogotá 7 181 469, suma espacial del propio DANE) | `pytest` (default); `pytest -m integration tests/test_dane_mcp_vivo.py` | nada extra; el vivo necesita Internet |
 | **HITL full flow** | `tests/test_hitl_full_flow.py` | `pytest` (default) | nada extra |
 | **WS handshake** | `tests/test_websocket_handshake_sec4.py` | `pytest` (default) | nada extra |
 | **Integration PostGIS** | tests con `@pytest.mark.integration` | `pytest -m integration` | `docker-compose.test.yml` arriba |

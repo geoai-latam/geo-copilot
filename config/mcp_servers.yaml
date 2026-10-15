@@ -117,3 +117,14 @@ servers:
     trust: trusted
     tools: { allow: ["rutas_*"] }
     policy: { default_risk: read, timeout_s: 120, max_result_mb: 20 }
+
+  # Censo 2018 (DANE) integrado al Marco Geoestadístico: municipios y manzanas.
+  - id: dane
+    url: http://dane-mcp:9920/mcp
+    description: "Censo 2018 del DANE (CNPV) integrado al Marco Geoestadístico: totales oficiales por municipio (personas, viviendas, hogares…) y, por manzana, personas por sexo y edad, nivel educativo, viviendas, hogares y servicios públicos, con su geometría (MGN 2025, que añade el recuento de viviendas y unidades económicas 2025)."
+    auth: { type: bearer, secret_ref: env:DANE_MCP_APP_KEY }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["dane_*"] }
+    recursos: { prefixes: ["/resultados/"] }
+    policy: { default_risk: read, timeout_s: 180, max_result_mb: 100 }
