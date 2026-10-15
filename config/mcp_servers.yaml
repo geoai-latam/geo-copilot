@@ -83,3 +83,16 @@ servers:
     trust: trusted   # servicio propio; los datos (OpenStreetMap) son externos
     tools: { allow: ["lugares_*"] }
     policy: { default_risk: read, timeout_s: 45, max_result_mb: 10 }
+
+  # Servicios OGC (WMS/WFS/OGC API - Features) con catálogo curado de Colombia (IGAC, Parques, SGC, DANE,
+  # UPRA). WMS = imagen en el mapa (teselas que firma y sirve el propio servidor); WFS/OGC API = elementos.
+  - id: ogc
+    url: http://ogc-mcp:9800/mcp
+    description: "Servicios OGC oficiales (WMS, WFS, OGC API): catálogo curado de Colombia — IGAC (catastro, agua, vías, curvas, suelos, ordenamiento), Parques Nacionales (áreas protegidas, RUNAP), SGC (amenaza sísmica, volcánica, movimientos en masa, geología), DANE (MGN, DIVIPOLA) — y cualquier otro servicio OGC por su URL."
+    auth: { type: bearer, secret_ref: env:OGC_MCP_APP_KEY }
+    conformance: G2
+    trust: trusted   # servicio propio; los datos de los servicios OGC son externos
+    tools: { allow: ["ogc_*"] }
+    tiles: { prefixes: ["/wms/"] }
+    recursos: { prefixes: ["/resultados/"] }   # capas grandes: GeoJSON servido por el propio servidor
+    policy: { default_risk: read, timeout_s: 180, max_result_mb: 150 }

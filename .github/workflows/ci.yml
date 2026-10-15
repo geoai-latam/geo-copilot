@@ -201,6 +201,9 @@ jobs:
           - name: lugares-mcp
             context: .
             dockerfile: services/lugares_mcp/Dockerfile
+          - name: ogc-mcp
+            context: .
+            dockerfile: services/ogc_mcp/Dockerfile
 
     env:
       IMAGEN: ghcr.io/${{ github.repository_owner }}/geo-copilot-${{ matrix.name }}
@@ -296,7 +299,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [app, frontend, sandbox, imagery-mcp, arcgis-mcp, lugares-mcp]
+        name: [app, frontend, sandbox, imagery-mcp, arcgis-mcp, lugares-mcp, ogc-mcp]
 
     env:
       IMAGEN: ghcr.io/${{ github.repository_owner }}/geo-copilot-${{ matrix.name }}
