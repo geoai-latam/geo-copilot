@@ -8,6 +8,8 @@ dependencies = []
 [project.optional-dependencies]
 # F6: aceptar tokens OIDC de usuarios (oidc.VerificadorJwt)
 oidc = ["pyjwt[crypto]>=2.10.1"]
+# cliente HTTP con protección SSRF (red.cliente) para servidores que piden URLs de fuera
+red = ["httpx>=0.27,<1"]
 # F7 (S7.3): continuar la traza del agente (se activa con OTEL_EXPORTER_OTLP_ENDPOINT)
 otel = [
     "opentelemetry-sdk>=1.27",
