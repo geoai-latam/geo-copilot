@@ -47,6 +47,8 @@ async def ejecutar_tool(hub: McpHub, cfg: ServerConfig, tool: str, est: EstadoTo
     if desconocidos:
         return ToolOutcome(desconocidos, success=False)
     out = await _llamar(hub, con, cfg, tool, est, working, args, decl=decl, titulo=titulo)
+    if out.success and (zonas := _zonas_usadas(est, pedidos, working)):
+        out.observation += " [Núcleo] zona usada: " + "; ".join(zonas)
     if cfg.trust == "untrusted" and out.success:
         # desde aquí, lo que el LLM haga en OTROS servidores pudo sugerirlo este texto
         out.delta[_CLAVE_NO_CONFIABLES] = sorted(set(working.get(_CLAVE_NO_CONFIABLES) or []) | {cfg.id})
@@ -54,6 +56,28 @@ async def ejecutar_tool(hub: McpHub, cfg: ServerConfig, tool: str, est: EstadoTo
 
 
 _CLAVE_NO_CONFIABLES = "mcp_no_confiables_en_el_turno"
+
+_ZONAS = {"viewport": "la zona VISIBLE del mapa en ese momento (un rectángulo, no un lugar)",
+          "punto": "el punto marcado por el usuario", "seleccion": "lo seleccionado en el mapa",
+          "dibujo": "lo último que dibujó el usuario", "activa": "la capa de trabajo actual"}
+
+
+def _zonas_usadas(est: EstadoTool, pedidos: dict, working: dict) -> list[str]:
+    """Qué zona fue cada referencia geo de la llamada, en palabras.
+
+    V5 (capas globales): «¿qué coberturas hay en Chía?» se midió con `viewport` (2 629 km²: lo visible) y
+    el agente lo presentó como Chía (80 km²). La geometría resuelta no dice de dónde salió: esto sí.
+    """
+    capas = {c.get("id"): c.get("name") for c in ((working.get("map_context") or {}).get("layers") or [])}
+    salida = []
+    for nombre in ((est.geo or {}).get("inputs") or {}) if est.geo else {}:
+        valor = pedidos.get(nombre)
+        if not isinstance(valor, str):
+            continue
+        v = valor.strip()
+        quien = _ZONAS.get(v) or (f"la capa «{capas[v]}»" if capas.get(v) else f"la capa `{v}`")
+        salida.append(f"`{nombre}` = {quien}")
+    return salida
 
 
 #: Argumento del NÚCLEO (no del servidor) en las tools que producen capas: el nombre con que la capa
