@@ -94,6 +94,8 @@ services:
       DATOS_MCP_APP_KEY: ${DATOS_MCP_APP_KEY:?define DATOS_MCP_APP_KEY}
       # credencial del rutas-mcp (ruteo con Valhalla; env:RUTAS_MCP_APP_KEY)
       RUTAS_MCP_APP_KEY: ${RUTAS_MCP_APP_KEY:?define RUTAS_MCP_APP_KEY}
+      # credencial del dane-mcp (censo 2018 + MGN; env:DANE_MCP_APP_KEY)
+      DANE_MCP_APP_KEY: ${DANE_MCP_APP_KEY:?define DANE_MCP_APP_KEY}
       # clave maestra de los secretos de las conexiones de las organizaciones
       SECRETS_KEK: ${SECRETS_KEK:?define SECRETS_KEK}
       # F7 (auditoría): el base apunta al Keycloak de DESARROLLO (perfil `auth`, que aquí no
@@ -233,6 +235,11 @@ services:
   rutas-mcp:
     <<: *logs
     image: ${IMAGEN_PREFIJO}-rutas-mcp:${VERSION}
+    build: !reset null
+
+  dane-mcp:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-dane-mcp:${VERSION}
     build: !reset null
 
 networks:

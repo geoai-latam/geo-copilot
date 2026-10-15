@@ -99,10 +99,21 @@ def get(url: str, params: dict[str, Any] | None = None, *, dominios: list[str] |
     Medido (ogc-mcp, 2026-10-15): servidores públicos (IGAC) cortan conexiones de vez en cuando y a la
     siguiente responden.
     """
+    return _pedir("GET", url, {"params": params}, dominios, timeout, user_agent, reintentos, max_bytes)
+
+
+def post(url: str, data: dict[str, Any], *, dominios: list[str] | None = None, timeout: float = 60.0,
+         user_agent: str = "geo-copilot-mcp/1", reintentos: int = 1, max_bytes: int = 40_000_000) -> httpx.Response:
+    """POST de formulario con el cliente SSRF (consultas largas: un `IN (…)` de cientos de códigos)."""
+    return _pedir("POST", url, {"data": data}, dominios, timeout, user_agent, reintentos, max_bytes)
+
+
+def _pedir(metodo: str, url: str, kw: dict[str, Any], dominios: list[str] | None, timeout: float,
+           user_agent: str, reintentos: int, max_bytes: int) -> httpx.Response:
     for intento in range(reintentos + 1):
         try:
             with cliente(url, dominios=dominios, timeout=timeout, user_agent=user_agent) as c:
-                r = c.get(url, params=params)
+                r = c.request(metodo, url, **kw)
             break
         except httpx.TransportError as exc:
             if intento == reintentos:
