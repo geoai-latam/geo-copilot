@@ -128,3 +128,13 @@ servers:
     tools: { allow: ["dane_*"] }
     recursos: { prefixes: ["/resultados/"] }
     policy: { default_risk: read, timeout_s: 180, max_result_mb: 100 }
+
+  # Amenazas y clima de fuentes públicas: sismos (USGS), focos de calor (FIRMS), caudales (GloFAS), clima.
+  - id: amenazas
+    url: http://amenazas-mcp:9930/mcp
+    description: "Amenazas y clima: sismos (catálogo USGS), focos de calor activos de los últimos 7 días (NASA FIRMS), caudal diario y pronóstico de ríos (GloFAS) y clima diario de un punto (ERA5 por Open-Meteo, también pronóstico; NASA POWER). Las capas OFICIALES de amenaza del SGC están en `ogc`."
+    auth: { type: bearer, secret_ref: env:AMENAZAS_MCP_APP_KEY }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["amenazas_*", "clima_*"] }
+    policy: { default_risk: read, timeout_s: 180, max_result_mb: 50 }
