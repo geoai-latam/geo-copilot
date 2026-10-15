@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import time
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -79,3 +81,35 @@ def cliente(url: str, *, dominios: list[str] | None = None, timeout: float = 20.
     ip, host = ip_validada(url, dominios)
     return httpx.Client(transport=_TransporteFijado({host: ip}), timeout=timeout, follow_redirects=False,
                         headers={"User-Agent": user_agent})
+
+
+class ErrorRed(Exception):
+    """El servicio externo no respondió o respondió un error HTTP (mensaje honesto para el LLM)."""
+
+
+class RespuestaGrande(ErrorRed):
+    """La respuesta pasa del tope: quien pagina puede pedir menos de una vez."""
+
+
+def get(url: str, params: dict[str, Any] | None = None, *, dominios: list[str] | None = None,
+        timeout: float = 60.0, user_agent: str = "geo-copilot-mcp/1", reintentos: int = 1,
+        max_bytes: int = 40_000_000) -> httpx.Response:
+    """GET con el cliente SSRF. Un fallo de RED se reintenta; un HTTP de error es la respuesta y no se repite.
+
+    Medido (ogc-mcp, 2026-10-15): servidores públicos (IGAC) cortan conexiones de vez en cuando y a la
+    siguiente responden.
+    """
+    for intento in range(reintentos + 1):
+        try:
+            with cliente(url, dominios=dominios, timeout=timeout, user_agent=user_agent) as c:
+                r = c.get(url, params=params)
+            break
+        except httpx.TransportError as exc:
+            if intento == reintentos:
+                raise ErrorRed(f"el servicio no respondió ({type(exc).__name__})") from exc
+            time.sleep(2.0)
+    if r.status_code != 200:
+        raise ErrorRed(f"el servicio respondió HTTP {r.status_code}: {r.text[:200]}")
+    if len(r.content) > max_bytes:
+        raise RespuestaGrande(f"la respuesta del servicio pasa de {max_bytes // 1_000_000} MB")
+    return r

@@ -15,15 +15,9 @@ Las URLs vienen de fuera: el servidor bloquea IPs internas y fija la IP resuelta
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import tempfile
-import threading
-import time
-import uuid
-from typing import Any
 
 from geo_mcp_kit import (
     ExtraRoute,
@@ -32,15 +26,15 @@ from geo_mcp_kit import (
     RateLimiter,
     ToolRunner,
     compact_result,
-    feature_collection,
-    feature_ref,
     geo_meta,
     geo_result,
     raster_tiles,
     respond_json,
     respond_png,
 )
+from geo_mcp_kit import area as areas
 from geo_mcp_kit.red import UrlNoPermitida, ip_validada
+from geo_mcp_kit.resultados import Resultados
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ToolAnnotations
@@ -50,12 +44,10 @@ from ogc_mcp import catalogo, elementos, ows, teselas
 logger = logging.getLogger("ogc_mcp")
 SCOPES = {"ogc_catalogo": "ogc:read", "ogc_describir": "ogc:read", "ogc_ver_mapa": "ogc:read",
           "ogc_traer_elementos": "ogc:read"}
-MAX_EN_LINEA = 5000
-MAX_BYTES_EN_LINEA = 8_000_000
-TTL_RESULTADOS_S = 3600
-RESULTADOS = os.environ.get("OGC_RESULTADOS_DIR") or os.path.join(tempfile.gettempdir(), "ogc-resultados")
+resultados = Resultados(os.environ.get("OGC_RESULTADOS_DIR") or os.path.join(tempfile.gettempdir(), "ogc-resultados"))
 
-runner = ToolRunner(timeout_s=170, service="ogc-mcp", expected_errors=(ows.ErrorOgc, UrlNoPermitida))
+runner = ToolRunner(timeout_s=170, service="ogc-mcp",
+                    expected_errors=(ows.ErrorOgc, UrlNoPermitida, areas.AreaInvalida))
 mcp = FastMCP(
     "ogc-mcp",
     instructions=("Servicios OGC (WMS/WFS/OGC API - Features): mira el catálogo curado de Colombia con "
@@ -183,56 +175,9 @@ def ogc_traer_elementos(url: str, capa: str, tipo: str | None = None, bbox: list
                         max_elementos: int = 5000) -> CallToolResult:
     def traer() -> dict:
         fc, hechos = elementos.traer(_url(url), capa, bbox, max_elementos, tipo, area=area, campos=campos)
-        return _como_capa(fc, hechos)
+        return resultados.capa(str(hechos.get("capa") or "OGC"), fc, hechos)
 
     return compact_result(runner.run(traer))
-
-
-def _como_capa(fc: dict, hechos: dict[str, Any]) -> dict:
-    """La capa en la respuesta o, si es grande (por número o por peso), como GeoJSON por referencia."""
-    nombre = str(hechos.get("capa") or "OGC")
-    texto = json.dumps(fc, ensure_ascii=False, separators=(",", ":"))
-    if len(fc["features"]) <= MAX_EN_LINEA and len(texto) <= MAX_BYTES_EN_LINEA:
-        return geo_result([feature_collection(nombre, fc, crs="EPSG:4326")], facts=hechos)
-    os.makedirs(RESULTADOS, exist_ok=True)
-    _purgar()
-    ident = uuid.uuid4().hex
-    with open(os.path.join(RESULTADOS, f"{ident}.geojson"), "w", encoding="utf-8") as fh:
-        fh.write(texto)
-    return geo_result([feature_ref(nombre, f"/resultados/{ident}.geojson", fmt="geojson", crs="EPSG:4326",
-                                   feature_count=len(fc["features"]))], facts=hechos)
-
-
-_candado_purga = threading.Lock()
-
-
-def _purgar() -> None:
-    """Resultados más viejos que el TTL fuera (el núcleo los descarga al momento)."""
-    with _candado_purga:
-        limite = time.time() - TTL_RESULTADOS_S
-        for nombre in os.listdir(RESULTADOS):
-            ruta = os.path.join(RESULTADOS, nombre)
-            try:
-                if os.path.getmtime(ruta) < limite:
-                    os.remove(ruta)
-            except OSError:
-                continue
-
-
-_RESULTADO_RE = re.compile(r"^/resultados/([0-9a-f]{32})\.geojson$")
-
-
-async def _servir_resultado(scope, send, params, _key):
-    ruta = os.path.join(RESULTADOS, f"{params}.geojson")
-    if not os.path.isfile(ruta):
-        await respond_json(send, 404, {"error": "resultado no encontrado o vencido; repite la consulta"})
-        return
-    with open(ruta, "rb") as fh:
-        datos = fh.read()
-    await send({"type": "http.response.start", "status": 200,
-                "headers": [(b"content-type", b"application/geo+json"),
-                            (b"content-length", str(len(datos)).encode()), (b"cache-control", b"no-store")]})
-    await send({"type": "http.response.body", "body": datos})
 
 
 async def _servir_tesela(scope, send, params, _key):
@@ -254,8 +199,7 @@ def build_app():
         raise RuntimeError("ogc-mcp no arranca sin claves (OGC_MCP_KEYS)")
     catalogo.cargar()  # un catálogo roto se ve al arrancar, no en la primera pregunta
     rutas = (
-        ExtraRoute(lambda p: (m.group(1) if (m := _RESULTADO_RE.match(p)) else None), _servir_resultado,
-                   requires_tool="ogc_traer_elementos", weight=0.2),
+        resultados.ruta("ogc_traer_elementos"),
         ExtraRoute(teselas.parse_ruta, _servir_tesela, requires_tool="ogc_ver_mapa", weight=0.05),
     )
     return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="ogc-mcp", routes=rutas)
