@@ -14,6 +14,8 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from geo_mcp_kit import area as areas
+
 from ogc_mcp import ows
 
 MAX_ELEMENTOS = 50_000
@@ -188,36 +190,6 @@ def _hechos(capa: dict, caps: dict, features: list, total: int | None, maximo: i
     return hechos
 
 
-def _geometria_del_area(area: dict) -> Any:
-    """La unión de las geometrías de un FeatureCollection (lo que el núcleo entrega por una capa)."""
-    from shapely.geometry import shape
-    from shapely.ops import unary_union
-
-    feats = area.get("features") if isinstance(area, dict) else None
-    geoms = [shape(f["geometry"]) for f in feats or [] if isinstance(f, dict) and f.get("geometry")]
-    if not geoms:
-        raise ows.ErrorOgc("`area` no trae geometrías: usa una capa de la sesión (p. ej. un límite)")
-    return unary_union([g if g.is_valid else g.buffer(0) for g in geoms])
-
-
-def _recortar_al_area(fc: dict, hechos: dict, geom: Any) -> None:
-    """Deja solo los elementos que INTERSECAN el área (el servicio filtró por su rectángulo).
-
-    V5 (ogc-mcp): «áreas protegidas en Bogotá» filtró por el rectángulo del límite y contó Tibaitatá
-    (Mosquera) como de Bogotá. Un rectángulo no es el área.
-    """
-    from shapely.geometry import shape
-    from shapely.prepared import prep
-
-    area = prep(geom)
-    en_rectangulo = len(fc["features"])
-    fc["features"] = [f for f in fc["features"] if f.get("geometry") and area.intersects(shape(f["geometry"]))]
-    hechos["elementos"] = len(fc["features"])
-    hechos["filtro_area"] = {"en_su_rectangulo": en_rectangulo, "intersecan_el_area": len(fc["features"]),
-                             "nota": "solo los que tocan el área (no su rectángulo); un elemento que la toca "
-                                     "puede extenderse fuera de ella"}
-
-
 def _solo_campos(fc: dict, campos: list[str]) -> list[str]:
     """Deja en cada elemento solo los atributos pedidos (sin distinguir mayúsculas); devuelve los usados.
 
@@ -246,12 +218,13 @@ def traer(url: str, capa: str, bbox: list[float] | None, maximo: int, tipo: str 
     if t not in ("wfs", "ogcapi"):
         raise ows.ErrorOgc("los elementos se traen de un WFS o de una OGC API - Features (tipo wfs u ogcapi); "
                            "un WMS es solo imagen: usa ogc_ver_mapa")
-    geom = _geometria_del_area(area) if area else None
+    geom = areas.geometria(area) if area else None
     if geom is not None:
         bbox = list(geom.bounds)
     fc, hechos = (traer_wfs if t == "wfs" else traer_ogcapi)(url, capa, bbox, maximo)
     if geom is not None:
-        _recortar_al_area(fc, hechos, geom)
+        hechos["filtro_area"] = areas.recortar(fc, geom)
+        hechos["elementos"] = len(fc["features"])
     if campos:
         hechos["campos_traidos"] = _solo_campos(fc, campos)
     return fc, hechos

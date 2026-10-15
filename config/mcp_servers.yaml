@@ -96,3 +96,14 @@ servers:
     tiles: { prefixes: ["/wms/"] }
     recursos: { prefixes: ["/resultados/"] }   # capas grandes: GeoJSON servido por el propio servidor
     policy: { default_risk: read, timeout_s: 180, max_result_mb: 150 }
+
+  # Portales de datos abiertos: datos.gov.co (Socrata) y Datos Abiertos Bogotá (CKAN).
+  - id: datos
+    url: http://datos-abiertos-mcp:9900/mcp
+    description: "Datos abiertos: datos.gov.co (miles de conjuntos de alcaldías y entidades: instituciones educativas, sedes de salud, equipamientos…; consulta SoQL filtrada en el portal) y Datos Abiertos Bogotá (CKAN: recursos GeoJSON/CSV; sus WFS/WMS van por ogc)."
+    auth: { type: bearer, secret_ref: env:DATOS_MCP_APP_KEY }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["datos_*"] }
+    recursos: { prefixes: ["/resultados/"] }
+    policy: { default_risk: read, timeout_s: 180, max_result_mb: 100 }

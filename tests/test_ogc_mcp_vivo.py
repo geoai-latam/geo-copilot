@@ -28,7 +28,7 @@ DANE_DIVIPOLA = "https://geoportal.dane.gov.co/mparcgis/services/Divipola/Serv_D
 @pytest.fixture(autouse=True)
 def _claves(monkeypatch, tmp_path):
     monkeypatch.setenv("OGC_MCP_KEYS", '[{"name":"t","key":"k","scopes":["ogc:read"]}]')
-    monkeypatch.setattr(srv, "RESULTADOS", str(tmp_path))
+    monkeypatch.setattr(srv.resultados, "directorio", str(tmp_path))
 
 
 def _features(sc: dict) -> list[dict]:
@@ -36,7 +36,7 @@ def _features(sc: dict) -> list[dict]:
     art = sc["artifacts"][0]
     if art["kind"] == "feature_collection":
         return art["data"]["features"]
-    ruta = Path(srv.RESULTADOS) / art["uri"].split("/")[-1]
+    ruta = Path(srv.resultados.directorio) / art["uri"].split("/")[-1]
     return json.loads(ruta.read_text(encoding="utf-8"))["features"]
 
 

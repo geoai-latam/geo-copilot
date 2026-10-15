@@ -303,7 +303,7 @@ def test_capa_sin_3857_declarado_se_comprueba_con_una_tesela(servicio):
 def test_elementos_grandes_viajan_por_referencia(servicio, monkeypatch, tmp_path):
     _, estado = servicio
     estado["total"] = 6000
-    monkeypatch.setattr(srv, "RESULTADOS", str(tmp_path))
+    monkeypatch.setattr(srv.resultados, "directorio", str(tmp_path))
     sc = srv.ogc_traer_elementos("https://x.test/wfs", "runap", tipo="wfs", max_elementos=6000).structuredContent
     (art,) = sc["artifacts"]
     assert art["kind"] == "feature_ref" and art["feature_count"] == 6000
@@ -334,7 +334,9 @@ def test_area_deja_solo_los_que_la_intersecan_no_su_rectangulo(servicio):
     assert len(fc["features"]) == len(esperados) == hechos["elementos"]
     assert hechos["filtro_area"]["en_su_rectangulo"] == 40
     assert hechos["filtro_area"]["intersecan_el_area"] == len(esperados)
-    with pytest.raises(ows.ErrorOgc, match="area"):
+    from geo_mcp_kit.area import AreaInvalida
+
+    with pytest.raises(AreaInvalida, match="area"):
         elementos.traer("https://x.test/wfs", "runap", None, 10, "wfs", area={"features": []})
 
 

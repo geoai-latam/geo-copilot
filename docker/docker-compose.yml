@@ -535,6 +535,36 @@ services:
           cpus: '0.5'
           memory: 768M   # hasta 50.000 elementos de una capa se arman en memoria
 
+  # datos-abiertos-mcp: portales de datos abiertos — datos.gov.co (Socrata: miles de conjuntos de
+  # alcaldías y entidades) y CKAN (Datos Abiertos Bogotá). Consulta con SoQL filtrando en el portal.
+  datos-abiertos-mcp:
+    build:
+      context: ..
+      dockerfile: services/datos_abiertos_mcp/Dockerfile
+    container_name: geo_copilot_datos
+    restart: unless-stopped
+    environment:
+      - DATOS_MCP_PORT=9900
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE DATOS_MCP_APP_KEY (la que usa la app)
+      - DATOS_MCP_KEYS=${DATOS_MCP_KEYS:?define DATOS_MCP_KEYS (JSON) en .env - ver .env.example}
+      - DATOS_PORTALES=${DATOS_PORTALES:-}
+      - DATOS_RESULTADOS_DIR=/tmp/datos-resultados
+    tmpfs:
+      - /tmp:size=256m,uid=10009
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
   # ---------------------------------------------------------------------------
   # hello-geo (S3.3): servidor GeoMCP de EJEMPLO sobre packages/geo_mcp_kit.
   # Perfil `examples`: no arranca por defecto. Para probar el enchufe de un MCP:
