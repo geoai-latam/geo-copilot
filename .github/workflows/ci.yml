@@ -204,6 +204,9 @@ jobs:
           - name: ogc-mcp
             context: .
             dockerfile: services/ogc_mcp/Dockerfile
+          - name: datos-abiertos-mcp
+            context: .
+            dockerfile: services/datos_abiertos_mcp/Dockerfile
 
     env:
       IMAGEN: ghcr.io/${{ github.repository_owner }}/geo-copilot-${{ matrix.name }}
@@ -299,7 +302,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [app, frontend, sandbox, imagery-mcp, arcgis-mcp, lugares-mcp, ogc-mcp]
+        name: [app, frontend, sandbox, imagery-mcp, arcgis-mcp, lugares-mcp, ogc-mcp, datos-abiertos-mcp]
 
     env:
       IMAGEN: ghcr.io/${{ github.repository_owner }}/geo-copilot-${{ matrix.name }}

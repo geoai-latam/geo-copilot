@@ -74,6 +74,7 @@ flowchart TD
 | **Unit frontend** | `frontend/src/**/*.test.ts(x)` | `npm test -- --run` | `npm install` |
 | **Discovery / arcgis-mcp** | `tests/test_arcgis_mcp.py` (servidor), `test_hub_search.py` (normalización y parámetros en el servidor, ranking en el núcleo), `test_data_agent_via_mcp.py`, `test_route_discovery.py`, `test_discovery_agent.py`, `test_discovery_ssrf.py` | `pytest` (default) | nada extra (HTTP de ArcGIS y servidor MCP simulados) |
 | **Servicios OGC / ogc-mcp** | `tests/test_ogc_mcp.py` (servidor, servicios simulados); `tests/test_ogc_mcp_vivo.py` (contra IGAC/PNN/SGC/DANE reales) | `pytest` (default); `pytest -m integration tests/test_ogc_mcp_vivo.py` | nada extra; el vivo necesita Internet |
+| **Datos abiertos / datos-abiertos-mcp** | `tests/test_datos_abiertos_mcp.py` (portales simulados); `tests/test_datos_abiertos_mcp_vivo.py` (datos.gov.co y Datos Abiertos Bogotá reales) | `pytest` (default); `pytest -m integration tests/test_datos_abiertos_mcp_vivo.py` | nada extra; el vivo necesita Internet |
 | **HITL full flow** | `tests/test_hitl_full_flow.py` | `pytest` (default) | nada extra |
 | **WS handshake** | `tests/test_websocket_handshake_sec4.py` | `pytest` (default) | nada extra |
 | **Integration PostGIS** | tests con `@pytest.mark.integration` | `pytest -m integration` | `docker-compose.test.yml` arriba |
