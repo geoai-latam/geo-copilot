@@ -88,6 +88,8 @@ services:
       ARCGIS_MCP_APP_KEY: ${ARCGIS_MCP_APP_KEY:?define ARCGIS_MCP_APP_KEY}
       # credencial del lugares-mcp (geocodificación; env:LUGARES_MCP_APP_KEY)
       LUGARES_MCP_APP_KEY: ${LUGARES_MCP_APP_KEY:?define LUGARES_MCP_APP_KEY}
+      # credencial del ogc-mcp (servicios OGC; env:OGC_MCP_APP_KEY)
+      OGC_MCP_APP_KEY: ${OGC_MCP_APP_KEY:?define OGC_MCP_APP_KEY}
       # clave maestra de los secretos de las conexiones de las organizaciones
       SECRETS_KEK: ${SECRETS_KEK:?define SECRETS_KEK}
       # F7 (auditoría): el base apunta al Keycloak de DESARROLLO (perfil `auth`, que aquí no
@@ -212,6 +214,11 @@ services:
   lugares-mcp:
     <<: *logs
     image: ${IMAGEN_PREFIJO}-lugares-mcp:${VERSION}
+    build: !reset null
+
+  ogc-mcp:
+    <<: *logs
+    image: ${IMAGEN_PREFIJO}-ogc-mcp:${VERSION}
     build: !reset null
 
 networks:

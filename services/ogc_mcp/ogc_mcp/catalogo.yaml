@@ -1,0 +1,275 @@
+# Catálogo curado de servicios OGC oficiales de Colombia.
+# Cada entrada se verificó en vivo (GetCapabilities por protocolo, con reintentos) la fecha de
+# `verificado`; las descripciones dicen las capas que el servicio realmente publica ese día.
+# Verificación: tests/test_ogc_mcp_vivo.py (marca `integration`: `pytest -m integration`).
+# Fuera a propósito: geodesia/redgeodesicanacional (0 capas) y SGC catalogo_de_sismos_2 (sin WMS/WFS).
+
+servicios:
+  # --- IGAC: datos fundamentales -------------------------------------------------------------------
+  - id: igac_catastro_fundamental
+    titulo: Dato fundamental de catastro (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [catastro, predios, terrenos, construcciones, manzanas, urbano, rural]
+    descripcion: "Terrenos y construcciones rurales y urbanos y manzanas urbanas (R_TERRENO, R_CONSTRUCCION, U_TERRENO, U_CONSTRUCCION, U_MANZANA)."
+    wms: https://mapas.igac.gov.co/server/services/Dato_Fundamental_Catastro/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Dato_Fundamental_Catastro/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_agua_500k
+    titulo: Cuerpos de agua 1:500.000 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [hidrografia, rios, drenajes, humedales, manglares, agua, islas]
+    descripcion: "Drenajes (líneas y áreas), humedales, manglares, depósitos de agua, bancos de arena e islas a escala 1:500.000."
+    wms: https://mapas.igac.gov.co/server/services/Dato_Fundamental_Cuerpo_de_agua_500k/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Dato_Fundamental_Cuerpo_de_agua_500k/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_curvas_500k
+    titulo: Curvas de nivel 1:500.000 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [relieve, curvas de nivel, elevacion, altimetria]
+    descripcion: "Curvas de nivel (Elevacion_500k) a escala 1:500.000 para todo el país."
+    wms: https://mapas.igac.gov.co/server/services/Dato_Fundamental_Curvas_de_nivel_500k/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Dato_Fundamental_Curvas_de_nivel_500k/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_curvas_100k
+    titulo: Curvas de nivel 1:100.000 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [relieve, curvas de nivel, elevacion, altimetria]
+    descripcion: "Curvas de nivel (elevacion_100k) a escala 1:100.000; capa muy densa: traer con bbox."
+    wms: https://mapas.igac.gov.co/server/services/Curvas_de_nivel_100k/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Curvas_de_nivel_100k/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_transporte_500k
+    titulo: Transporte 1:500.000 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [vias, carreteras, transporte, puentes, tuneles, ferrocarril, infraestructura]
+    descripcion: "Vías, vías férreas, puentes, túneles, separadores y límites viales a escala 1:500.000."
+    wms: https://mapas.igac.gov.co/server/services/Datos_Fundamentales_Transporte_500K/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Datos_Fundamentales_Transporte_500K/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_transporte_100k
+    titulo: Transporte 1:100.000 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [vias, carreteras, transporte, puentes, tuneles, ferrocarril, infraestructura]
+    descripcion: "Vías, vías férreas, puentes, túneles, separadores y límites viales a escala 1:100.000 (más detalle; traer con bbox)."
+    wms: https://mapas.igac.gov.co/server/services/Datos_Fundamentales_Transporte_100k/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Datos_Fundamentales_Transporte_100k/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_red_gnss
+    titulo: Red geodésica activa y pasiva (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [geodesia, gnss, estaciones, vertices, control]
+    descripcion: "Estaciones de la red activa GNSS (MAGNA-ECO) y vértices de la red pasiva."
+    wms: https://mapas.igac.gov.co/server/services/Dato_fundamental_Red_Activa_Red_Pasiva/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/Dato_fundamental_Red_Activa_Red_Pasiva/MapServer/WFSServer
+    verificado: 2026-10-15
+
+  # --- IGAC: suelos y agrología ---------------------------------------------------------------------
+  - id: igac_conflictos_uso_2012
+    titulo: Conflictos de uso del territorio 2012 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [suelos, conflictos de uso, sobreutilizacion, subutilizacion, agrologia, uso del suelo]
+    descripcion: "Conflictos de uso de las tierras de Colombia (2012), nacional."
+    wms: https://mapas.igac.gov.co/server/services/agrologia/conflictos2012territorionacional/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/agrologia/conflictos2012territorionacional/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_vocacion_uso
+    titulo: Vocación de uso de las tierras (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [suelos, vocacion de uso, agricola, ganadero, forestal, agrologia, uso del suelo]
+    descripcion: "Vocación de uso de las tierras de Colombia, nacional."
+    wms: https://mapas.igac.gov.co/server/services/agrologia/vocaciondeusoterritorionacional/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/agrologia/vocaciondeusoterritorionacional/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_zonas_vida
+    titulo: Zonas de vida de Holdridge (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [clima, ecosistemas, zonas de vida, holdridge, biomas]
+    descripcion: "Zonas de vida según Holdridge para todo el país."
+    wms: https://mapas.igac.gov.co/server/services/agrologia/zonasdevidaterritorionacional/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/agrologia/zonasdevidaterritorionacional/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_suelos_orden
+    titulo: Suelos de Colombia por orden taxonómico (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [suelos, taxonomia, ordenes de suelo, agrologia]
+    descripcion: "Correlación de suelos a nivel de orden taxonómico, escala 1:100.000."
+    wms: https://mapas.igac.gov.co/server/services/agrologia/suelosdecolombiaaniveldeorden/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/agrologia/suelosdecolombiaaniveldeorden/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_salinidad
+    titulo: Salinidad de los suelos (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [suelos, salinidad, degradacion, agrologia]
+    descripcion: "Salinidad de los suelos de Colombia, nacional."
+    wms: https://mapas.igac.gov.co/server/services/agrologia/salinidadterritorionacional/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/agrologia/salinidadterritorionacional/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_erosion_1998
+    titulo: Erosión de los suelos 1998 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [suelos, erosion, degradacion, agrologia]
+    descripcion: "Erosión de los suelos de Colombia (1998), nacional."
+    wms: https://mapas.igac.gov.co/server/services/agrologia/erosion1998territorionacional/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/agrologia/erosion1998territorionacional/MapServer/WFSServer
+    verificado: 2026-10-15
+
+  # --- IGAC: ambiente, ordenamiento, relieve, otros -------------------------------------------------
+  - id: igac_reservas_ley2
+    titulo: Zonificación de reservas forestales de Ley 2ª de 1959 (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [ambiente, reservas forestales, ley 2, bosques, areas protegidas]
+    descripcion: "Zonificación de las reservas forestales de Ley 2ª de 1959 (solo WFS)."
+    wfs: https://mapas.igac.gov.co/server/services/ambiente/reservasforestalesley2da/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_pomcas
+    titulo: POMCAS — planes de ordenación de cuencas (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [ambiente, cuencas, pomca, hidrografia, ordenamiento]
+    descripcion: "Planes de ordenación y manejo de cuencas hidrográficas (solo WMS: imagen)."
+    wms: https://mapas.igac.gov.co/server/services/ambiente/pomcas/MapServer/WMSServer
+    verificado: 2026-10-15
+  - id: igac_inundacion_nina
+    titulo: Áreas afectadas por inundación, fenómeno de La Niña (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [amenazas, inundacion, la nina, riesgo, clima, agua]
+    descripcion: "Áreas inundadas durante La Niña en 1988, 2000, 2011 y 2012, escala 1:100.000."
+    wms: https://mapas.igac.gov.co/server/services/ambiente/areasafectadasinundacionnina/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/ambiente/areasafectadasinundacionnina/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_municipios_pdet
+    titulo: Municipios PDET (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [ordenamiento, pdet, posconflicto, municipios]
+    descripcion: "Municipios de los Programas de Desarrollo con Enfoque Territorial (solo WFS)."
+    wfs: https://mapas.igac.gov.co/server/services/ordenamientoterritorial/municipiosPDET/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_municipios_zomac
+    titulo: Municipios ZOMAC (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [ordenamiento, zomac, posconflicto, municipios]
+    descripcion: "Zonas más afectadas por el conflicto armado (ZOMAC)."
+    wms: https://mapas.igac.gov.co/server/services/ordenamientoterritorial/municipioszomac/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/ordenamientoterritorial/municipioszomac/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_propiedad_rural
+    titulo: Distribución de la propiedad rural (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [ordenamiento, propiedad rural, tenencia de la tierra, desigualdad, theil]
+    descripcion: "Coeficiente de Theil y disparidades de la distribución de la propiedad rural por municipio."
+    wms: https://mapas.igac.gov.co/server/services/ordenamientoterritorial/distribucionpropiedadrural/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/ordenamientoterritorial/distribucionpropiedadrural/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_pendientes
+    titulo: Pendientes de Colombia (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [relieve, pendientes, topografia]
+    descripcion: "Mapa de pendientes del país (solo WMS: imagen)."
+    wms: https://mapas.igac.gov.co/server/services/ordenamientoterritorial/pendientescolombia/MapServer/WMSServer
+    verificado: 2026-10-15
+  - id: igac_srtm30
+    titulo: Modelo de elevación SRTM 30 m (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [relieve, elevacion, dem, srtm, altimetria]
+    descripcion: "Modelo digital de elevación SRTM de 30 m publicado por el IGAC (solo WMS: imagen)."
+    wms: https://mapas.igac.gov.co/server/services/relieve/srtm30metros/MapServer/WMSServer
+    verificado: 2026-10-15
+  - id: igac_cobertura_alta_resolucion
+    titulo: Cobertura de imágenes de alta resolución (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [imagenes, cobertura, satelital, ortoimagenes]
+    descripcion: "Reporte de la cobertura de imágenes satelitales de alta resolución disponibles en el IGAC."
+    wms: https://mapas.igac.gov.co/server/services/otros/coberturaaltaresolucion/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/otros/coberturaaltaresolucion/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_gestores_catastrales
+    titulo: Gestores catastrales habilitados (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [catastro, gestores catastrales, catastro multiproposito, municipios]
+    descripcion: "Gestores catastrales habilitados, los municipios que atienden y sus contratos."
+    wms: https://mapas.igac.gov.co/server/services/regulacion/GestoresCatastrales/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/regulacion/GestoresCatastrales/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: igac_infraestructura_basica
+    titulo: Infraestructura básica (IGAC)
+    entidad: Instituto Geográfico Agustín Codazzi (IGAC)
+    temas: [infraestructura, acueducto, saneamiento, ptap, servicios publicos, vias]
+    descripcion: "Saneamiento y suministro, sistemas de abastecimiento, lagunas, PTAP, disposición regional e infraestructura vial."
+    wms: https://mapas.igac.gov.co/server/services/infraestructura/infraestructurabasica/MapServer/WMSServer
+    wfs: https://mapas.igac.gov.co/server/services/infraestructura/infraestructurabasica/MapServer/WFSServer
+    verificado: 2026-10-15
+
+  # --- Parques Nacionales Naturales -----------------------------------------------------------------
+  - id: pnn_areas_protegidas
+    titulo: Áreas protegidas y Parques Nacionales (PNN)
+    entidad: Parques Nacionales Naturales de Colombia
+    temas: [areas protegidas, runap, parques nacionales, conservacion, coberturas, predios, restauracion]
+    descripcion: "GeoServer de PNN: RUNAP (registro único de áreas protegidas), límites de parques, nuevas áreas, predios, coberturas, alertas de transformación, áreas potenciales de restauración (65 capas WMS, 30 WFS)."
+    wms: https://mapas.parquesnacionales.gov.co/services/pnn/wms
+    wfs: https://mapas.parquesnacionales.gov.co/services/pnn/wfs
+    verificado: 2026-10-15
+
+  # --- Servicio Geológico Colombiano ----------------------------------------------------------------
+  - id: sgc_amenaza_sismica
+    titulo: Amenaza sísmica nacional (SGC)
+    entidad: Servicio Geológico Colombiano (SGC)
+    temas: [amenazas, sismos, amenaza sismica, terremotos, riesgo, fuentes sismogenicas]
+    descripcion: "Modelo nacional de amenaza sísmica: valor de amenaza, fuentes corticales y de subducción, municipios y departamentos."
+    wms: https://srvags.sgc.gov.co/arcgis/services/Amenaza_Sismica/Amenaza_Sismica_Nacional/MapServer/WMSServer
+    wfs: https://srvags.sgc.gov.co/arcgis/services/Amenaza_Sismica/Amenaza_Sismica_Nacional/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: sgc_zonas_sismicas_nsr10
+    titulo: Zonas de amenaza sísmica NSR-10 (SGC)
+    entidad: Servicio Geológico Colombiano (SGC)
+    temas: [amenazas, sismos, nsr-10, construccion sismo resistente, riesgo]
+    descripcion: "Zonas de amenaza sísmica (alta, intermedia, baja) de la norma NSR-10 (solo WMS: imagen)."
+    wms: https://srvags.sgc.gov.co/arcgis/services/Zonas_amenaza_Sismica_NR10/Zonas_Amenaza_NSR_10/MapServer/WMSServer
+    verificado: 2026-10-15
+  - id: sgc_amenaza_volcanica
+    titulo: Amenaza volcánica (SGC)
+    entidad: Servicio Geológico Colombiano (SGC)
+    temas: [amenazas, volcanes, amenaza volcanica, riesgo, lahares]
+    descripcion: "Mapas de amenaza de los volcanes activos de Colombia (solo WMS: imagen)."
+    wms: https://srvags.sgc.gov.co/arcgis/services/Amenaza_Volcanica/Amenaza_Volcanica/MapServer/WMSServer
+    verificado: 2026-10-15
+  - id: sgc_movimientos_masa
+    titulo: Amenaza por movimientos en masa 1:100.000 (SGC)
+    entidad: Servicio Geológico Colombiano (SGC)
+    temas: [amenazas, movimientos en masa, deslizamientos, remocion en masa, riesgo]
+    descripcion: "Mapa nacional de amenaza relativa por movimientos en masa, escala 1:100.000 (solo WMS: imagen)."
+    wms: https://srvags.sgc.gov.co/arcgis/services/Mapa_Nacional_Amenaza_Mov_Masa_100K/Mapa_Nacional_Amenaza_Movimientos_Masa_100K/MapServer/WMSServer
+    verificado: 2026-10-15
+  - id: sgc_mapa_geologico_2015
+    titulo: Mapa geológico de Colombia 2015 (SGC)
+    entidad: Servicio Geológico Colombiano (SGC)
+    temas: [geologia, fallas, unidades cronoestratigraficas, volcanes, pliegues]
+    descripcion: "Mapa geológico de Colombia 2015: unidades cronoestratigráficas, fallas, pliegues y volcanes."
+    wms: https://srvags.sgc.gov.co/arcgis/services/Mapa_Geologico_Colombia_2015/Mapa_Geologico_Colombia_2015/MapServer/WMSServer
+    wfs: https://srvags.sgc.gov.co/arcgis/services/Mapa_Geologico_Colombia_2015/WFS_Mapa_Geologico_Colombia_2015/MapServer/WFSServer
+    verificado: 2026-10-15
+
+  # --- DANE ------------------------------------------------------------------------------------------
+  - id: dane_mgn_2025
+    titulo: Marco Geoestadístico Nacional 2025 (DANE)
+    entidad: Departamento Administrativo Nacional de Estadística (DANE)
+    temas: [limites, division politico administrativa, departamentos, municipios, mgn, sectores, secciones, zona urbana, censo]
+    descripcion: "MGN 2025: departamentos, municipios, clase, sectores y secciones rurales y urbanos, zonas urbanas."
+    wms: https://geoportal.dane.gov.co/mparcgis/services/MGN2025/Serv_CapasMGN_2025/MapServer/WMSServer
+    wfs: https://geoportal.dane.gov.co/mparcgis/services/MGN2025/Serv_CapasMGN_2025/MapServer/WFSServer
+    verificado: 2026-10-15
+  - id: dane_divipola_2025
+    titulo: DIVIPOLA 2025 — departamentos, municipios y centros poblados (DANE)
+    entidad: Departamento Administrativo Nacional de Estadística (DANE)
+    temas: [limites, divipola, departamentos, municipios, centros poblados, codigos]
+    descripcion: "División político-administrativa oficial 2025: departamentos, municipios y centros poblados con sus códigos DIVIPOLA."
+    wms: https://geoportal.dane.gov.co/mparcgis/services/Divipola/Serv_DIVIPOLA_MGN_2025/MapServer/WMSServer
+    wfs: https://geoportal.dane.gov.co/mparcgis/services/Divipola/Serv_DIVIPOLA_MGN_2025/MapServer/WFSServer
+    verificado: 2026-10-15
+
+  # --- UPRA -----------------------------------------------------------------------------------------
+  - id: upra_municipios
+    titulo: Municipios generalizados (UPRA)
+    entidad: Unidad de Planificación Rural Agropecuaria (UPRA)
+    temas: [limites, municipios, referencia geografica]
+    descripcion: "Límites municipales generalizados para referencia cartográfica (solo WMS: imagen)."
+    wms: https://geoservicios.upra.gov.co/arcgis/services/referencia_geografica/municipios_generalizada/MapServer/WMSServer
+    verificado: 2026-10-15

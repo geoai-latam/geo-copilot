@@ -136,6 +136,8 @@ dev = [
     "psycopg[binary]>=3.2,<4",
     # F5 (T5.6): los tests del servidor de archivos (services/archivos_mcp) usan DuckDB-spatial.
     "duckdb>=1.5,<2",
+    # ogc-mcp: los tests del servidor OGC (services/ogc_mcp) leen XML de capacidades sin entidades.
+    "defusedxml>=0.7,<1",
 ]
 # Tests con BD real (Fase 3). Activar con `pip install -e .[integration]`.
 integration = [

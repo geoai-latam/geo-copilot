@@ -502,6 +502,39 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  # ogc-mcp: servicios OGC (WMS/WFS/OGC API - Features) con un catálogo curado de Colombia (IGAC,
+  # Parques Nacionales, SGC, DANE, UPRA). La información oficial se publica así; sin él, el copiloto
+  # solo sabía de ArcGIS REST. Pide URLs de fuera: SSRF bloqueado en el propio servidor (kit `red`).
+  ogc-mcp:
+    build:
+      context: ..
+      dockerfile: services/ogc_mcp/Dockerfile
+    container_name: geo_copilot_ogc
+    restart: unless-stopped
+    environment:
+      - OGC_MCP_PORT=9800
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE OGC_MCP_APP_KEY (la que usa la app)
+      - OGC_MCP_KEYS=${OGC_MCP_KEYS:?define OGC_MCP_KEYS (JSON) en .env - ver .env.example}
+      - OGC_MCP_TILE_SECRET=${OGC_MCP_TILE_SECRET:-}
+      - OGC_ALLOWED_DOMAINS=${OGC_ALLOWED_DOMAINS:-}
+      - OGC_RESULTADOS_DIR=/tmp/ogc-resultados
+    tmpfs:
+      # capas grandes (>5000 elementos) por referencia: GeoJSON temporal que el núcleo descarga al momento
+      - /tmp:size=256m,uid=10008
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 768M   # hasta 50.000 elementos de una capa se arman en memoria
+
   # ---------------------------------------------------------------------------
   # hello-geo (S3.3): servidor GeoMCP de EJEMPLO sobre packages/geo_mcp_kit.
   # Perfil `examples`: no arranca por defecto. Para probar el enchufe de un MCP:

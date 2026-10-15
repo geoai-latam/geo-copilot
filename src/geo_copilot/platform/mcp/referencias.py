@@ -7,6 +7,7 @@ Salió de `hub.py` (F4 del plan de calidad: 1.097 líneas), tal cual.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, cast
 
 from geo_copilot.core.logging import get_logger
@@ -243,6 +244,21 @@ def _referencias_validas(working: dict) -> str:
     return ", ".join(refs) + ". No escribas geometría a mano."
 
 
+_NUMERO = r"\s*(-?\d+(?:\.\d+)?)\s*"
+_BBOX_TEXTO = re.compile(r"\[?" + ",".join([_NUMERO] * 4) + r"\]?")
+
+
+def _bbox_escrito(valor: str) -> list[float] | None:
+    """[minx, miny, maxx, maxy] si el texto son exactamente cuatro números en orden válido; si no, None."""
+    m = _BBOX_TEXTO.fullmatch(valor.strip())
+    if not m:
+        return None
+    x1, y1, x2, y2 = (float(v) for v in m.groups())
+    if -180 <= x1 < x2 <= 180 and -90 <= y1 < y2 <= 90:
+        return [x1, y1, x2, y2]
+    return None
+
+
 async def _resolver_geo(est: EstadoTool, working: dict, args: dict) -> tuple[dict, str | None]:
     """Sustituye referencias de capa por su geometría/bbox en los argumentos geo declarados."""
     entradas = (est.geo.get("inputs") or {}) if est.geo else {}
@@ -252,6 +268,12 @@ async def _resolver_geo(est: EstadoTool, working: dict, args: dict) -> tuple[dic
         if not isinstance(valor, str):
             continue
         acepta = set((spec or {}).get("accepts") or [])
+        if "bbox" in acepta and (numeros := _bbox_escrito(valor)) is not None:
+            # V5 (ogc-mcp): el usuario dio el rectángulo en números y el LLM lo pasó como texto
+            # «-74.23,4.46,-74.0,4.84»; se trataba como referencia de capa, se rechazaba y se le
+            # pedía al usuario dibujarlo. Cuatro números SON un bbox: no hay que inventar nada.
+            salida[nombre] = numeros
+            continue
         try:
             fc = await _geojson_de_referencia(valor, working)
         except _CapaDemasiadoGrande as exc:

@@ -51,6 +51,7 @@
 | 16 | [Datos tabulares de terceros en el mapa](16-conector-tabular.md) | Adaptador `tabular_geo` (Snowflake, BigQuery…): el LLM declara la geometría del resultado, el núcleo la valida; servidor de prueba |
 | 17 | [Archivos geoespaciales con DuckDB](17-conector-archivos.md) | GeoParquet/FlatGeobuf/CSV leídos donde están y filtrados en el origen; resultados grandes por referencia; cómo llega el turno |
 | 18 | [Identidad, organizaciones y permisos](18-identidad-y-organizaciones.md) | Login OIDC, sesiones y proyectos con dueño, roles por riesgo, conexiones por organización con credencial cifrada, token exchange hacia los MCP, auditoría encadenada; puesta en marcha |
+| 20 | [Servicios OGC (WMS/WFS/OGC API)](20-conector-ogc.md) | `ogc-mcp`: catálogo curado de Colombia (IGAC, PNN, SGC, DANE, UPRA), WMS como teselas firmadas, elementos WFS/OGC API filtrados por área; comportamientos medidos |
 | ★ | [Spec imagery-mcp (C3)](../SPEC_C3_IMAGERY_MCP_2026-07-19.md) | Diseño del microservicio de imágenes satelitales (STAC→COG Sentinel-2). Es un **registro de diseño**, no documentación operativa |
 | 🗄️ | [Auditoría agentic 2026-05-25](../archive/AUDITORIA_AGENTIC.md) | Release notes de los 7 sprints de refactor agentic — **archivado**, ver [`docs/archive/`](../archive/) |
 
