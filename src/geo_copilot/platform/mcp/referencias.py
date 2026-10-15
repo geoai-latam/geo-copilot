@@ -259,6 +259,23 @@ def _bbox_escrito(valor: str) -> list[float] | None:
     return None
 
 
+_REF_LUGAR = re.compile(r"[NWR]\d{1,12}")
+
+
+def _pista_de_lugar(valor: str) -> str:
+    """Si es la ref de un candidato de lugares (OSM), qué hacer con ella.
+
+    V5 (capas globales): el agente buscó «Chía» con lugares_buscar y pasó su ref («R10687625») como zona;
+    el rechazo genérico lo hizo rendirse en 4 de 6 preguntas. La ref es de un LUGAR, no una capa: su límite
+    entra a la sesión con lugares_limite y esa capa sí es una zona.
+    """
+    if not _REF_LUGAR.fullmatch(valor.strip().upper()):
+        return ""
+    return (f"`{valor}` es la referencia de un LUGAR (de lugares_buscar), no una capa. Hazlo tú ahora, sin "
+            f"pedírselo al usuario: llama lugares_limite(ref=\"{valor}\") y vuelve a llamar esta herramienta con "
+            "la capa que deja (su id `ds_…` o su nombre). ")
+
+
 async def _resolver_geo(est: EstadoTool, working: dict, args: dict) -> tuple[dict, str | None]:
     """Sustituye referencias de capa por su geometría/bbox en los argumentos geo declarados."""
     entradas = (est.geo.get("inputs") or {}) if est.geo else {}
@@ -288,7 +305,7 @@ async def _resolver_geo(est: EstadoTool, working: dict, args: dict) -> tuple[dic
         if fc is None:
             if acepta & {"geometry", "bbox", "layer_ref"}:
                 return args, (f"`{valor}` no es una capa de esta sesión para el argumento `{nombre}`. "
-                              f"Referencias válidas ahora: {_referencias_validas(working)}")
+                              f"{_pista_de_lugar(valor)}Referencias válidas ahora: {_referencias_validas(working)}")
             continue
         if "geometry" in acepta:
             salida[nombre] = fc
