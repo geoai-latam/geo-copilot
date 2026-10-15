@@ -51,6 +51,7 @@
 | 16 | [Datos tabulares de terceros en el mapa](16-conector-tabular.md) | Adaptador `tabular_geo` (Snowflake, BigQuery…): el LLM declara la geometría del resultado, el núcleo la valida; servidor de prueba |
 | 17 | [Archivos geoespaciales con DuckDB](17-conector-archivos.md) | GeoParquet/FlatGeobuf/CSV leídos donde están y filtrados en el origen; resultados grandes por referencia; cómo llega el turno |
 | 18 | [Identidad, organizaciones y permisos](18-identidad-y-organizaciones.md) | Login OIDC, sesiones y proyectos con dueño, roles por riesgo, conexiones por organización con credencial cifrada, token exchange hacia los MCP, auditoría encadenada; puesta en marcha |
+| 25 | [Amenazas y clima](25-amenazas-y-clima.md) | `amenazas-mcp`: sismos (USGS), focos de calor (FIRMS), caudales (GloFAS, con celdas vecinas) y clima (ERA5, NASA POWER, con la elevación de cada malla) |
 | 24 | [Capas globales en imagery-mcp](24-capas-globales-imagery.md) | Cobertura (WorldCover), población (WorldPop) y radar (Sentinel-1) de una zona; verdades radar↔óptico y WorldPop↔cálculo independiente |
 | 23 | [Censo 2018 del DANE (CNPV + MGN)](23-censo-dane.md) | `dane-mcp`: totales oficiales por municipio y variables por manzana con su geometría (MGN 2025), cruce por código, sumas y verdades medidas |
 | 22 | [Rutas e isócronas (Valhalla)](22-rutas-e-isocronas.md) | `rutas-mcp`: ruta, isócronas y matriz de tiempos sobre OpenStreetMap; motor autoalojado (perfil `rutas`) o público en desarrollo |
