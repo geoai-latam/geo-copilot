@@ -393,8 +393,11 @@ def ensure_core() -> None:
     # FH.1: operar el mapa compartido (zoom, visibilidad, opacidad, orden…).
     from geo_copilot.orchestrator.capabilities_mapa import MAPA
 
+    # Salidas: preparar la descarga de una capa (formato y sistema de referencia).
+    from geo_copilot.orchestrator.capabilities_salidas import SALIDAS
+
     reg = registry()
-    for cap in (*CORE, *ESPACIALES, *MAPA):
+    for cap in (*CORE, *ESPACIALES, *MAPA, *SALIDAS):
         if reg.get(cap.tool_name) is None:
             reg.register(cap)
 

@@ -23,6 +23,7 @@ import {
   Zap,
   Columns2,
   ShieldCheck,
+  Download,
 } from 'lucide-react'
 import { AuditoriaPanel } from './AuditoriaPanel'
 import {
@@ -44,6 +45,7 @@ import { useMenuContextual } from '@/lib/menuContextual'
 import { useComparacion } from '@/lib/comparacion'
 import { geometriaDeCapa } from './MenuContextual.helpers'
 import { EditorEstilo } from './EditorEstilo'
+import { ExportarCapa } from './ExportarCapa'
 import { useResultsStore } from '@/stores/resultsStore'
 import { McpToolsPanel } from './McpToolsPanel'
 import { ExploradorS2 } from './ExploradorS2'
@@ -170,6 +172,7 @@ function LayersDrawer() {
   const [estiloAbierto, setEstiloAbierto] = useState<string | null>(null)
   const [comoAbierto, setComoAbierto] = useState<string | null>(null)
   const [comparando, setComparando] = useState<string | null>(null)
+  const [exportando, setExportando] = useState<string | null>(null)
 
   if (layers.length === 0) {
     return (
@@ -306,6 +309,14 @@ function LayersDrawer() {
                   <TableIcon className="w-3.5 h-3.5" />
                 </button>
               )}
+              {(l.kind === 'vector-geojson' || l.kind === 'vector-mvt') && (
+                <button className={`icon-btn${exportando === l.id ? ' is-active' : ''}`}
+                        onClick={() => setExportando(exportando === l.id ? null : l.id)}
+                        title="Exportar a archivo (GeoPackage, Shapefile, KML…)" aria-label={`Exportar ${l.name}`}
+                        aria-pressed={exportando === l.id}>
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+              )}
               {esDibujo(l) && l.data.features?.some((f) => f.geometry && modoDeEdicion(f.geometry.type)) && (
                 <button className="icon-btn" onClick={() => editarDibujo(l.id)} title="Editar los vértices del dibujo"
                         aria-label={`Editar vértices de ${l.name}`}>
@@ -352,6 +363,7 @@ function LayersDrawer() {
                   )}
                   {(l.kind === 'vector-geojson' || l.kind === 'vector-mvt') && <FiltroCapa capa={l} />}
                   {estiloAbierto === l.id && <EditorEstilo capa={l} />}
+                  {exportando === l.id && <ExportarCapa capa={l} />}
                   {comoAbierto === l.id && <ComoSeHizo capa={l} />}
                 </div>
               )}

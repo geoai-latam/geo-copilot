@@ -238,6 +238,26 @@ export const workspaceApi = {
     return request<EstadisticaCampo>(
       `/workspace/${encodeURIComponent(sessionId)}/datasets/${encodeURIComponent(datasetId)}/estadistica?${p}`)
   },
+  /** La capa (o lo filtrado / seleccionado) como archivo: GeoPackage, Shapefile, KML… */
+  exportar: async (
+    sessionId: string, datasetId: string,
+    q: { formato: string; crs?: string | null; filtro?: unknown[] | null; ids?: number[] | null },
+  ): Promise<{ blob: Blob; archivo: string; elementos: number }> => {
+    const p = new URLSearchParams({ formato: q.formato })
+    if (q.crs) p.set('crs', q.crs)
+    if (q.filtro?.length) p.set('filtro', JSON.stringify(q.filtro))
+    if (q.ids) p.set('ids', JSON.stringify(q.ids))
+    const url = `${API_BASE}/workspace/${encodeURIComponent(sessionId)}/datasets/${encodeURIComponent(datasetId)}/exportar?${p}`
+    let r = await fetch(url, { headers: cabecerasAuth() })
+    if (r.status === 401 && (await sesionRechazada())) r = await fetch(url, { headers: cabecerasAuth() })
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}))
+      throw new ApiError(r.status, e.detail || `Error: ${r.statusText}`, e.detail)
+    }
+    const disp = r.headers.get('Content-Disposition') ?? ''
+    const archivo = decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(disp)?.[1] ?? '') || `capa.${q.formato}`
+    return { blob: await r.blob(), archivo, elementos: Number(r.headers.get('X-Elementos') ?? 0) }
+  },
   /** FH.7: «cómo se hizo» — la procedencia del dataset y la de sus entradas. */
   procedencia: async (sessionId: string, datasetId: string): Promise<{ pasos: PasoProcedencia[] }> => {
     return request<{ pasos: PasoProcedencia[] }>(

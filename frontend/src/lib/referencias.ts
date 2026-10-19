@@ -5,6 +5,7 @@
  *   [[layer:<capa>|texto]]                 una capa
  *   [[layer:<capa>?<campo>=<valor>|texto]] un elemento por un valor que vio en los datos
  *   [[layer:<capa>#<id>|texto]]            un elemento por su id
+ *   [[descarga:<capa>?formato=shp&crs=EPSG:9377|texto]]  la capa como archivo (`export_layer`)
  * `<capa>` = id de capa del mapa, `ds_…` o `activa` (la capa que dejó ese turno).
  * Aquí solo se RESUELVE contra el mapa real: lo que no resuelve se muestra como texto.
  */
@@ -18,11 +19,25 @@ export interface Referencia {
   id?: string
   campo?: string
   valor?: string
+  /** Un enlace de DESCARGA de la capa (no la señala en el mapa). */
+  descarga?: { formato: string; crs?: string }
 }
 
 export type Trozo = { texto: string; ref?: undefined } | { texto: string; ref: Referencia }
 
-const PATRON = /\[\[layer:([^\]|#?]+)(?:#([^\]|]+)|\?([^\]|=]+)=([^\]|]*))?(?:\|([^\]]*))?\]\]/g
+const PATRON = /\[\[(layer|descarga):([^\]|#?]+)(?:#([^\]|]+)|\?([^\]|]*))?(?:\|([^\]]*))?\]\]/g
+
+function referenciaDe(tipo: string, capa: string, id?: string, consulta?: string): Referencia {
+  const ref: Referencia = { capa: capa.trim(), ...(id ? { id: id.trim() } : {}) }
+  if (tipo === 'descarga') {
+    const q = new URLSearchParams(consulta ?? '')
+    ref.descarga = { formato: q.get('formato') || 'gpkg', ...(q.get('crs') ? { crs: q.get('crs') as string } : {}) }
+  } else if (consulta !== undefined) {
+    const i = consulta.indexOf('=')
+    if (i > 0) { ref.campo = consulta.slice(0, i).trim(); ref.valor = consulta.slice(i + 1).trim() }
+  }
+  return ref
+}
 
 /** El texto de la respuesta en trozos: texto normal y enlaces. */
 export function trocear(texto: string): Trozo[] {
@@ -30,12 +45,13 @@ export function trocear(texto: string): Trozo[] {
   let desde = 0
   for (const m of texto.matchAll(PATRON)) {
     const i = m.index ?? 0
+    const [entero, tipo, capa, id, consulta, etiqueta] = m
+    // un `?…` de enlace al mapa sin `=` no es un enlace válido: se queda como texto
+    if (tipo === 'layer' && consulta !== undefined && !consulta.includes('=')) continue
     if (i > desde) trozos.push({ texto: texto.slice(desde, i) })
-    const [, capa, id, campo, valor, etiqueta] = m
-    const ref: Referencia = { capa: capa.trim(), ...(id ? { id: id.trim() } : {}),
-                              ...(campo ? { campo: campo.trim(), valor: (valor ?? '').trim() } : {}) }
+    const ref = referenciaDe(tipo, capa, id, consulta)
     trozos.push({ texto: (etiqueta ?? '').trim() || ref.valor || ref.id || ref.capa, ref })
-    desde = i + m[0].length
+    desde = i + entero.length
   }
   if (desde < texto.length) trozos.push({ texto: texto.slice(desde) })
   return trozos
