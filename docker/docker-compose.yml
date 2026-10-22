@@ -625,6 +625,34 @@ services:
           cpus: '0.5'
           memory: 768M   # hasta 20.000 manzanas con geometría y variables se arman en memoria
 
+  # amenazas-mcp: sismos (USGS), focos de calor (NASA FIRMS), caudales de ríos (GloFAS) y clima (ERA5 por
+  # Open-Meteo, NASA POWER). Fuentes públicas sin clave; las capas oficiales del SGC van por ogc-mcp.
+  amenazas-mcp:
+    build:
+      context: ..
+      dockerfile: services/amenazas_mcp/Dockerfile
+    container_name: geo_copilot_amenazas
+    restart: unless-stopped
+    environment:
+      - AMENAZAS_MCP_PORT=9930
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # el `key` del JSON debe ser EXACTAMENTE AMENAZAS_MCP_APP_KEY (la que usa la app)
+      - AMENAZAS_MCP_KEYS=${AMENAZAS_MCP_KEYS:?define AMENAZAS_MCP_KEYS (JSON) en .env - ver .env.example}
+    tmpfs:
+      - /tmp:size=32m,uid=10012
+    networks:
+      - geo_network
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M   # el CSV de FIRMS de 7 días de Sudamérica (~7 MB) se filtra en memoria
+
   # valhalla: el motor de rutas AUTOALOJADO (perfil `rutas`, no arranca por defecto). La primera vez
   # descarga el extracto de Colombia de Geofabrik (~300 MB) y construye las teselas: pide varios GB de
   # RAM y tiempo de CPU; después arranca en segundos desde el volumen. Con él: VALHALLA_URL=http://valhalla:8002
