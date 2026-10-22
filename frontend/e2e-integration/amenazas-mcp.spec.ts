@@ -63,7 +63,8 @@ test.describe('Integración REAL — amenazas-mcp', () => {
 
   test('A3: focos de calor de la semana', async ({ page }) => {
     await preguntar(page, 'A3-incendios-vichada', '¿hay focos de incendio activos en el Vichada esta semana?',
-      /amenazas_incendios/, /\b\d+\s*(focos|puntos|detecciones)/i)
+      // «135 focos» o «focos de calor…: se detectaron 135» (V5: la segunda forma era un falso rojo)
+      /amenazas_incendios/, /\b\d+\s*(focos|puntos|detecciones)|focos[^.]{0,60}?\b\d+\b(?!\s*(d[ií]as|h\b|horas))/i)
   })
 
   test('A4: lluvia mensual de un año', async ({ page }) => {
