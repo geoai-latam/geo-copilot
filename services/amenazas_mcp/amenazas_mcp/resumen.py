@@ -53,17 +53,22 @@ def sismos(fc: dict, total: int) -> dict[str, Any]:
             "mayores": mayores, "fuente": "USGS (catálogo mundial; en Colombia la red oficial es la del SGC)"}
 
 
-def incendios(filas: list[dict], periodo: str, sensor: str) -> tuple[dict, dict[str, Any]]:
+def focos(filas: list[dict]) -> dict:
     feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [f["longitude"], f["latitude"]]},
               "properties": {"fecha": f.get("acq_date"), "hora_utc": f.get("acq_time"), "confianza": f.get("confidence"),
                              "frp_mw": float(f["frp"]) if f.get("frp") else None, "dia_noche": f.get("daynight")}}
              for f in filas]
+    return {"type": "FeatureCollection", "features": feats}
+
+
+def incendios(fc: dict, periodo: str, sensor: str) -> dict[str, Any]:
+    feats = fc["features"]
     hechos = {"focos": len(feats), "periodo": periodo, "sensor": sensor,
               "por_fecha": dict(sorted(Counter(f["properties"]["fecha"] for f in feats).items())),
               "por_confianza": dict(Counter(str(f["properties"]["confianza"]) for f in feats)),
               "frp_max_mw": max((f["properties"]["frp_mw"] or 0 for f in feats), default=None),
               "fuente": "NASA FIRMS (focos de calor activos casi en tiempo real; no todo foco es un incendio)"}
-    return {"type": "FeatureCollection", "features": feats}, hechos
+    return hechos
 
 
 def caudal(celdas: list[dict], lon: float, lat: float) -> tuple[list[dict], dict[str, Any]]:

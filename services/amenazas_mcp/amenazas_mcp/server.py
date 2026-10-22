@@ -56,10 +56,10 @@ _ZONA_TXT = ("Para un país, departamento o municipio pasa su LÍMITE como `area
              "es solo lo visible en el mapa, no un lugar.")
 
 
-def _recortar(fc: dict, geom: Any, hechos: dict, clave: str) -> None:
-    if geom is not None:
-        hechos["filtro_area"] = areas.recortar(fc, geom)
-        hechos[clave] = len(fc["features"])
+def _recortar(fc: dict, geom: Any) -> dict[str, Any]:
+    """Recorta al área ANTES de resumir: los mayores y los desgloses son del área, no de su rectángulo."""
+    # V5: con el rectángulo de Colombia, «los más fuertes» salieron de Panamá y Venezuela
+    return {} if geom is None else {"filtro_area": areas.recortar(fc, geom)}
 
 
 @mcp.tool(
@@ -77,11 +77,11 @@ def amenazas_sismos(area: dict | None = None, bbox: list[float] | None = None, d
         h = hasta or date.today().isoformat()
         d = desde or (date.fromisoformat(h) - timedelta(days=365)).isoformat()
         fc, total = fuentes.sismos(caja, d, h, magnitud_min, max(1, min(int(max_sismos), 20000)))
+        traidos = len(fc["features"])
+        filtro = _recortar(fc, geom)
         # V5: «sismos en Colombia» con `viewport` (lo visible, alrededor de Bogotá) dio 0 y se dijo «en Colombia»
         hechos = {"zona_consultada_bbox": caja, "periodo": [d, h], "magnitud_min": magnitud_min,
-                  **resumen.sismos(fc, total)}
-        traidos = len(fc["features"])
-        _recortar(fc, geom, hechos, "sismos")
+                  **resumen.sismos(fc, total), **filtro}
         if geom is None:
             hechos["completitud"] = completitud(traidos, total)
         else:  # el /count de la USGS es del rectángulo, no del polígono del área
@@ -106,9 +106,9 @@ def amenazas_incendios(area: dict | None = None, bbox: list[float] | None = None
             raise resumen.ErrorAmenazas(f"periodo: {', '.join(fuentes.FIRMS_PERIODOS)}; sensor: "
                                         f"{', '.join(fuentes.FIRMS_SENSORES)}")
         caja, geom = resumen.zona(area, bbox)
-        fc, hechos = resumen.incendios(fuentes.incendios(caja, periodo, sensor), periodo, sensor)
-        hechos["zona_consultada_bbox"] = caja
-        _recortar(fc, geom, hechos, "focos")
+        fc = resumen.focos(fuentes.incendios(caja, periodo, sensor))
+        filtro = _recortar(fc, geom)
+        hechos = {**resumen.incendios(fc, periodo, sensor), "zona_consultada_bbox": caja, **filtro}
         hechos["completitud"] = completitud(len(fc["features"]), len(fc["features"]))  # el CSV viene entero
         return geo_result([feature_collection(f"Focos de calor ({periodo})", fc, crs="EPSG:4326")], facts=hechos)
 

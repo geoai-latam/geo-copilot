@@ -43,6 +43,8 @@ def test_sismos_hechos_y_recorte_por_area(monkeypatch):
         "type": "Polygon", "coordinates": [[[-79, -4], [-70, -4], [-70, 12], [-79, 12], [-79, -4]]]}}]}
     sc = srv.amenazas_sismos(area=area, desde="2025-10-15", hasta="2026-10-15").structuredContent
     assert sc["facts"]["en_el_catalogo"] == 2 and sc["facts"]["sismos"] == 1  # el de Venezuela queda fuera
+    # V5: los «más fuertes» se resumían antes del recorte y salía Catia La Mar como si fuera de Colombia
+    assert [m["place"] for m in sc["facts"]["mayores"]] == ["San José del Palmar"]
     assert sc["facts"]["zona_consultada_bbox"] == [-79.0, -4.0, -70.0, 12.0]  # qué zona se miró, explícito
     props = sc["artifacts"][0]["data"]["features"][0]["properties"]
     assert props["profundidad_km"] == 116.1 and props["fecha"].endswith("UTC") and "time" not in props
@@ -56,6 +58,20 @@ def test_incendios_valida_periodo_y_sensor(monkeypatch):
     assert sc["facts"]["focos"] == 1 and sc["facts"]["frp_max_mw"] == 25.23
     assert "no todo foco es un incendio" in sc["facts"]["fuente"]
     assert "periodo" in srv.amenazas_incendios(bbox=[-71, 3, -67, 6], periodo="30d").structuredContent["error"]
+
+
+def test_incendios_resume_solo_los_focos_del_area(monkeypatch):
+    """V5: el total era del área (135) y el desglose por fecha del rectángulo (177)."""
+    def foco(lon, fecha, confianza):
+        return {"longitude": lon, "latitude": 5.1, "acq_date": fecha, "acq_time": "0610", "confidence": confianza,
+                "frp": "10", "daynight": "N"}
+    monkeypatch.setattr(fuentes, "incendios", lambda *a: [
+        foco(-70.1, "2026-10-13", "nominal"), foco(-70.2, "2026-10-14", "high"), foco(-67.6, "2026-10-14", "low")])
+    area = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": {
+        "type": "Polygon", "coordinates": [[[-71, 4], [-69, 4], [-69, 6], [-71, 6], [-71, 4]]]}}]}
+    h = srv.amenazas_incendios(area=area).structuredContent["facts"]
+    assert h["focos"] == 2 and sum(h["por_fecha"].values()) == 2 and sum(h["por_confianza"].values()) == 2
+    assert h["filtro_area"]["en_su_rectangulo"] == 3 and "low" not in h["por_confianza"]
 
 
 def test_firms_filtra_el_csv_regional_por_la_zona(monkeypatch):
