@@ -544,6 +544,61 @@ def test_una_capa_incompleta_dice_que_es_una_muestra():
 
 
 @pytest.mark.asyncio
+async def test_un_sobre_con_geo_result_anidado_se_pinta_y_conserva_la_procedencia(monkeypatch):
+    """F0.4 de Terranova: el sobre `rt/1` trae el GeoResult anidado; antes caía a G0 y no se pintaba."""
+    from geo_copilot.platform.mcp import hub as h
+
+    ingestados = []
+
+    class Store:
+        async def ingest_features(self, sesion, nombre, fc, **_):
+            ingestados.append(nombre)
+            return SimpleNamespace(model_dump=lambda mode=None: {"id": "ds_bbbbbbbbbbbbbbbb", "name": nombre,
+                                                                 "feature_count": 1})
+
+        async def to_geojson(self, *a, **k):
+            return {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": None,
+                                                               "properties": {}}]}
+
+    monkeypatch.setattr("geo_copilot.platform.workspace.context.store_actual", lambda: Store())
+    sobre = {
+        "contrato": "rt/1", "estado": "encontrado",
+        "datos": {"codigo_predial": "251750000000000050067000000000"},
+        "procedencia": [{"fuente_id": "igac.catastro.terreno_rural", "licencia": {"spdx": "CC-BY-SA-4.0"}}],
+        "geo_result": {"geo_result": "1", "facts": {"capa": "R_TERRENO"}, "artifacts": [
+            {"kind": "feature_collection", "name": "R_TERRENO", "crs": "EPSG:4326",
+             "data": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": None,
+                                                                  "properties": {}}]}}]},
+    }
+
+    class Con:
+        async def call_tool(self, tool, args):
+            return SimpleNamespace(content=[], isError=False, structuredContent=sobre)
+
+    cfg = _config("http://x/mcp").servers[0]
+    hub = McpHub(McpConfig.model_validate({"servers": []}))
+    hub.conexiones = {cfg.id: Con()}
+    est = h.EstadoTool(cfg.id, "p", f"{cfg.id}__p", True, None, "read", "h", {"outputs": ["feature_collection"]},
+                       esquema={"type": "object", "properties": {"lon": {"type": "number"}}})
+    out = await h.ejecutar_tool(hub, cfg, "p", est, {"session_id": "s"}, {"lon": -74.0262})
+    assert out.success and ingestados == ["R_TERRENO"]
+    assert "geojson" in out.delta
+    assert out.facts["capa"] == "R_TERRENO" and out.facts["contrato"] == "rt/1"
+    assert out.facts["procedencia"][0]["licencia"]["spdx"] == "CC-BY-SA-4.0"
+    assert "251750000000000050067000000000" in out.observation
+
+
+def test_desanidar_deja_igual_lo_que_no_es_un_sobre():
+    from geo_copilot.platform.mcp.ejecucion import _desanidar_geo_result
+
+    plano = {"geo_result": "1", "artifacts": [], "facts": {"a": 1}}
+    assert _desanidar_geo_result(plano) is plano
+    sin_geo = {"contrato": "rt/1", "estado": "no_encontrado", "geo_result": None}
+    assert _desanidar_geo_result(sin_geo) is sin_geo
+    assert _desanidar_geo_result(None) is None and _desanidar_geo_result([1]) == [1]
+
+
+@pytest.mark.asyncio
 async def test_un_error_con_codigo_del_kit_es_un_fallo():
     """F1.3 de Terranova: el kit agrega `codigo` al error; antes solo `{"error"}` contaba como fallo."""
     from geo_copilot.platform.mcp import hub as h
