@@ -34,9 +34,17 @@ jobs:
           cache: pip
 
       - name: Install system dependencies
+        # Este paso agotó tres veces los 15 min del job (geo-copilot#49, #50, #51). man-db reindexa en
+        # cada `apt-get install` y en los runners de Ubuntu tarda minutos: se apaga. Con tope propio y
+        # reintentos, un espejo lento falla rápido y se reintenta en lugar de cancelar el job.
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libgdal-dev libgeos-dev libproj-dev
+          sudo rm -f /var/lib/man-db/auto-update
+          for intento in 1 2 3; do
+            sudo apt-get update -y -o Acquire::Retries=3               && sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3                    libgdal-dev libgeos-dev libproj-dev               && break
+            echo "apt falló (intento $intento); se reintenta en 15 s"; sleep 15
+          done
+          dpkg -s libgdal-dev libgeos-dev libproj-dev > /dev/null  # sin esto, tres fallos darían verde
 
       - name: Install Python dependencies
         run: |
@@ -97,9 +105,17 @@ jobs:
           cache: pip
 
       - name: Install system dependencies
+        # Este paso agotó tres veces los 15 min del job (geo-copilot#49, #50, #51). man-db reindexa en
+        # cada `apt-get install` y en los runners de Ubuntu tarda minutos: se apaga. Con tope propio y
+        # reintentos, un espejo lento falla rápido y se reintenta en lugar de cancelar el job.
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y libgdal-dev libgeos-dev libproj-dev
+          sudo rm -f /var/lib/man-db/auto-update
+          for intento in 1 2 3; do
+            sudo apt-get update -y -o Acquire::Retries=3               && sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3                    libgdal-dev libgeos-dev libproj-dev               && break
+            echo "apt falló (intento $intento); se reintenta en 15 s"; sleep 15
+          done
+          dpkg -s libgdal-dev libgeos-dev libproj-dev > /dev/null  # sin esto, tres fallos darían verde
 
       - name: Install Python dependencies
         run: |
