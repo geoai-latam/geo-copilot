@@ -306,7 +306,7 @@ class McpHub:
         sc = res.structuredContent
         if not isinstance(sc, dict):
             raise McpError(f"«{tool}» no devolvió un resultado estructurado")
-        if "error" in sc and len(sc) == 1:
+        if "error" in sc and set(sc) <= {"error", "codigo", "reintentar_en_s"}:
             raise McpError(str(sc["error"]))
         return sc
 

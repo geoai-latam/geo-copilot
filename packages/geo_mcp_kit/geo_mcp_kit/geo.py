@@ -118,7 +118,9 @@ def compact_result(sc: dict[str, Any], *, max_text: int = 4000) -> Any:
 
     from mcp.types import CallToolResult, TextContent
 
-    if set(sc) == {"error"}:
+    from geo_mcp_kit.runner import es_error
+
+    if es_error(sc):
         return CallToolResult(content=[TextContent(type="text", text=str(sc["error"]))],
                               structuredContent=sc, isError=True)
     arts = []
@@ -133,3 +135,16 @@ def compact_result(sc: dict[str, Any], *, max_text: int = 4000) -> Any:
     if len(texto) > max_text:
         texto = texto[:max_text] + "… (resumen recortado; el resultado completo va en structuredContent)"
     return CallToolResult(content=[TextContent(type="text", text=texto)], structuredContent=sc)
+
+
+def completitud(vistos: int, total: int | None, *, truncado: bool | None = None,
+                motivo: str | None = None) -> dict[str, Any]:
+    """Bloque `completitud` de los hechos (contrato `rt/1`): cuántos elementos se vieron de cuántos.
+
+    `truncado` se deduce si se sabe el total (`vistos < total`); si no, quien llama dice si cortó
+    (p. ej. por un tope de páginas) y por qué.
+    """
+    if vistos < 0 or (total is not None and (total < 0 or vistos > total)):
+        raise ValueError(f"completitud imposible: vistos={vistos}, total={total}")
+    cortado = (vistos < total) if total is not None else bool(truncado)
+    return {"vistos": vistos, "total": total, "truncado": cortado, **({"motivo": motivo} if motivo else {})}

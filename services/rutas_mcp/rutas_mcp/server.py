@@ -26,6 +26,7 @@ from geo_mcp_kit import (
     feature_collection,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     table,
 )
 from mcp.server.fastmcp import FastMCP
@@ -146,7 +147,7 @@ def build_app():
                              tool_scopes=SCOPES)
     if not len(keys):
         raise RuntimeError("rutas-mcp no arranca sin claves (RUTAS_MCP_KEYS)")
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="rutas-mcp")
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="rutas-mcp")
 
 
 if __name__ == "__main__":  # pragma: no cover

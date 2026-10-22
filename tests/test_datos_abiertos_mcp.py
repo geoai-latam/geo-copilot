@@ -185,3 +185,41 @@ def test_las_herramientas_dicen_los_ids_de_los_portales_y_la_busqueda_los_no_con
     assert "«bogota»" in descripciones["datos_describir"]
     sc = srv.datos_buscar("colegios", portal="datos.gov.co").structuredContent
     assert sc["facts"]["portales_no_consultados"] == ["bogota"]  # V5: concluía «no hay» mirando un solo portal
+
+
+PORTAL = {"id": "datos.gov.co"}
+
+
+def test_un_agregado_resume_todo_y_no_es_una_muestra():
+    """Terranova F1.3: `count(*)` sobre 12 149 contratos devuelve 1 fila; antes decía «vinieron 1 de
+    12149: no es el conjunto completo»."""
+    h = filas.hechos("jbjy-vk9h", PORTAL, [{"contratos": "12149"}], 12149, 5000, "ciudad='Chía'",
+                     select="count(*) as contratos, sum(valor_del_contrato) as valor_total")
+    assert h["completo"] is True and "aviso" not in h and h["filas_que_resume"] == 12149
+    assert h["completitud"] == {"vistos": 1, "total": 1, "truncado": False}
+    assert h["consulta"]["select"].startswith("count(*)")
+
+
+def test_un_agregado_con_grupos_hasta_el_tope_puede_estar_cortado():
+    h = filas.hechos("x", PORTAL, [{}] * 10, 500, 10, None, select="ciudad, count(*) group by ciudad")
+    assert h["completo"] is False and h["completitud"]["truncado"] is True and h["completitud"]["total"] is None
+
+
+def test_completitud_de_filas_normales():
+    assert filas.hechos("x", PORTAL, [{}] * 3, 3, 10, None)["completitud"] == {
+        "vistos": 3, "total": 3, "truncado": False}
+    muestra = filas.hechos("x", PORTAL, [{}] * 10, 50, 10, None)["completitud"]
+    assert muestra == {"vistos": 10, "total": 50, "truncado": True, "motivo": "max_filas=10"}
+
+
+def test_si_el_total_cambio_entre_peticiones_no_se_usa():
+    """Conteo y filas son dos peticiones: con 5 filas y un total de 4, el total no sirve."""
+    c = filas.hechos("x", PORTAL, [{}] * 5, 4, 10, None)["completitud"]
+    assert c == {"vistos": 5, "total": None, "truncado": False}
+
+
+def test_un_agregado_no_lleva_orden_por_id(portal):
+    """Terranova (canario SECOP): `$order=:id` con count/sum da HTTP 400 en SODA («not in group by»)."""
+    srv.datos_consultar("g8hy-gwg8", select="count(*) as n")
+    q = [p for u, p in portal if u.endswith(".json") and "$select" in p][0]
+    assert "$order" not in q and q["$select"] == "count(*) as n"

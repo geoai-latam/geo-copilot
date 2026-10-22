@@ -29,6 +29,7 @@ from geo_mcp_kit import (
     compact_result,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     table,
 )
 from geo_mcp_kit import area as areas
@@ -152,7 +153,7 @@ def datos_consultar(id: str, portal: str = "datos.gov.co", select: str | None = 
             zona, columna_geo, lat, lon)) if w) or None
         datos, total = socrata.consultar(p["dominio"], id, select=select, where=filtro, order=order,
                                          maximo=max_filas, geojson=bool(columna_geo))
-        hechos = filas.hechos(id, p, datos, total, max_filas, filtro)
+        hechos = filas.hechos(id, p, datos, total, max_filas, filtro, select=select)
         if not (columna_geo or (lat and lon)):
             return geo_result([table(sorted({k for f in datos for k in f}), datos)], facts=hechos)
         fc = ({"type": "FeatureCollection", "features": datos} if columna_geo
@@ -202,7 +203,7 @@ def build_app():
         raise RuntimeError("datos-abiertos-mcp no arranca sin claves (DATOS_MCP_KEYS)")
     portales()  # un DATOS_PORTALES roto se ve al arrancar
     rutas = (resultados.ruta("datos_consultar"),)
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="datos-abiertos-mcp", routes=rutas)
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="datos-abiertos-mcp", routes=rutas)
 
 
 if __name__ == "__main__":  # pragma: no cover

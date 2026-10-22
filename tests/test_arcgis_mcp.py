@@ -44,7 +44,8 @@ def test_la_lista_de_dominios_restringe_si_se_configura():
 
 def test_la_tool_devuelve_el_rechazo_como_error_legible(monkeypatch):
     out = srv.arcgis_query_features("http://169.254.169.254/arcgis/rest/services/x/FeatureServer/0")
-    assert out.isError and set(out.structuredContent) == {"error"} and "IP interna" in out.content[0].text
+    assert out.isError and "IP interna" in out.content[0].text
+    assert out.structuredContent == {"error": out.content[0].text, "codigo": "parametro_invalido"}
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +128,9 @@ def test_trae_todo_paginando_con_el_tope_del_servicio_y_orden_estable(mock_http)
     fc, hechos = rest.consultar(CAPA, where="SECTOR = 'OFICIAL'", bbox=[-75, 4, -73, 5], out_fields=["NOMBRE"])
     assert len(fc["features"]) == 5 and hechos["completo"] is True and hechos["total_en_servicio"] == 5
     assert "aviso" not in hechos
+    assert hechos["completitud"] == {"vistos": 5, "total": 5, "truncado": False}
+    assert hechos["consulta"] == {"url": CAPA, "where": "SECTOR = 'OFICIAL'", "bbox": [-75, 4, -73, 5],
+                                  "out_fields": ["NOMBRE"], "max_features": 2000}
     paginas = [q for p, q in reg if p.endswith("/query") and "resultOffset" in q]
     assert sorted(q["resultOffset"] for q in paginas) == ["0", "2", "4"]  # en paralelo: el orden de llegada varía
     q = paginas[0]  # el filtro va AL SERVICIO
@@ -140,22 +144,58 @@ def test_una_muestra_se_declara_muestra(mock_http):
     fc, hechos = rest.consultar(CAPA, max_features=10)
     assert len(fc["features"]) == 10 and hechos["completo"] is False
     assert "MUESTRA" in hechos["aviso"] and "10 de 50" in hechos["aviso"]
+    assert hechos["completitud"] == {"vistos": 10, "total": 50, "truncado": True, "motivo": "max_features=10"}
 
 
 def test_errores_que_se_pueden_corregir(mock_http):
     mock_http(_servicio(3, 10, geometria=None))
-    with pytest.raises(rest.ErrorArcGIS, match="no tiene geometría"):
-        rest.consultar(CAPA)
-    with pytest.raises(rest.ErrorArcGIS, match="es imagen"):
-        rest.consultar("https://x.org/arcgis/rest/services/Orto/ImageServer")
-    with pytest.raises(rest.ErrorArcGIS, match="bbox"):
-        rest.consultar(CAPA, bbox=[-75, 4, -73])
+    for llamada, texto in ((lambda: rest.consultar(CAPA), "no tiene geometría"),
+                           (lambda: rest.consultar("https://x.org/arcgis/rest/services/Orto/ImageServer"), "es imagen"),
+                           (lambda: rest.consultar(CAPA, bbox=[-75, 4, -73]), "bbox")):
+        with pytest.raises(rest.ErrorArcGIS, match=texto) as exc:
+            llamada()
+        assert exc.value.codigo == "parametro_invalido"
 
     def error(req):
         return httpx.Response(200, json={"error": {"code": 400, "message": "Invalid where", "details": ["campo X"]}})
     mock_http(error)
-    with pytest.raises(rest.ErrorArcGIS, match="Invalid where.*campo X"):
+    with pytest.raises(rest.ErrorArcGIS, match="Invalid where.*campo X") as exc:
         rest.consultar(CAPA)
+    assert exc.value.codigo == "parametro_invalido"
+
+
+@pytest.mark.parametrize(("respuesta", "codigo", "reintentar"), [
+    (httpx.Response(503), "fuente_no_disponible", 5),
+    (httpx.Response(429), "fuente_no_disponible", 5),
+    (httpx.Response(404), "fuente_respuesta_invalida", None),
+    (httpx.Response(200, text="<html>mantenimiento</html>"), "fuente_respuesta_invalida", None),
+    (httpx.Response(200, json={"error": {"code": 500, "message": "Error invoking service"}}),
+     "fuente_no_disponible", 5),
+    (httpx.Response(200, json={"error": {"code": 498, "message": "Invalid token"}}),
+     "fuente_respuesta_invalida", None),
+])
+def test_los_errores_de_la_fuente_llevan_su_codigo(mock_http, respuesta, codigo, reintentar):
+    mock_http(lambda req: respuesta)
+    with pytest.raises(rest.ErrorArcGIS) as exc:
+        rest.consultar(CAPA)
+    assert (exc.value.codigo, exc.value.reintentar_en_s) == (codigo, reintentar)
+
+
+def test_sin_red_y_tiempo_agotado_llevan_su_codigo(mock_http):
+    def sin_red(req):
+        raise httpx.ConnectError("no route", request=req)
+    mock_http(sin_red)
+    with pytest.raises(rest.ErrorArcGIS) as exc:
+        rest.consultar(CAPA)
+    assert exc.value.codigo == "fuente_no_disponible"
+    assert rest.TiempoAgotado("lento").codigo == "fuente_lenta"
+
+
+def test_la_tool_devuelve_el_codigo_estable(mock_http):
+    mock_http(lambda req: httpx.Response(503))
+    out = srv.arcgis_query_features(CAPA)
+    assert out.isError and out.structuredContent["codigo"] == "fuente_no_disponible"
+    assert out.structuredContent["reintentar_en_s"] == 5
 
 
 def test_la_tool_devuelve_una_capa_en_4326_con_sus_hechos(mock_http):
@@ -526,3 +566,27 @@ def test_lo_que_cabe_en_una_pagina_se_reparte_entre_las_que_van_a_la_vez(mock_ht
     assert len(fc["features"]) == 300
     paginas = sorted(int(q["resultOffset"]) for p, q in reg if p.endswith("/query") and "resultOffset" in q)
     assert len(paginas) == rest.PAGINAS_EN_PARALELO and paginas[0] == 0
+
+
+@pytest.mark.parametrize(("geometria", "esperado"), [
+    ("completa", {"returnGeometry": "true", "geometryPrecision": "7"}),
+    ("simplificada", {"returnGeometry": "true", "maxAllowableOffset": "0.0005"}),
+    ("ninguna", {"returnGeometry": "false"}),
+])
+def test_la_geometria_se_pide_como_se_dice(mock_http, geometria, esperado):
+    """Terranova: los polígonos del RUNAP, completos, tardaban más de 90 s en un punto."""
+    reg: list = []
+    mock_http(_servicio(3, 1000, registro=reg))
+    fc, hechos = rest.consultar(CAPA, geometria=geometria)
+    q = [q for p, q in reg if p.endswith("/query") and "resultOffset" in q][0]
+    assert {k: q.get(k) for k in esperado} == esperado
+    assert len(fc["features"]) == 3
+
+
+def test_sin_geometria_los_elementos_no_se_pierden(mock_http):
+    mock_http(_servicio(3, 1000))
+    fc, hechos = rest.consultar(CAPA, geometria="ninguna")
+    assert len(fc["features"]) == 3 and "sin_geometria" not in hechos
+    with pytest.raises(rest.ErrorArcGIS, match="geometria") as exc:
+        rest.consultar(CAPA, geometria="toda")
+    assert exc.value.codigo == "parametro_invalido"

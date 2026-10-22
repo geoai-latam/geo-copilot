@@ -14,6 +14,7 @@ import logging
 from typing import Any
 
 import httpx
+from geo_mcp_kit import completitud
 
 from arcgis_mcp.hub import texto_plano
 from arcgis_mcp.red import cliente
@@ -31,7 +32,17 @@ MAX_ELEMENTOS = 200_000
 
 
 class ErrorArcGIS(Exception):
-    """Un error que quien llama puede entender o corregir (servicio caído, where inválido…)."""
+    """Un error que quien llama puede entender o corregir (servicio caído, where inválido…).
+
+    `codigo` es el código estable del kit (`geo_mcp_kit.CODIGOS`): por defecto, la fuente respondió
+    algo que no sirve; los errores de la petición y las caídas lo dicen al crearse.
+    """
+
+    def __init__(self, mensaje: str, codigo: str = "fuente_respuesta_invalida",
+                 reintentar_en_s: int | None = None) -> None:
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.reintentar_en_s = reintentar_en_s
 
 
 def tipo_de_url(url: str) -> str:
@@ -62,6 +73,9 @@ def url_de_capa(url: str) -> str:
 class TiempoAgotado(ErrorArcGIS):
     """El servicio no terminó a tiempo (no es que no exista): con páginas menores suele bastar."""
 
+    def __init__(self, mensaje: str) -> None:
+        super().__init__(mensaje, "fuente_lenta")
+
 
 PAGINA_MINIMA = 50
 TIMEOUT_CONSULTA_S = 45.0
@@ -73,12 +87,17 @@ def _json(http: httpx.Client, url: str, params: dict | None = None) -> dict:
         r.raise_for_status()
         datos = r.json()
     except httpx.HTTPStatusError as exc:
-        raise ErrorArcGIS(f"el servicio respondió HTTP {exc.response.status_code}") from exc
+        estado = exc.response.status_code
+        caido = estado >= 500 or estado == 429
+        raise ErrorArcGIS(f"el servicio respondió HTTP {estado}",
+                          "fuente_no_disponible" if caido else "fuente_respuesta_invalida",
+                          5 if caido else None) from exc
     except httpx.TimeoutException as exc:
         # contactó, pero no terminó a tiempo (página pesada): quien pagina puede pedir páginas menores
         raise TiempoAgotado(f"el servicio no respondió a tiempo ({type(exc).__name__})") from exc
     except httpx.HTTPError as exc:
-        raise ErrorArcGIS(f"no se pudo contactar el servicio ({type(exc).__name__})") from exc
+        raise ErrorArcGIS(f"no se pudo contactar el servicio ({type(exc).__name__})",
+                          "fuente_no_disponible", 5) from exc
     except ValueError as exc:
         raise ErrorArcGIS("el servicio no devolvió JSON") from exc
     if not isinstance(datos, dict):
@@ -86,7 +105,13 @@ def _json(http: httpx.Client, url: str, params: dict | None = None) -> dict:
     if isinstance(datos.get("error"), dict):
         e = datos["error"]
         detalle = "; ".join(str(d) for d in (e.get("details") or []) if d)[:300]
-        raise ErrorArcGIS(f"ArcGIS: {e.get('message', 'error')}" + (f" ({detalle})" if detalle else ""))
+        # 400 de ArcGIS = la petición (un where o un campo que no existe); 5xx («Error invoking
+        # service», el proxy de utility.arcgis.com caído) = la fuente no está; otro, respuesta rara
+        numero = e.get("code") if isinstance(e.get("code"), int) else 0
+        codigo = ("parametro_invalido" if numero == 400 else
+                  "fuente_no_disponible" if numero >= 500 else "fuente_respuesta_invalida")
+        raise ErrorArcGIS(f"ArcGIS: {e.get('message', 'error')}" + (f" ({detalle})" if detalle else ""), codigo,
+                          5 if codigo == "fuente_no_disponible" else None)
     return datos
 
 
@@ -333,13 +358,17 @@ def _paginas_en_paralelo(http: httpx.Client, capa: str, base: dict, objetivo: in
     return [f for pagina in resultados for f in pagina], cortado
 
 
-def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = None,  # noqa: C901, PLR0912, PLR0915
-              out_fields: list[str] | None = None, max_features: int = 2000) -> tuple[dict, dict]:
+def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = None,  # noqa: C901, PLR0912
+              out_fields: list[str] | None = None, max_features: int = 2000,
+              geometria: str = "completa") -> tuple[dict, dict]:
     """(FeatureCollection EPSG:4326, hechos). Los hechos dicen cuántos hay y cuántos vinieron."""
     if tipo_de_url(url) == "ImageServer":
-        raise ErrorArcGIS("un ImageServer es imagen: no tiene elementos que consultar (descríbelo)")
+        raise ErrorArcGIS("un ImageServer es imagen: no tiene elementos que consultar (descríbelo)",
+                          "parametro_invalido")
     if bbox is not None and (len(bbox) != 4 or not extent_valido(bbox)):
-        raise ErrorArcGIS("bbox debe ser [minx, miny, maxx, maxy] en EPSG:4326")
+        raise ErrorArcGIS("bbox debe ser [minx, miny, maxx, maxy] en EPSG:4326", "parametro_invalido")
+    if geometria not in GEOMETRIA:
+        raise ErrorArcGIS(f"geometria debe ser una de {sorted(GEOMETRIA)}", "parametro_invalido")
     capa = url_de_capa(url)
     tope = max(1, min(int(max_features), MAX_ELEMENTOS))
     filtro = (where or "").strip() or "1=1"
@@ -347,12 +376,12 @@ def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = 
         meta = _json(http, capa)
         if not meta.get("geometryType"):
             raise ErrorArcGIS("esa capa no tiene geometría (¿es una tabla o un grupo de capas?); "
-                              "describe el servicio para ver sus capas")
+                              "describe el servicio para ver sus capas", "parametro_invalido")
         total = _contar(http, capa, filtro, bbox)
         por_pagina = min(TAMANO_PAGINA, int(meta.get("maxRecordCount") or TAMANO_PAGINA))
         # 7 decimales en grados ≈ 1 cm: sin esto ArcGIS manda 15 y una capa de 116 municipios pesaba 15 MB
         base = {"where": filtro, "outFields": ",".join(out_fields) if out_fields else "*", "outSR": "4326",
-                "returnGeometry": "true", "geometryPrecision": "7", **_filtro_bbox(bbox)}
+                **GEOMETRIA[geometria], **_filtro_bbox(bbox)}
         # orden estable: sin él ArcGIS no garantiza el mismo orden entre páginas (duplicados y huecos)
         oid = _oid(meta)
         if oid and (total is None or total > por_pagina):
@@ -387,23 +416,55 @@ def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = 
                 cortado_por_paginas = True
                 logger.warning("se alcanzó el máximo de %s páginas en %s", MAX_PAGINAS, capa)
     crudos = crudos[:tope]
+    feats, sin_geometria = _rasgos(crudos, con_geometria=geometria != "ninguna")
+    hechos = _hechos(meta, capa, filtro, bbox, out_fields, tope, total, len(crudos), len(feats),
+                     sin_geometria, cortado_por_paginas)
+    return {"type": "FeatureCollection", "features": feats}, hechos
+
+
+# Cómo viaja la geometría. «simplificada» (~55 m) basta para pintar áreas grandes (un parque, un
+# resguardo) y evita bajar polígonos de decenas de MB; no sirve para predios. «ninguna», solo atributos.
+GEOMETRIA: dict[str, dict[str, str]] = {
+    "completa": {"returnGeometry": "true", "geometryPrecision": "7"},
+    "simplificada": {"returnGeometry": "true", "geometryPrecision": "5", "maxAllowableOffset": "0.0005"},
+    "ninguna": {"returnGeometry": "false"},
+}
+
+
+def _rasgos(crudos: list[dict], *, con_geometria: bool) -> tuple[list[dict], int]:
+    """Features GeoJSON y cuántos vinieron sin geometría (sin pedirla, salen con `geometry: null`)."""
     feats, sin_geometria = [], 0
     for f in crudos:
-        g = geometria_geojson(f.get("geometry"))
-        if g is None:
+        g = geometria_geojson(f.get("geometry")) if con_geometria else None
+        if g is None and con_geometria:
             sin_geometria += 1
             continue
         feats.append({"type": "Feature", "geometry": g, "properties": f.get("attributes") or {}})
-    completo = total is not None and len(crudos) >= total and not cortado_por_paginas
+    return feats, sin_geometria
+
+
+def _hechos(meta: dict, capa: str, filtro: str, bbox: list[float] | None, out_fields: list[str] | None,
+            tope: int, total: int | None, vistos: int, traidos: int, sin_geometria: int,
+            cortado_por_paginas: bool) -> dict[str, Any]:
+    """Los hechos de una consulta: cuántos hay, cuántos vinieron y, para `rt/1`, la consulta y
+    su completitud (`vistos` cuenta también los que vinieron sin geometría)."""
+    completo = total is not None and vistos >= total and not cortado_por_paginas
     hechos: dict[str, Any] = {
         "capa": meta.get("name") or capa.rsplit("/", 2)[-2], "url": capa, "filtro": filtro,
-        **({"bbox": bbox} if bbox else {}), "total_en_servicio": total, "traidos": len(feats),
+        **({"bbox": bbox} if bbox else {}), "total_en_servicio": total, "traidos": traidos,
         "completo": completo,
         "tipo_geometria": str(meta.get("geometryType")).replace("esriGeometry", ""),
     }
+    hechos["consulta"] = {"url": capa, "where": filtro, **({"bbox": bbox} if bbox else {}),
+                          "out_fields": out_fields or ["*"], "max_features": tope}
+    hechos["completitud"] = completitud(
+        vistos, total, truncado=cortado_por_paginas or vistos >= tope,
+        motivo=("tope de páginas" if cortado_por_paginas else
+                f"max_features={tope}" if vistos >= tope and (total is None or vistos < total)
+                else None))
     if sin_geometria:
         hechos["sin_geometria"] = sin_geometria
     if not completo:
-        hechos["aviso"] = (f"es una MUESTRA: vinieron {len(feats)} de {total if total is not None else '¿?'}; "
+        hechos["aviso"] = (f"es una MUESTRA: vinieron {traidos} de {total if total is not None else '¿?'}; "
                            "acota con where/bbox o sube max_features")
-    return {"type": "FeatureCollection", "features": feats}, hechos
+    return hechos
