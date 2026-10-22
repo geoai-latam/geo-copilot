@@ -1,0 +1,4 @@
+# web-mcp — APIs web públicas (el kit se instala aparte en el Dockerfile, con su extra `red`)
+mcp>=1.28,<2
+uvicorn>=0.30
+httpx>=0.27,<1
