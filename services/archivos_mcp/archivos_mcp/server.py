@@ -39,6 +39,7 @@ from geo_mcp_kit import (
     feature_ref,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     respond_json,
     stats,
 )
@@ -412,7 +413,7 @@ def build_app():
         raise RuntimeError("archivos-mcp no arranca sin claves (ARCHIVOS_MCP_KEYS)")
     ruta = ExtraRoute(lambda p: (m.group(1) if (m := _RESULTADO_RE.match(p)) else None), _servir_resultado,
                       requires_tool="archivos_query", weight=0.2)
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="archivos-mcp", routes=(ruta,))
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="archivos-mcp", routes=(ruta,))
 
 
 if __name__ == "__main__":  # pragma: no cover

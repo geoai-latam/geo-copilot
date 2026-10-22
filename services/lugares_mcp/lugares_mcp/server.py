@@ -33,6 +33,7 @@ from geo_mcp_kit import (
     feature_collection,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
 )
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -252,7 +253,7 @@ def build_app():
                              tool_scopes=SCOPES)
     if not len(keys):
         raise RuntimeError("lugares-mcp no arranca sin claves (LUGARES_MCP_KEYS)")
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="lugares-mcp")
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="lugares-mcp")
 
 
 if __name__ == "__main__":  # pragma: no cover

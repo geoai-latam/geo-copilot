@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import Any
 
 import psycopg
-from geo_mcp_kit import GeoMcpAuth, KeyRing, RateLimiter
+from geo_mcp_kit import GeoMcpAuth, KeyRing, RateLimiter, herramientas_en_hilo
 from geo_sql_guard import analizar
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -105,7 +105,7 @@ def build_app():
                              tool_scopes=SCOPES)
     if not len(keys):
         raise RuntimeError("almacen-demo no arranca sin claves (ALMACEN_MCP_KEYS)")
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="almacen-demo")
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="almacen-demo")
 
 
 if __name__ == "__main__":  # pragma: no cover
