@@ -596,3 +596,22 @@ def test_desanidar_deja_igual_lo_que_no_es_un_sobre():
     sin_geo = {"contrato": "rt/1", "estado": "no_encontrado", "geo_result": None}
     assert _desanidar_geo_result(sin_geo) is sin_geo
     assert _desanidar_geo_result(None) is None and _desanidar_geo_result([1]) == [1]
+
+
+@pytest.mark.asyncio
+async def test_un_error_con_codigo_del_kit_es_un_fallo():
+    """F1.3 de Terranova: el kit agrega `codigo` al error; antes solo `{"error"}` contaba como fallo."""
+    from geo_copilot.platform.mcp import hub as h
+
+    class Con:
+        async def call_tool(self, tool, args):
+            return SimpleNamespace(content=[], isError=False, structuredContent={
+                "error": "el servicio respondió HTTP 503", "codigo": "fuente_no_disponible", "reintentar_en_s": 5})
+
+    cfg = _config("http://x/mcp").servers[0]
+    hub = McpHub(McpConfig.model_validate({"servers": []}))
+    hub.conexiones = {cfg.id: Con()}
+    est = h.EstadoTool(cfg.id, "q", f"{cfg.id}__q", True, None, "read", "h", {"outputs": []},
+                       esquema={"type": "object", "properties": {}})
+    out = await h.ejecutar_tool(hub, cfg, "q", est, {"session_id": "s"}, {})
+    assert out.success is False and "HTTP 503" in out.observation

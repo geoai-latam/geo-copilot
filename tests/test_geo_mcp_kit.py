@@ -109,9 +109,10 @@ def test_tool_runner_timeout_y_errores_honestos():
 
     r = ToolRunner(timeout_s=5, service="x", expected_errors=(MiError,))
     assert r.run(lambda a: {"v": a}, 2) == {"v": 2}
-    assert "tiempo máximo de 0 s" in r.run(lenta, timeout_s=0.1)["error"]
-    assert r.run(falla_esperada) == {"error": "escena sin datos"}
-    assert r.run(falla_rara) == {"error": "Fallo interno del servicio x: KeyError"}
+    lento = r.run(lenta, timeout_s=0.1)
+    assert "tiempo máximo de 0 s" in lento["error"] and lento["codigo"] == "fuente_lenta"
+    assert r.run(falla_esperada) == {"error": "escena sin datos", "codigo": "parametro_invalido"}
+    assert r.run(falla_rara) == {"error": "Fallo interno del servicio x: KeyError", "codigo": "error_interno"}
 
 
 def test_contrato_geomcp():
@@ -182,3 +183,56 @@ def test_un_fallo_del_proveedor_externo_no_se_presenta_como_interno():
     assert "ConnectTimeout" in r.run(sin_red)["error"] and "reintenta" in r.run(sin_red)["error"]
     assert "403" in r.run(prohibido)["error"] and "reintenta" not in r.run(prohibido)["error"]
     assert r.run(nuestro)["error"] == "Fallo interno del servicio imagery: KeyError"
+    # códigos estables (rt/1): caído o sin red se reintenta; otro 4xx es la fuente; lo nuestro, interno
+    assert r.run(caido)["codigo"] == "fuente_no_disponible" and r.run(caido)["reintentar_en_s"] == 5
+    assert r.run(sin_red)["codigo"] == "fuente_no_disponible"
+    assert r.run(prohibido)["codigo"] == "fuente_respuesta_invalida" and "reintentar_en_s" not in r.run(prohibido)
+    assert r.run(nuestro)["codigo"] == "error_interno"
+
+
+def test_una_excepcion_esperada_declara_su_codigo():
+    from geo_mcp_kit import ToolRunner
+
+    class Caida(Exception):
+        codigo = "fuente_no_disponible"
+        reintentar_en_s = 30
+
+    def falla():
+        raise Caida("el servicio de la entidad está en mantenimiento")
+
+    r = ToolRunner(timeout_s=5, service="x", expected_errors=(Caida,))
+    assert r.run(falla) == {"error": "el servicio de la entidad está en mantenimiento",
+                            "codigo": "fuente_no_disponible", "reintentar_en_s": 30}
+
+
+def test_error_y_es_error():
+    from geo_mcp_kit import CODIGOS, compact_result, error, es_error
+
+    e = error("no está", "no_existe")
+    assert es_error(e) and es_error({"error": "viejo, sin código"})
+    assert not es_error({"error": "x", "facts": {}}) and not es_error({"geo_result": "1"})
+    with pytest.raises(ValueError, match="desconocido"):
+        error("x", "inventado")
+    assert "saldo_agotado" in CODIGOS and len(CODIGOS) == 12
+    res = compact_result(e)
+    assert res.isError and res.structuredContent == e and res.content[0].text == "no está"
+
+
+@pytest.mark.parametrize(("vistos", "total", "truncado", "esperado"), [
+    (5, 5, None, False), (3, 10, None, True), (0, 0, None, False),
+    (7, None, None, False), (2000, None, True, True),
+])
+def test_completitud(vistos, total, truncado, esperado):
+    from geo_mcp_kit import completitud
+
+    c = completitud(vistos, total, truncado=truncado)
+    assert c == {"vistos": vistos, "total": total, "truncado": esperado}
+
+
+def test_completitud_imposible():
+    from geo_mcp_kit import completitud
+
+    with pytest.raises(ValueError):
+        completitud(6, 5)
+    with pytest.raises(ValueError):
+        completitud(-1, None)
