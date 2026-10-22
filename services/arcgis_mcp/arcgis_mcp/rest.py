@@ -375,8 +375,15 @@ def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = 
     with cliente(capa, timeout=TIMEOUT_CONSULTA_S) as http:
         meta = _json(http, capa)
         if not meta.get("geometryType"):
-            raise ErrorArcGIS("esa capa no tiene geometría (¿es una tabla o un grupo de capas?); "
-                              "describe el servicio para ver sus capas", "parametro_invalido")
+            # Terranova F5: las tablas (p. ej. REGISTRO_1/2 de la base catastral) se consultan por
+            # atributos, sin geometría ni bbox; un grupo de capas sigue sin ser consultable
+            if meta.get("type") != "Table":
+                raise ErrorArcGIS("esa capa no tiene geometría (es un grupo de capas u otra cosa); "
+                                  "describe el servicio para ver sus capas", "parametro_invalido")
+            if bbox is not None:
+                raise ErrorArcGIS("una tabla no tiene geometría: filtra con `where`, no con `bbox`",
+                                  "parametro_invalido")
+            geometria = "ninguna"
         total = _contar(http, capa, filtro, bbox)
         por_pagina = min(TAMANO_PAGINA, int(meta.get("maxRecordCount") or TAMANO_PAGINA))
         # 7 decimales en grados ≈ 1 cm: sin esto ArcGIS manda 15 y una capa de 116 municipios pesaba 15 MB
@@ -453,7 +460,7 @@ def _hechos(meta: dict, capa: str, filtro: str, bbox: list[float] | None, out_fi
         "capa": meta.get("name") or capa.rsplit("/", 2)[-2], "url": capa, "filtro": filtro,
         **({"bbox": bbox} if bbox else {}), "total_en_servicio": total, "traidos": traidos,
         "completo": completo,
-        "tipo_geometria": str(meta.get("geometryType")).replace("esriGeometry", ""),
+        "tipo_geometria": str(meta.get("geometryType") or "tabla").replace("esriGeometry", ""),
     }
     hechos["consulta"] = {"url": capa, "where": filtro, **({"bbox": bbox} if bbox else {}),
                           "out_fields": out_fields or ["*"], "max_features": tope}

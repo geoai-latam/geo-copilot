@@ -164,6 +164,31 @@ def test_errores_que_se_pueden_corregir(mock_http):
     assert exc.value.codigo == "parametro_invalido"
 
 
+def test_una_tabla_se_consulta_por_atributos(mock_http):
+    """Terranova F5: REGISTRO_1/2 de la base catastral son tablas: sin geometría ni bbox."""
+    reg: list = []
+
+    def tabla(req: httpx.Request) -> httpx.Response:
+        q = {k: v[0] for k, v in parse_qs(urlparse(str(req.url)).query).items()}
+        reg.append(q)
+        if req.url.path.endswith("/query") and q.get("returnCountOnly") == "true":
+            return httpx.Response(200, json={"count": 2})
+        if req.url.path.endswith("/query"):
+            return httpx.Response(200, json={"features": [{"attributes": {"OBJECTID": i, "DIRECCION": f"K {i}"}}
+                                                          for i in (1, 2)]})
+        return httpx.Response(200, json={"name": "REGISTRO_1", "type": "Table", "objectIdField": "OBJECTID",
+                                         "maxRecordCount": 2000, "fields": []})
+
+    mock_http(tabla)
+    fc, hechos = rest.consultar(CAPA, where="NUMERO_PREDIAL = '1'")
+    assert [f["properties"]["DIRECCION"] for f in fc["features"]] == ["K 1", "K 2"]
+    assert all(f["geometry"] is None for f in fc["features"]) and hechos["tipo_geometria"] == "tabla"
+    assert hechos["completitud"] == {"vistos": 2, "total": 2, "truncado": False}
+    assert all(q.get("returnGeometry") == "false" for q in reg if "resultOffset" in q)
+    with pytest.raises(rest.ErrorArcGIS, match="no con `bbox`"):
+        rest.consultar(CAPA, bbox=[-75, 4, -73, 5])
+
+
 @pytest.mark.parametrize(("respuesta", "codigo", "reintentar"), [
     (httpx.Response(503), "fuente_no_disponible", 5),
     (httpx.Response(429), "fuente_no_disponible", 5),
