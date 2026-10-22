@@ -62,6 +62,11 @@ def _recortar(fc: dict, geom: Any) -> dict[str, Any]:
     return {} if geom is None else {"filtro_area": areas.recortar(fc, geom)}
 
 
+def _es_area(ref: dict | None) -> bool:
+    feats = (ref or {}).get("features") or []
+    return any((f.get("geometry") or {}).get("type") not in (None, "Point") for f in feats)
+
+
 @mcp.tool(
     description=("Sismos del catálogo de la USGS en una zona (`area` = una capa de la sesión, o `bbox`) y periodo "
                  "(`desde`/`hasta` AAAA-MM-DD; por defecto el último año), con `magnitud_min` (por defecto 2.5): "
@@ -139,7 +144,8 @@ def amenazas_caudal(punto: dict | None = None, lon: float | None = None, lat: fl
     description=("Clima diario de un punto: temperatura media/máx./mín. (°C) y precipitación (mm) entre `desde` y "
                  "`hasta` (AAAA-MM-DD), con resumen mensual. `fuente`: era5 (Open-Meteo; si `hasta` es futuro, "
                  "pronóstico ≤16 días) o nasa_power. Cada fuente modela el punto a SU elevación (se dice: en "
-                 "montaña cambia mucho la temperatura). El punto: referencia o `lon`/`lat`."),
+                 "montaña cambia mucho la temperatura). El punto: referencia o `lon`/`lat`; no hay `area`: para un "
+                 "municipio pasa su límite en `punto` y se usa un punto INTERIOR (no la cabecera; mejor su `lon`/`lat`)."),
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
     meta=geo_meta(inputs={"punto": ["geometry", "layer_ref"]}, outputs=["table"], cost="low"),
 )
@@ -148,6 +154,8 @@ def clima_serie(desde: str, hasta: str, punto: dict | None = None, lon: float | 
     def consultar() -> dict:
         x, y = resumen.punto(punto, lon, lat)
         filas, hechos = clima.serie(x, y, desde, hasta, fuente)
+        if _es_area(punto):  # V5: con el límite de Yopal se dijo «el centro de Yopal»; es un punto rural
+            hechos["punto_de"] = "un punto interior del límite, no la cabecera ni el promedio del área"
         hechos["completitud"] = completitud(len(filas), len(filas))
         columnas = ["fecha", "t_media_c", "t_max_c", "t_min_c", "precipitacion_mm"]
         return geo_result([table(columnas, filas)], facts=hechos)

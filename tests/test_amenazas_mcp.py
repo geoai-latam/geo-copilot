@@ -95,6 +95,12 @@ def test_clima_power_ignora_el_sin_dato_y_resume_por_mes(monkeypatch):
     assert f["mensual"] == [{"mes": "2023-01", "dias": 2, "t_media_c": 17.5, "precipitacion_total_mm": 6.0},
                             {"mes": "2023-02", "dias": 1, "t_media_c": None, "precipitacion_total_mm": 2.0}]
 
+    assert "punto_de" not in f
+    limite = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": {
+        "type": "Polygon", "coordinates": [[[-74.2, 4.5], [-74.0, 4.5], [-74.0, 4.7], [-74.2, 4.7], [-74.2, 4.5]]]}}]}
+    f = srv.clima_serie("2023-01-01", "2023-02-01", punto=limite, fuente="nasa_power").structuredContent["facts"]
+    assert "no la cabecera" in f["punto_de"]  # V5: se dijo «el centro de Yopal» de un punto rural
+
 
 def test_clima_valida_fechas_fuente_y_pronostico():
     assert "AAAA-MM-DD" in srv.clima_serie("ayer", "hoy", lon=-74, lat=4.6).structuredContent["error"]
