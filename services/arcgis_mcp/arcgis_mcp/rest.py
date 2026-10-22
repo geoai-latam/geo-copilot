@@ -105,9 +105,13 @@ def _json(http: httpx.Client, url: str, params: dict | None = None) -> dict:
     if isinstance(datos.get("error"), dict):
         e = datos["error"]
         detalle = "; ".join(str(d) for d in (e.get("details") or []) if d)[:300]
-        # 400 de ArcGIS = la petición (un where o un campo que no existe); otro código, la fuente
-        codigo = "parametro_invalido" if e.get("code") == 400 else "fuente_respuesta_invalida"
-        raise ErrorArcGIS(f"ArcGIS: {e.get('message', 'error')}" + (f" ({detalle})" if detalle else ""), codigo)
+        # 400 de ArcGIS = la petición (un where o un campo que no existe); 5xx («Error invoking
+        # service», el proxy de utility.arcgis.com caído) = la fuente no está; otro, respuesta rara
+        numero = e.get("code") if isinstance(e.get("code"), int) else 0
+        codigo = ("parametro_invalido" if numero == 400 else
+                  "fuente_no_disponible" if numero >= 500 else "fuente_respuesta_invalida")
+        raise ErrorArcGIS(f"ArcGIS: {e.get('message', 'error')}" + (f" ({detalle})" if detalle else ""), codigo,
+                          5 if codigo == "fuente_no_disponible" else None)
     return datos
 
 
@@ -355,13 +359,16 @@ def _paginas_en_paralelo(http: httpx.Client, capa: str, base: dict, objetivo: in
 
 
 def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = None,  # noqa: C901, PLR0912
-              out_fields: list[str] | None = None, max_features: int = 2000) -> tuple[dict, dict]:
+              out_fields: list[str] | None = None, max_features: int = 2000,
+              geometria: str = "completa") -> tuple[dict, dict]:
     """(FeatureCollection EPSG:4326, hechos). Los hechos dicen cuántos hay y cuántos vinieron."""
     if tipo_de_url(url) == "ImageServer":
         raise ErrorArcGIS("un ImageServer es imagen: no tiene elementos que consultar (descríbelo)",
                           "parametro_invalido")
     if bbox is not None and (len(bbox) != 4 or not extent_valido(bbox)):
         raise ErrorArcGIS("bbox debe ser [minx, miny, maxx, maxy] en EPSG:4326", "parametro_invalido")
+    if geometria not in GEOMETRIA:
+        raise ErrorArcGIS(f"geometria debe ser una de {sorted(GEOMETRIA)}", "parametro_invalido")
     capa = url_de_capa(url)
     tope = max(1, min(int(max_features), MAX_ELEMENTOS))
     filtro = (where or "").strip() or "1=1"
@@ -374,7 +381,7 @@ def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = 
         por_pagina = min(TAMANO_PAGINA, int(meta.get("maxRecordCount") or TAMANO_PAGINA))
         # 7 decimales en grados ≈ 1 cm: sin esto ArcGIS manda 15 y una capa de 116 municipios pesaba 15 MB
         base = {"where": filtro, "outFields": ",".join(out_fields) if out_fields else "*", "outSR": "4326",
-                "returnGeometry": "true", "geometryPrecision": "7", **_filtro_bbox(bbox)}
+                **GEOMETRIA[geometria], **_filtro_bbox(bbox)}
         # orden estable: sin él ArcGIS no garantiza el mismo orden entre páginas (duplicados y huecos)
         oid = _oid(meta)
         if oid and (total is None or total > por_pagina):
@@ -409,16 +416,31 @@ def consultar(url: str, *, where: str | None = None, bbox: list[float] | None = 
                 cortado_por_paginas = True
                 logger.warning("se alcanzó el máximo de %s páginas en %s", MAX_PAGINAS, capa)
     crudos = crudos[:tope]
-    feats, sin_geometria = [], 0
-    for f in crudos:
-        g = geometria_geojson(f.get("geometry"))
-        if g is None:
-            sin_geometria += 1
-            continue
-        feats.append({"type": "Feature", "geometry": g, "properties": f.get("attributes") or {}})
+    feats, sin_geometria = _rasgos(crudos, con_geometria=geometria != "ninguna")
     hechos = _hechos(meta, capa, filtro, bbox, out_fields, tope, total, len(crudos), len(feats),
                      sin_geometria, cortado_por_paginas)
     return {"type": "FeatureCollection", "features": feats}, hechos
+
+
+# Cómo viaja la geometría. «simplificada» (~55 m) basta para pintar áreas grandes (un parque, un
+# resguardo) y evita bajar polígonos de decenas de MB; no sirve para predios. «ninguna», solo atributos.
+GEOMETRIA: dict[str, dict[str, str]] = {
+    "completa": {"returnGeometry": "true", "geometryPrecision": "7"},
+    "simplificada": {"returnGeometry": "true", "geometryPrecision": "5", "maxAllowableOffset": "0.0005"},
+    "ninguna": {"returnGeometry": "false"},
+}
+
+
+def _rasgos(crudos: list[dict], *, con_geometria: bool) -> tuple[list[dict], int]:
+    """Features GeoJSON y cuántos vinieron sin geometría (sin pedirla, salen con `geometry: null`)."""
+    feats, sin_geometria = [], 0
+    for f in crudos:
+        g = geometria_geojson(f.get("geometry")) if con_geometria else None
+        if g is None and con_geometria:
+            sin_geometria += 1
+            continue
+        feats.append({"type": "Feature", "geometry": g, "properties": f.get("attributes") or {}})
+    return feats, sin_geometria
 
 
 def _hechos(meta: dict, capa: str, filtro: str, bbox: list[float] | None, out_fields: list[str] | None,
