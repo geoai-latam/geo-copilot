@@ -216,3 +216,10 @@ def test_si_el_total_cambio_entre_peticiones_no_se_usa():
     """Conteo y filas son dos peticiones: con 5 filas y un total de 4, el total no sirve."""
     c = filas.hechos("x", PORTAL, [{}] * 5, 4, 10, None)["completitud"]
     assert c == {"vistos": 5, "total": None, "truncado": False}
+
+
+def test_un_agregado_no_lleva_orden_por_id(portal):
+    """Terranova (canario SECOP): `$order=:id` con count/sum da HTTP 400 en SODA («not in group by»)."""
+    srv.datos_consultar("g8hy-gwg8", select="count(*) as n")
+    q = [p for u, p in portal if u.endswith(".json") and "$select" in p][0]
+    assert "$order" not in q and q["$select"] == "count(*) as n"

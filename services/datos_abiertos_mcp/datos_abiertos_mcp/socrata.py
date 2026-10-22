@@ -15,6 +15,8 @@ from typing import Any
 
 from geo_mcp_kit import red
 
+from datos_abiertos_mcp import filas
+
 CATALOGO = "https://api.us.socrata.com/api/catalog/v1"
 TIPOS_GEO = {"point", "location", "multipoint", "line", "multiline", "polygon", "multipolygon"}
 PAGINA = 5000
@@ -138,8 +140,10 @@ def consultar(dominio: str, ident: str, *, select: str | None, where: str | None
     salida: list[dict] = []
     while len(salida) < maximo:
         params: dict[str, Any] = {"$limit": min(PAGINA, maximo - len(salida)), "$offset": len(salida)}
-        # sin orden, las páginas de SODA no son estables (filas repetidas o saltadas): `:id` por defecto
-        params.update({k: v for k, v in (("$select", select), ("$where", where), ("$order", order or ":id")) if v})
+        # sin orden, las páginas de SODA no son estables (filas repetidas o saltadas): `:id` por defecto.
+        # Con agregados no: `:id` no está en el group by y SODA responde 400 (Terranova, canario SECOP).
+        orden = order or (None if filas.es_agregado(select) else ":id")
+        params.update({k: v for k, v in (("$select", select), ("$where", where), ("$order", orden)) if v})
         datos = _get(f"https://{dominio}/resource/{ident}.{extension}", params).json()
         pagina = datos.get("features", []) if geojson else datos
         salida += pagina
