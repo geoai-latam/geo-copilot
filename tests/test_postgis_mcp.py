@@ -106,7 +106,7 @@ def test_una_columna_que_no_existe_dice_cuales_hay(fuente_real):
     PostgreSQL solo decía que no existía. Ahora trae las columnas reales de la tabla usada."""
     res = srv.sql_query("cat", "SELECT * FROM catastro.lotes WHERE municipio = 'X'")
     out = res.structuredContent
-    assert res.isError and set(out) == {"error"}
+    assert res.isError and out["codigo"] == "parametro_invalido"  # la consulta, no la fuente (F1.3)
     assert 'column "municipio" does not exist' in out["error"]
     assert "columnas de catastro.lotes:" in out["error"] and "lotcodigo" in out["error"]
 
