@@ -272,7 +272,7 @@ def _sombra_translucida(luz: np.ndarray, fuera: np.ndarray) -> bytes:
     rgba = np.zeros((*luz.shape, 4), dtype="uint8")
     rgba[..., 3] = np.where(fuera, 0, np.clip((235.0 - luz) * 0.9, 0, 200)).astype("uint8")
     buf = io.BytesIO()
-    Image.fromarray(rgba, "RGBA").save(buf, format="PNG")
+    Image.fromarray(rgba).save(buf, format="PNG")  # (H, W, 4) uint8 → RGBA; `mode` es obsoleto
     return buf.getvalue()
 
 
