@@ -169,7 +169,9 @@ def test_errores_que_se_pueden_corregir(mock_http):
     (httpx.Response(429), "fuente_no_disponible", 5),
     (httpx.Response(404), "fuente_respuesta_invalida", None),
     (httpx.Response(200, text="<html>mantenimiento</html>"), "fuente_respuesta_invalida", None),
-    (httpx.Response(200, json={"error": {"code": 500, "message": "Unable to complete operation"}}),
+    (httpx.Response(200, json={"error": {"code": 500, "message": "Error invoking service"}}),
+     "fuente_no_disponible", 5),
+    (httpx.Response(200, json={"error": {"code": 498, "message": "Invalid token"}}),
      "fuente_respuesta_invalida", None),
 ])
 def test_los_errores_de_la_fuente_llevan_su_codigo(mock_http, respuesta, codigo, reintentar):

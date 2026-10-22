@@ -105,9 +105,13 @@ def _json(http: httpx.Client, url: str, params: dict | None = None) -> dict:
     if isinstance(datos.get("error"), dict):
         e = datos["error"]
         detalle = "; ".join(str(d) for d in (e.get("details") or []) if d)[:300]
-        # 400 de ArcGIS = la petición (un where o un campo que no existe); otro código, la fuente
-        codigo = "parametro_invalido" if e.get("code") == 400 else "fuente_respuesta_invalida"
-        raise ErrorArcGIS(f"ArcGIS: {e.get('message', 'error')}" + (f" ({detalle})" if detalle else ""), codigo)
+        # 400 de ArcGIS = la petición (un where o un campo que no existe); 5xx («Error invoking
+        # service», el proxy de utility.arcgis.com caído) = la fuente no está; otro, respuesta rara
+        numero = e.get("code") if isinstance(e.get("code"), int) else 0
+        codigo = ("parametro_invalido" if numero == 400 else
+                  "fuente_no_disponible" if numero >= 500 else "fuente_respuesta_invalida")
+        raise ErrorArcGIS(f"ArcGIS: {e.get('message', 'error')}" + (f" ({detalle})" if detalle else ""), codigo,
+                          5 if codigo == "fuente_no_disponible" else None)
     return datos
 
 
