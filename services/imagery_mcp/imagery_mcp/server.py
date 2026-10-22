@@ -20,6 +20,7 @@ from geo_mcp_kit import (
     GeoMcpAuth,
     ToolRunner,
     geo_meta,
+    herramientas_en_hilo,
     jsonrpc_tool_names,
 )
 from mcp.server.fastmcp import FastMCP
@@ -440,7 +441,7 @@ def build_app():
             "imagery-mcp no arranca SIN claves (IMAGERY_MCP_KEYS vacío) — "
             "un MCP con datos y cómputo no se expone abierto."
         )
-    return AuthMiddleware(mcp.streamable_http_app(), keyring, limiter,
+    return AuthMiddleware(herramientas_en_hilo(mcp).streamable_http_app(), keyring, limiter,
                           tile_pool=tile_pool)
 
 

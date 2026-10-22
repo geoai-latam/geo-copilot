@@ -29,6 +29,7 @@ from geo_mcp_kit import (
     compact_result,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     table,
 )
 from geo_mcp_kit import area as areas
@@ -202,7 +203,7 @@ def build_app():
         raise RuntimeError("datos-abiertos-mcp no arranca sin claves (DATOS_MCP_KEYS)")
     portales()  # un DATOS_PORTALES roto se ve al arrancar
     rutas = (resultados.ruta("datos_consultar"),)
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="datos-abiertos-mcp", routes=rutas)
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="datos-abiertos-mcp", routes=rutas)
 
 
 if __name__ == "__main__":  # pragma: no cover

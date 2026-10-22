@@ -116,3 +116,32 @@ def fallo_de_proveedor(exc: BaseException, service: str) -> str | None:
         return (f"No se pudo contactar con {host} ({type(exc).__name__}): no es un fallo de {service}. "
                 "Suele ser pasajero: reintenta en unos segundos.")
     return None
+
+
+def herramientas_en_hilo(mcp: Any) -> Any:
+    """Las tools síncronas del servidor corren en un hilo, no en el bucle de eventos.
+
+    FastMCP llama una tool `def` dentro del bucle: mientras espera a la fuente (`runner.run`
+    bloquea hasta el resultado), el servidor no atiende nada más, ni otras llamadas ni el
+    arranque de sesiones. Una fuente lenta tumbaba el servicio entero (Terranova F4.2: la ficha
+    de un lugar pide 8 capas a la vez a arcgis-mcp). Se llama una vez, después de registrar las
+    tools; las funciones del módulo siguen siendo síncronas (las pruebas las llaman directo).
+    """
+    import asyncio
+    import functools
+
+    for tool in mcp._tool_manager.list_tools():
+        if tool.is_async:
+            continue
+
+        def envolver(fn: Callable[..., Any]) -> Callable[..., Any]:
+            @functools.wraps(fn)
+            async def en_hilo(*args: Any, **kwargs: Any) -> Any:
+                # `to_thread` copia el contexto: la traza en curso sigue en el hilo
+                return await asyncio.to_thread(fn, *args, **kwargs)
+
+            return en_hilo
+
+        tool.fn = envolver(tool.fn)
+        tool.is_async = True
+    return mcp

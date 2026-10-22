@@ -236,3 +236,35 @@ def test_completitud_imposible():
         completitud(6, 5)
     with pytest.raises(ValueError):
         completitud(-1, None)
+
+
+def test_herramientas_en_hilo_no_bloquean_el_bucle():
+    """Una tool síncrona lenta no frena a las demás ni al servidor (Terranova F4.2)."""
+    import asyncio
+
+    from geo_mcp_kit import herramientas_en_hilo
+    from mcp.server.fastmcp import FastMCP
+
+    mcp = FastMCP("prueba")
+
+    @mcp.tool()
+    def lenta(segundos: float) -> dict:
+        time.sleep(segundos)
+        return {"durmio": segundos}
+
+    @mcp.tool()
+    async def ya_async() -> dict:
+        return {"ok": True}
+
+    herramientas_en_hilo(herramientas_en_hilo(mcp))  # idempotente
+    assert lenta(0) == {"durmio": 0}  # la función del módulo sigue siendo síncrona
+
+    async def correr() -> tuple[float, list]:
+        t = time.monotonic()
+        r = await asyncio.gather(*(mcp.call_tool("lenta", {"segundos": 0.5}) for _ in range(4)),
+                                 mcp.call_tool("ya_async", {}))
+        return time.monotonic() - t, r
+
+    duracion, resultados = asyncio.run(correr())
+    assert duracion < 1.5, f"en serie: {duracion:.1f} s"  # 4 × 0,5 s en paralelo, no 2 s
+    assert len(resultados) == 5

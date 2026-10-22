@@ -29,6 +29,7 @@ from geo_mcp_kit import (
     feature_collection,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
 )
 from geo_mcp_kit import area as areas
 from geo_mcp_kit.red import ErrorRed, UrlNoPermitida
@@ -153,7 +154,7 @@ def build_app():
     keys = KeyRing.from_json(os.environ.get("DANE_MCP_KEYS", "[]"), known_scopes={"dane:read"}, tool_scopes=SCOPES)
     if not len(keys):
         raise RuntimeError("dane-mcp no arranca sin claves (DANE_MCP_KEYS)")
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="dane-mcp",
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="dane-mcp",
                       routes=(resultados.ruta("dane_censo_manzanas"),))
 
 

@@ -20,11 +20,11 @@ from geo_mcp_kit.geo import (
     table,
 )
 from geo_mcp_kit.oidc import VerificadorJwt, llamante
-from geo_mcp_kit.runner import CODIGOS, ToolRunner, error, es_error
+from geo_mcp_kit.runner import CODIGOS, ToolRunner, error, es_error, herramientas_en_hilo
 
 __all__ = [
     "CODIGOS", "ApiKey", "ExtraRoute", "completitud", "error", "es_error", "GeoMcpAuth", "KeyRing", "MemoryRateBackend", "RateLimiter",
     "ToolRunner", "compact_result", "extract_bearer", "feature_collection", "feature_ref", "geo_meta",
-    "geo_result", "jsonrpc_tool_names", "raster_tiles", "respond_json", "respond_png",
+    "geo_result", "herramientas_en_hilo", "jsonrpc_tool_names", "raster_tiles", "respond_json", "respond_png",
     "VerificadorJwt", "llamante", "stats", "table",
 ]

@@ -28,6 +28,7 @@ from geo_mcp_kit import (
     compact_result,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     raster_tiles,
     respond_json,
     respond_png,
@@ -202,7 +203,7 @@ def build_app():
         resultados.ruta("ogc_traer_elementos"),
         ExtraRoute(teselas.parse_ruta, _servir_tesela, requires_tool="ogc_ver_mapa", weight=0.05),
     )
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="ogc-mcp", routes=rutas)
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="ogc-mcp", routes=rutas)
 
 
 if __name__ == "__main__":  # pragma: no cover

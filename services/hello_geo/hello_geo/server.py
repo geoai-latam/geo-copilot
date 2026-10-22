@@ -19,6 +19,7 @@ from geo_mcp_kit import (
     feature_collection,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     llamante,
 )
 from mcp.server.fastmcp import FastMCP
@@ -83,7 +84,7 @@ def build_app():
         raise RuntimeError("hello-geo no arranca sin claves (HELLO_GEO_KEYS)")
     # F6: además de sus claves, tokens de USUARIOS obtenidos por token exchange (HELLO_GEO_JWT_*)
     jwt = VerificadorJwt.desde_entorno("HELLO_GEO", tool_scopes=SCOPES, known_scopes={"hello:use"})
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="hello-geo", jwt=jwt)
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="hello-geo", jwt=jwt)
 
 
 if __name__ == "__main__":  # pragma: no cover
