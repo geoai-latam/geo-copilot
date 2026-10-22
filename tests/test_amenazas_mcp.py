@@ -98,3 +98,19 @@ def test_zona_y_punto_validan():
 
 def test_todas_las_tools_con_scope():
     assert {t.name for t in srv.mcp._tool_manager.list_tools()} == set(srv.SCOPES)
+
+
+def test_completitud_en_las_cuatro_tools(monkeypatch):
+    """Contrato rt/1 (#46): cada resultado dice cuántos vio de cuántos."""
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-75.9, 4.7]},
+         "properties": {"mag": 5.1, "place": "Cartago", "time": 1, "depth": 60}}]}
+    monkeypatch.setattr(fuentes, "sismos", lambda *a: (fc, 3))  # el catálogo tiene 3; se trajo 1
+    c = srv.amenazas_sismos(bbox=[-79, -4, -67, 13]).structuredContent["facts"]["completitud"]
+    assert c == {"vistos": 1, "total": 3, "truncado": True}
+    monkeypatch.setattr(fuentes, "caudal", lambda *a: [_celda(5.175, -74.725, 1.5)])
+    c = srv.amenazas_caudal(lon=-74.74, lat=5.20).structuredContent["facts"]["completitud"]
+    assert c == {"vistos": 2, "total": 2, "truncado": False}
+    monkeypatch.setattr(fuentes, "incendios", lambda *a: [])
+    c = srv.amenazas_incendios(bbox=[-71.5, 3.5, -67.5, 6.5]).structuredContent["facts"]["completitud"]
+    assert c == {"vistos": 0, "total": 0, "truncado": False}

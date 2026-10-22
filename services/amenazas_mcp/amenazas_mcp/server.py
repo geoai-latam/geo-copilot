@@ -23,9 +23,11 @@ from geo_mcp_kit import (
     RateLimiter,
     ToolRunner,
     compact_result,
+    completitud,
     feature_collection,
     geo_meta,
     geo_result,
+    herramientas_en_hilo,
     table,
 )
 from geo_mcp_kit import area as areas
@@ -78,7 +80,13 @@ def amenazas_sismos(area: dict | None = None, bbox: list[float] | None = None, d
         # V5: «sismos en Colombia» con `viewport` (lo visible, alrededor de Bogotá) dio 0 y se dijo «en Colombia»
         hechos = {"zona_consultada_bbox": caja, "periodo": [d, h], "magnitud_min": magnitud_min,
                   **resumen.sismos(fc, total)}
+        traidos = len(fc["features"])
         _recortar(fc, geom, hechos, "sismos")
+        if geom is None:
+            hechos["completitud"] = completitud(traidos, total)
+        else:  # el /count de la USGS es del rectángulo, no del polígono del área
+            hechos["completitud"] = completitud(len(fc["features"]), None, truncado=traidos < total,
+                                                motivo="recorte al área; el total del catálogo es del rectángulo")
         return geo_result([feature_collection(f"Sismos M≥{magnitud_min:g}", fc, crs="EPSG:4326")], facts=hechos)
 
     return compact_result(runner.run(buscar))
@@ -101,6 +109,7 @@ def amenazas_incendios(area: dict | None = None, bbox: list[float] | None = None
         fc, hechos = resumen.incendios(fuentes.incendios(caja, periodo, sensor), periodo, sensor)
         hechos["zona_consultada_bbox"] = caja
         _recortar(fc, geom, hechos, "focos")
+        hechos["completitud"] = completitud(len(fc["features"]), len(fc["features"]))  # el CSV viene entero
         return geo_result([feature_collection(f"Focos de calor ({periodo})", fc, crs="EPSG:4326")], facts=hechos)
 
     return compact_result(runner.run(buscar))
@@ -120,6 +129,7 @@ def amenazas_caudal(punto: dict | None = None, lon: float | None = None, lat: fl
         x, y = resumen.punto(punto, lon, lat)
         celdas = fuentes.caudal(x, y, max(0, min(int(dias_pasados), 92)), max(1, min(int(dias_pronostico), 30)), 2)
         serie, hechos = resumen.caudal(celdas, x, y)
+        hechos["completitud"] = completitud(len(serie), len(serie))
         return geo_result([table(["fecha", "caudal_m3s"], serie)], facts={"punto": [x, y], **hechos})
 
     return compact_result(runner.run(consultar))
@@ -138,6 +148,7 @@ def clima_serie(desde: str, hasta: str, punto: dict | None = None, lon: float | 
     def consultar() -> dict:
         x, y = resumen.punto(punto, lon, lat)
         filas, hechos = clima.serie(x, y, desde, hasta, fuente)
+        hechos["completitud"] = completitud(len(filas), len(filas))
         columnas = ["fecha", "t_media_c", "t_max_c", "t_min_c", "precipitacion_mm"]
         return geo_result([table(columnas, filas)], facts=hechos)
 
@@ -149,7 +160,7 @@ def build_app():
                              tool_scopes=SCOPES)
     if not len(keys):
         raise RuntimeError("amenazas-mcp no arranca sin claves (AMENAZAS_MCP_KEYS)")
-    return GeoMcpAuth(mcp.streamable_http_app(), keys, RateLimiter(), service="amenazas-mcp")
+    return GeoMcpAuth(herramientas_en_hilo(mcp).streamable_http_app(), keys, RateLimiter(), service="amenazas-mcp")
 
 
 if __name__ == "__main__":  # pragma: no cover
