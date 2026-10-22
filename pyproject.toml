@@ -153,7 +153,7 @@ imagery = [
     "mcp>=1.28,<2",
     "rasterio>=1.4,<2",
     "rio-tiler>=9,<10",
-    "pillow>=10,<13",
+    "pillow>=13,<14",
     "duckdb>=1.5,<2",
 ]
 
