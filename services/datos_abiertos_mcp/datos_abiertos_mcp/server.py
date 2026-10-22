@@ -152,7 +152,7 @@ def datos_consultar(id: str, portal: str = "datos.gov.co", select: str | None = 
             zona, columna_geo, lat, lon)) if w) or None
         datos, total = socrata.consultar(p["dominio"], id, select=select, where=filtro, order=order,
                                          maximo=max_filas, geojson=bool(columna_geo))
-        hechos = filas.hechos(id, p, datos, total, max_filas, filtro)
+        hechos = filas.hechos(id, p, datos, total, max_filas, filtro, select=select)
         if not (columna_geo or (lat and lon)):
             return geo_result([table(sorted({k for f in datos for k in f}), datos)], facts=hechos)
         fc = ({"type": "FeatureCollection", "features": datos} if columna_geo

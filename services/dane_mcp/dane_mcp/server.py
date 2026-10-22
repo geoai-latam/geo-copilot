@@ -25,6 +25,7 @@ from geo_mcp_kit import (
     RateLimiter,
     ToolRunner,
     compact_result,
+    completitud,
     feature_collection,
     geo_meta,
     geo_result,
@@ -94,7 +95,10 @@ def dane_municipios(nombre: str | None = None, codigo: str | None = None, variab
                     con_limite: bool = False) -> CallToolResult:
     def buscar() -> dict:
         hallados = censo.municipios(nombre, codigo, variables or [])
-        hechos: dict[str, Any] = {"municipios": hallados[:25], "encontrados": len(hallados), "nota": NOTA_CENSO}
+        hechos: dict[str, Any] = {"municipios": hallados[:25], "encontrados": len(hallados), "nota": NOTA_CENSO,
+                                  "consulta": {"nombre": nombre, "codigo": codigo, "variables": variables or []},
+                                  "completitud": completitud(min(len(hallados), 25), len(hallados),
+                                                             motivo="se muestran 25" if len(hallados) > 25 else None)}
         if not con_limite or len(hallados) != 1:
             if con_limite and len(hallados) > 1:
                 hechos["aviso"] = "hay varios: elige uno por su código para traer su límite"
