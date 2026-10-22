@@ -132,9 +132,18 @@ def filtro_bbox(bbox: list[float], columna_geo: str | None, lat: str | None, lon
 
 
 def consultar(dominio: str, ident: str, *, select: str | None, where: str | None, order: str | None,
-              maximo: int, geojson: bool) -> tuple[list[dict], int | None]:
-    """(filas o features, total que cumple el filtro). Paginado; SoQL lo ejecuta el portal."""
+              maximo: int, geojson: bool, group: str | None = None,
+              having: str | None = None) -> tuple[list[dict], int | None]:
+    """(filas o features, total que cumple el filtro). Paginado; SoQL lo ejecuta el portal.
+
+    `group`/`having` (Terranova F5, G1): agrupar exige un `select` con agregados; sin `order`, se
+    ordena por las columnas del grupo para que las páginas sean estables.
+    """
     ident = _id_valido(ident)
+    if (group or having) and not filas.es_agregado(select):
+        raise ErrorSocrata("`group` y `having` necesitan un `select` con agregados (count, sum, avg…)")
+    if having and not group:
+        raise ErrorSocrata("`having` filtra grupos: hace falta `group`")
     maximo = max(1, min(int(maximo), MAX_FILAS))
     extension = "geojson" if geojson else "json"
     salida: list[dict] = []
@@ -142,8 +151,9 @@ def consultar(dominio: str, ident: str, *, select: str | None, where: str | None
         params: dict[str, Any] = {"$limit": min(PAGINA, maximo - len(salida)), "$offset": len(salida)}
         # sin orden, las páginas de SODA no son estables (filas repetidas o saltadas): `:id` por defecto.
         # Con agregados no: `:id` no está en el group by y SODA responde 400 (Terranova, canario SECOP).
-        orden = order or (None if filas.es_agregado(select) else ":id")
-        params.update({k: v for k, v in (("$select", select), ("$where", where), ("$order", orden)) if v})
+        orden = order or group or (None if filas.es_agregado(select) else ":id")
+        params.update({k: v for k, v in (("$select", select), ("$where", where), ("$group", group),
+                                         ("$having", having), ("$order", orden)) if v})
         datos = _get(f"https://{dominio}/resource/{ident}.{extension}", params).json()
         pagina = datos.get("features", []) if geojson else datos
         salida += pagina

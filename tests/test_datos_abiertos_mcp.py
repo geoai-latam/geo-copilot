@@ -223,3 +223,23 @@ def test_un_agregado_no_lleva_orden_por_id(portal):
     srv.datos_consultar("g8hy-gwg8", select="count(*) as n")
     q = [p for u, p in portal if u.endswith(".json") and "$select" in p][0]
     assert "$order" not in q and q["$select"] == "count(*) as n"
+
+
+def test_un_agregado_con_grupo_pasa_group_having_y_ordena_por_el_grupo(portal):
+    """Terranova F5 (G1): ICFES y transacciones por grupo, sin grupos chicos (n mínimo)."""
+    sc = srv.datos_consultar("g8hy-gwg8", select="departamento, count(*) AS n", group="departamento",
+                             having="count(*) >= 10").structuredContent
+    q = [p for u, p in portal if u.endswith(".json") and "$select" in p and p["$select"] != "count(*)"][0]
+    assert q["$group"] == "departamento" and q["$having"] == "count(*) >= 10"
+    assert q["$order"] == "departamento"  # páginas estables sin `:id`
+    assert sc["facts"]["consulta"]["group"] == "departamento"
+    assert sc["facts"]["consulta"]["having"] == "count(*) >= 10"
+
+
+@pytest.mark.parametrize(("argumentos", "texto"), [
+    ({"select": "departamento", "group": "departamento"}, "necesitan un `select` con agregados"),
+    ({"select": "count(*) AS n", "having": "count(*) > 1"}, "hace falta `group`"),
+])
+def test_grupos_mal_pedidos_son_errores_de_la_peticion(portal, argumentos, texto):
+    sc = srv.datos_consultar("g8hy-gwg8", **argumentos).structuredContent
+    assert texto in sc["error"] and sc["codigo"] == "parametro_invalido"
