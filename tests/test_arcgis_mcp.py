@@ -564,3 +564,27 @@ def test_lo_que_cabe_en_una_pagina_se_reparte_entre_las_que_van_a_la_vez(mock_ht
     assert len(fc["features"]) == 300
     paginas = sorted(int(q["resultOffset"]) for p, q in reg if p.endswith("/query") and "resultOffset" in q)
     assert len(paginas) == rest.PAGINAS_EN_PARALELO and paginas[0] == 0
+
+
+@pytest.mark.parametrize(("geometria", "esperado"), [
+    ("completa", {"returnGeometry": "true", "geometryPrecision": "7"}),
+    ("simplificada", {"returnGeometry": "true", "maxAllowableOffset": "0.0005"}),
+    ("ninguna", {"returnGeometry": "false"}),
+])
+def test_la_geometria_se_pide_como_se_dice(mock_http, geometria, esperado):
+    """Terranova: los polígonos del RUNAP, completos, tardaban más de 90 s en un punto."""
+    reg: list = []
+    mock_http(_servicio(3, 1000, registro=reg))
+    fc, hechos = rest.consultar(CAPA, geometria=geometria)
+    q = [q for p, q in reg if p.endswith("/query") and "resultOffset" in q][0]
+    assert {k: q.get(k) for k in esperado} == esperado
+    assert len(fc["features"]) == 3
+
+
+def test_sin_geometria_los_elementos_no_se_pierden(mock_http):
+    mock_http(_servicio(3, 1000))
+    fc, hechos = rest.consultar(CAPA, geometria="ninguna")
+    assert len(fc["features"]) == 3 and "sin_geometria" not in hechos
+    with pytest.raises(rest.ErrorArcGIS, match="geometria") as exc:
+        rest.consultar(CAPA, geometria="toda")
+    assert exc.value.codigo == "parametro_invalido"
