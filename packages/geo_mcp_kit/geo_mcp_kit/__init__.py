@@ -10,6 +10,7 @@ from geo_mcp_kit.asgi import ExtraRoute, GeoMcpAuth, jsonrpc_tool_names, respond
 from geo_mcp_kit.auth import ApiKey, KeyRing, MemoryRateBackend, RateLimiter, extract_bearer
 from geo_mcp_kit.geo import (
     compact_result,
+    completitud,
     feature_collection,
     feature_ref,
     geo_meta,
@@ -19,10 +20,10 @@ from geo_mcp_kit.geo import (
     table,
 )
 from geo_mcp_kit.oidc import VerificadorJwt, llamante
-from geo_mcp_kit.runner import ToolRunner
+from geo_mcp_kit.runner import CODIGOS, ToolRunner, error, es_error
 
 __all__ = [
-    "ApiKey", "ExtraRoute", "GeoMcpAuth", "KeyRing", "MemoryRateBackend", "RateLimiter",
+    "CODIGOS", "ApiKey", "ExtraRoute", "completitud", "error", "es_error", "GeoMcpAuth", "KeyRing", "MemoryRateBackend", "RateLimiter",
     "ToolRunner", "compact_result", "extract_bearer", "feature_collection", "feature_ref", "geo_meta",
     "geo_result", "jsonrpc_tool_names", "raster_tiles", "respond_json", "respond_png",
     "VerificadorJwt", "llamante", "stats", "table",

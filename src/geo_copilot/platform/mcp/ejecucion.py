@@ -137,7 +137,8 @@ async def _llamar(hub: McpHub, con: McpConnection, cfg: ServerConfig, tool: str,
     sc = res.structuredContent
     if isinstance(sc, dict) and sc.get("geo_result") == "1":
         return await _materializar(cfg, tool, sc, working, args, titulo=titulo)
-    if isinstance(sc, dict) and "error" in sc and len(sc) == 1:
+    # error de la tool: `{"error"}` o, con el kit nuevo, `{"error", "codigo"[, "reintentar_en_s"]}`
+    if isinstance(sc, dict) and "error" in sc and set(sc) <= {"error", "codigo", "reintentar_en_s"}:
         return ToolOutcome(_limitar(f"[{cfg.id}] {sc['error']}"), success=False)
 
     if getattr(cfg, "adapter", None) == "tabular_geo":

@@ -541,3 +541,22 @@ def test_una_capa_incompleta_dice_que_es_una_muestra():
     assert _marca_de_muestra({"completo": False, "total_que_cumplen": 22387, "traidos": 10}) == "(muestra: 10 de 22.387)"
     assert _marca_de_muestra({"completo": False, "filas": 5000}) == "(muestra)"
     assert _marca_de_muestra({"completo": True, "traidos": 10}) is None and _marca_de_muestra({}) is None
+
+
+@pytest.mark.asyncio
+async def test_un_error_con_codigo_del_kit_es_un_fallo():
+    """F1.3 de Terranova: el kit agrega `codigo` al error; antes solo `{"error"}` contaba como fallo."""
+    from geo_copilot.platform.mcp import hub as h
+
+    class Con:
+        async def call_tool(self, tool, args):
+            return SimpleNamespace(content=[], isError=False, structuredContent={
+                "error": "el servicio respondió HTTP 503", "codigo": "fuente_no_disponible", "reintentar_en_s": 5})
+
+    cfg = _config("http://x/mcp").servers[0]
+    hub = McpHub(McpConfig.model_validate({"servers": []}))
+    hub.conexiones = {cfg.id: Con()}
+    est = h.EstadoTool(cfg.id, "q", f"{cfg.id}__q", True, None, "read", "h", {"outputs": []},
+                       esquema={"type": "object", "properties": {}})
+    out = await h.ejecutar_tool(hub, cfg, "q", est, {"session_id": "s"}, {})
+    assert out.success is False and "HTTP 503" in out.observation
