@@ -107,3 +107,11 @@ def test_variables_por_nivel_y_filtro_por_palabras(dane):
 
 def test_todas_las_tools_con_scope():
     assert {t.name for t in srv.mcp._tool_manager.list_tools()} == set(srv.SCOPES)
+
+
+def test_municipios_dice_cuantos_vio_de_cuantos(monkeypatch):
+    """Terranova F1.3: se muestran 25; si hay más, la completitud lo dice."""
+    monkeypatch.setattr(censo, "municipios", lambda *a, **k: [{"codigo": f"{i:05d}"} for i in range(30)])
+    out = srv.dane_municipios(nombre="san")
+    c = out.structuredContent["facts"]["completitud"]
+    assert c == {"vistos": 25, "total": 30, "truncado": True, "motivo": "se muestran 25"}

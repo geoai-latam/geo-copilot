@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+from geo_mcp_kit import completitud
+
+_AGREGADO = re.compile(r"\b(count|sum|avg|min|max|stddev_pop|stddev_samp)\s*\(", re.IGNORECASE)
+
+
+def es_agregado(select: str | None) -> bool:
+    """`select` con funciones de agregación: el resultado son grupos, no filas del conjunto."""
+    return bool(select and _AGREGADO.search(select))
 
 
 class ErrorColumnas(ValueError):
@@ -51,11 +61,29 @@ def puntos(filas: list[dict], lat: str, lon: str, hechos: dict[str, Any]) -> dic
 
 
 def hechos(ident: str, portal: dict, datos: list, total: int | None, maximo: int,
-           filtro: str | None) -> dict[str, Any]:
+           filtro: str | None, *, select: str | None = None) -> dict[str, Any]:
     vinieron = len(datos)
     h: dict[str, Any] = {"conjunto": ident, "portal": portal["id"], "filas": vinieron}
     if filtro:
         h["filtro_soql"] = filtro
+    h["consulta"] = {"conjunto": ident, "portal": portal["id"], **({"select": select} if select else {}),
+                     **({"where": filtro} if filtro else {}), "max_filas": maximo}
+    if es_agregado(select):
+        # un agregado (count, sum…) resume TODAS las filas que cumplen: no es una muestra aunque
+        # devuelva 1 fila de 12 149 (antes decía «no es el conjunto completo»). Con group by,
+        # solo está cortado si llegó al tope.
+        h["filas_que_resume"] = total
+        cortado = vinieron >= maximo
+        h["completo"] = not cortado
+        h["completitud"] = completitud(vinieron, None if cortado else vinieron, truncado=cortado,
+                                       motivo=f"max_filas={maximo}" if cortado else None)
+        if cortado:
+            h["aviso"] = f"vinieron {vinieron} grupos y es el tope: puede haber más; sube `max_filas`"
+        return h
+    # el conteo y las filas son dos peticiones: si el conjunto cambió en medio, el total no sirve
+    total_valido = total if total is not None and total >= vinieron else None
+    h["completitud"] = completitud(vinieron, total_valido, truncado=total_valido is None and vinieron >= maximo,
+                                   motivo=f"max_filas={maximo}" if (total_valido or 0) > vinieron else None)
     if total is not None:
         h["cumplen_en_el_portal"] = total
         h["completo"] = vinieron >= total
