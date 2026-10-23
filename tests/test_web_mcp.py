@@ -168,3 +168,81 @@ def test_html_respeta_el_charset_del_meta() -> None:
 
     crudo = '<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"></head><body>identificación</body></html>'.encode("cp1252")
     assert "identificación" in paginas.decodificar(crudo, "text/html")
+
+
+def _xlsx(filas: list[list]) -> bytes:
+    import io
+
+    import openpyxl
+
+    libro = openpyxl.Workbook()
+    hoja = libro.active
+    hoja.title = "IPM_Dominios"
+    for fila in filas:
+        hoja.append(fila)
+    salida = io.BytesIO()
+    libro.save(salida)
+    return salida.getvalue()
+
+
+ANEXO = _xlsx([["Incidencia de pobreza multidimensional"], [], ["Dominio", "Año"], [None, 2024, 2025],
+               ["Nacional", 12.1, 11.5], [None, None, None], ["Cabecera", 8.0, 7.6], ["Fuente: DANE"]])
+
+
+def test_tabla_ancha_pasa_a_larga_con_encabezado_en_la_fila_4() -> None:
+    """Terranova (DANE): un año por columna → un año por fila; un año nuevo no rompe la lista blanca."""
+    from web_mcp import tablas
+
+    filas, hojas = tablas.filas_crudas(ANEXO, "anex.xlsx", "IPM_Dominios ")
+    registros = tablas.tabla(filas, fila_encabezado=4, rellenar=1, largo_desde=2)
+    assert hojas == ["IPM_Dominios"]
+    assert registros[:2] == [{"columna_1": "Nacional", "columna": "2024", "valor": 12.1},
+                             {"columna_1": "Nacional", "columna": "2025", "valor": 11.5}]
+    assert {r["columna_1"] for r in registros} == {"Nacional", "Cabecera"}  # la nota del pie no tiene valores
+
+
+def test_web_tabla_descubre_el_archivo_vigente_y_filtra(monkeypatch) -> None:
+    """La DIAN pone la fecha en el nombre del archivo: se busca en la página índice."""
+    pagina = "https://relatoria.colombiacompra.gov.co/Usuarios-Aduaneros.aspx"
+    archivo = "https://relatoria.colombiacompra.gov.co/Documents/Usuarios-aduaneros-22-10-2026.xlsx"
+    indice = '<html><body><a href="/Documents/Usuarios-aduaneros-22-10-2026.xlsx">Descargar en XLS</a></body></html>'
+    dian = _xlsx([["NIT", "Nombre", "Tipo Registro"], ["899999059", "AEROCIVIL", "Aeropuerto"],
+                  ["900373778", "AEROPUERTOS DE ORIENTE", "Aeropuerto"]])
+
+    class Binaria(Respuesta):
+        def __init__(self, contenido: bytes, cabeceras: dict) -> None:
+            super().__init__("", None, cabeceras)
+            self.content = contenido
+
+    _red(monkeypatch, {pagina: Binaria(indice.encode(), {"content-type": "text/html"}), archivo: Binaria(dian, {})})
+    sc = srv.web_tabla(pagina=pagina, enlace_con=r"Usuarios-aduaneros-.*\.xlsx", filtros={"NIT": "899999059"}).structuredContent
+    assert sc["facts"]["archivo"] == archivo and sc["facts"]["filas"] == 1
+    assert sc["artifacts"][0]["rows"][0]["Nombre"] == "AEROCIVIL"
+    mal = srv.web_tabla(url=archivo, filtros={"NO_ESTA": "x"}).structuredContent
+    assert "no hay columnas" in mal["error"]
+
+
+def test_los_enlaces_se_arman_sobre_la_url_pedida_no_sobre_la_ip(monkeypatch) -> None:
+    """El kit fija la IP validada y `r.url` sale con ella: un enlace relativo sobre esa base salía del
+    dominio permitido («dominio no permitido: 190.83.78.1» con la DIAN)."""
+    pagina = "https://relatoria.colombiacompra.gov.co/indice.html"
+
+    class ConIp(Respuesta):
+        url = "https://190.83.78.1/indice.html"
+
+    _red(monkeypatch, {pagina: ConIp('<a href="/docs/resolucion_creg_1_2026.htm">R1</a>', cabeceras={"content-type": "text/html"})})
+    sc = srv.web_html(pagina, enlaces_con="resolucion_creg").structuredContent
+    assert sc["artifacts"][0]["rows"][0]["url"] == "https://relatoria.colombiacompra.gov.co/docs/resolucion_creg_1_2026.htm"
+
+
+def test_encabezado_de_dos_filas_con_el_anio_combinado() -> None:
+    """IPM departamental: 2018 sobre Total/Cabeceras; GEIH: 2001 sobre Ene…Dic."""
+    from web_mcp import tablas
+
+    filas = [("Departamento", 2018, None, 2019, None), (None, "Total", "Cabeceras", "Total", "Cabeceras"),
+             ("Antioquia", 15.3, 9.6, 15.7, 10.2)]
+    largo = tablas.tabla(filas, fila_encabezado=1, largo_desde=2, filas_encabezado=2)
+    assert largo[0] == {"Departamento": "Antioquia", "columna": "2018", "subcolumna": "Total", "valor": 15.3}
+    assert largo[3] == {"Departamento": "Antioquia", "columna": "2019", "subcolumna": "Cabeceras", "valor": 10.2}
+    ancho = tablas.tabla(filas, fila_encabezado=1, filas_encabezado=2)
+    assert ancho[0]["2019 Total"] == 15.7

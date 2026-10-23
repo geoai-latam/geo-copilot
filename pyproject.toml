@@ -129,6 +129,8 @@ dev = [
     # F2 (2026-05-25): VCR para grabar/reproducir respuestas HTTP de Hub
     # y otros servicios externos en tests. Cassettes en tests/fixtures/cassettes/.
     "pytest-recording>=0.13.0",
+    # Terranova F5: web-mcp lee anexos .xlsx (DANE, DIAN); sus pruebas arman un Excel en memoria.
+    "openpyxl>=3.1,<4",
     # F7 (S7.1): el estado compartido (bus, aprobaciones) se prueba contra Redis simulado.
     "fakeredis>=2.26",
     "vcrpy>=6.0.0",

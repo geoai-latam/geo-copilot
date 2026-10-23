@@ -33,10 +33,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ToolAnnotations
 
-from web_mcp import fuentes, paginas
+from web_mcp import fuentes, paginas, tablas
 
 logger = logging.getLogger("web_mcp")
-SCOPES = {"web_json": "web:read", "web_sdmx": "web:read", "web_html": "web:read"}
+SCOPES = {"web_json": "web:read", "web_sdmx": "web:read", "web_html": "web:read", "web_tabla": "web:read"}
 runner = ToolRunner(timeout_s=170, service="web-mcp", expected_errors=(ErrorRed, UrlNoPermitida, fuentes.ErrorWeb))
 mcp = FastMCP(
     "web-mcp",
@@ -114,7 +114,9 @@ def web_html(url: str, params: dict | None = None, buscar: str | None = None, en
         r = fuentes.pedir(url, params)
         if "html" not in r.headers.get("content-type", "html").lower():
             raise fuentes.ErrorWeb("la respuesta no es HTML", "fuente_respuesta_invalida")
-        final = str(getattr(r, "url", "") or url)  # tras redirecciones (Función Pública redirige)
+        # la base de los enlaces es la URL pedida, no `r.url`: el cliente del kit fija la IP validada y
+        # `r.url` sale con la IP; un enlace relativo armado sobre ella ya no es del dominio permitido
+        final = url
         contenido = r.content if isinstance(getattr(r, "content", None), bytes) else r.text.encode("utf-8")
         html = paginas.decodificar(contenido, r.headers.get("content-type", ""))
         titulo, texto, enlaces = paginas.leer(html, final)
@@ -132,6 +134,49 @@ def web_html(url: str, params: dict | None = None, buscar: str | None = None, en
             hechos["completitud"] = completitud(min(len(texto), tope), len(texto), truncado=len(texto) > tope,
                                                 motivo=f"max_caracteres={tope}" if len(texto) > tope else None)
         return _tabla(filas, hechos)
+
+    return compact_result(runner.run(leer))
+
+
+@mcp.tool(
+    description=("Lee una tabla de un archivo publicado (.xlsx o .csv): `url` directa, o `pagina` + `enlace_con` "
+                 "(expresión regular) para encontrar el archivo vigente en su página índice. `hoja`, "
+                 "`fila_encabezado` (1 = primera), `rellenar` (las N primeras columnas combinadas se rellenan "
+                 "hacia abajo), `filas_encabezado` (2 si el año va arriba combinado y debajo los meses o las "
+                 "zonas), `largo_desde` (posición desde la que las columnas pasan a filas `columna`/`valor`: "
+                 "un año por columna → un año por fila) y `filtros` {columna: valor}. Los hechos dicen el archivo, "
+                 "las hojas y cuántas filas cumplen."),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    meta=geo_meta(inputs={}, outputs=["table"], cost="medium"),
+)
+def web_tabla(url: str | None = None, pagina: str | None = None, enlace_con: str | None = None,
+              hoja: str | None = None, fila_encabezado: int = 1, rellenar: int = 0, largo_desde: int | None = None,
+              filtros: dict | None = None, max_filas: int = 2000, filas_encabezado: int = 1) -> CallToolResult:
+    def leer() -> dict:
+        archivo = url
+        if archivo is None:
+            if not (pagina and enlace_con):
+                raise fuentes.ErrorWeb("hace falta `url`, o `pagina` y `enlace_con`")
+            indice = fuentes.pedir(pagina, None)
+            final = pagina  # no `indice.url`: trae la IP fijada por el kit (ver web_html)
+            _, _, enlaces = paginas.leer(paginas.decodificar(indice.content, indice.headers.get("content-type", "")), final)
+            encontrados = paginas.enlaces_con(enlaces, enlace_con)
+            if not encontrados:
+                raise fuentes.ErrorWeb(f"la página no enlaza ningún archivo que cumpla {enlace_con!r}",
+                                       "fuente_respuesta_invalida")
+            archivo = encontrados[0]["url"]
+        r = fuentes.pedir(archivo, None)
+        try:
+            crudas, hojas = tablas.filas_crudas(r.content, archivo, hoja)
+            registros = tablas.filtrar(tablas.tabla(crudas, fila_encabezado, rellenar, largo_desde, filas_encabezado),
+                                       filtros)
+        except ValueError as exc:
+            raise fuentes.ErrorWeb(str(exc)) from exc
+        tope = max(1, min(int(max_filas), tablas.MAX_FILAS))
+        filas = registros[:tope]
+        hechos = {"archivo": archivo, "hoja": hoja, "hojas": hojas, "filas": len(filas),
+                  "completitud": completitud(len(filas), len(registros))}
+        return geo_result([table(list(dict.fromkeys(k for f in filas for k in f)), filas)], facts=hechos)
 
     return compact_result(runner.run(leer))
 
