@@ -110,6 +110,12 @@ def _pedido(state: Mapping[str, Any], query: str) -> str:
     return pedido
 
 
+# Lo que el juez ve de cada resultado. Con 400 caracteres, el sobre rt/1 de Terranova (metadatos
+# antes de `datos`) quedaba cortado antes del dato: el juez creyó que «30 artículos» no tenía
+# respaldo y el agente se retractó de una cifra correcta (Terranova F6, 2026-10-23).
+OBS_JUEZ = 2000
+
+
 @dataclass
 class BucleReAct:
     graph: GeoAgentGraph
@@ -328,7 +334,7 @@ class BucleReAct:
                 self.fallidas[firma] = self.step
         # El resultado (éxito o el fallo capturado) queda en la traza.
         self.trace.record_result(self.step, name, success=outcome.success, result=outcome.observation)
-        self.observaciones.append(f"{name}: {_al()._short(outcome.observation, 400)}")
+        self.observaciones.append(f"{name}: {_al()._short(outcome.observation, OBS_JUEZ)}")
         logger.info(f"[agent_loop] paso {self.step} ← {'ok' if outcome.success else 'FALLO'}: "
                     f"{_al()._short(outcome.observation, 300)}")
         if self.metrics is not None:  # F6: fiabilidad por herramienta
