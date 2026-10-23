@@ -142,7 +142,8 @@ def web_html(url: str, params: dict | None = None, buscar: str | None = None, en
     description=("Lee una tabla de un archivo publicado (.xlsx o .csv): `url` directa, o `pagina` + `enlace_con` "
                  "(expresión regular) para encontrar el archivo vigente en su página índice. `hoja`, "
                  "`fila_encabezado` (1 = primera), `rellenar` (las N primeras columnas combinadas se rellenan "
-                 "hacia abajo), `largo_desde` (posición desde la que las columnas pasan a filas `columna`/`valor`: "
+                 "hacia abajo), `filas_encabezado` (2 si el año va arriba combinado y debajo los meses o las "
+                 "zonas), `largo_desde` (posición desde la que las columnas pasan a filas `columna`/`valor`: "
                  "un año por columna → un año por fila) y `filtros` {columna: valor}. Los hechos dicen el archivo, "
                  "las hojas y cuántas filas cumplen."),
     annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
@@ -150,7 +151,7 @@ def web_html(url: str, params: dict | None = None, buscar: str | None = None, en
 )
 def web_tabla(url: str | None = None, pagina: str | None = None, enlace_con: str | None = None,
               hoja: str | None = None, fila_encabezado: int = 1, rellenar: int = 0, largo_desde: int | None = None,
-              filtros: dict | None = None, max_filas: int = 2000) -> CallToolResult:
+              filtros: dict | None = None, max_filas: int = 2000, filas_encabezado: int = 1) -> CallToolResult:
     def leer() -> dict:
         archivo = url
         if archivo is None:
@@ -167,7 +168,8 @@ def web_tabla(url: str | None = None, pagina: str | None = None, enlace_con: str
         r = fuentes.pedir(archivo, None)
         try:
             crudas, hojas = tablas.filas_crudas(r.content, archivo, hoja)
-            registros = tablas.filtrar(tablas.tabla(crudas, fila_encabezado, rellenar, largo_desde), filtros)
+            registros = tablas.filtrar(tablas.tabla(crudas, fila_encabezado, rellenar, largo_desde, filas_encabezado),
+                                       filtros)
         except ValueError as exc:
             raise fuentes.ErrorWeb(str(exc)) from exc
         tope = max(1, min(int(max_filas), tablas.MAX_FILAS))

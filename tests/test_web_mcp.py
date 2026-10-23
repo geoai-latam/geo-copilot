@@ -233,3 +233,16 @@ def test_los_enlaces_se_arman_sobre_la_url_pedida_no_sobre_la_ip(monkeypatch) ->
     _red(monkeypatch, {pagina: ConIp('<a href="/docs/resolucion_creg_1_2026.htm">R1</a>', cabeceras={"content-type": "text/html"})})
     sc = srv.web_html(pagina, enlaces_con="resolucion_creg").structuredContent
     assert sc["artifacts"][0]["rows"][0]["url"] == "https://relatoria.colombiacompra.gov.co/docs/resolucion_creg_1_2026.htm"
+
+
+def test_encabezado_de_dos_filas_con_el_anio_combinado() -> None:
+    """IPM departamental: 2018 sobre Total/Cabeceras; GEIH: 2001 sobre Ene…Dic."""
+    from web_mcp import tablas
+
+    filas = [("Departamento", 2018, None, 2019, None), (None, "Total", "Cabeceras", "Total", "Cabeceras"),
+             ("Antioquia", 15.3, 9.6, 15.7, 10.2)]
+    largo = tablas.tabla(filas, fila_encabezado=1, largo_desde=2, filas_encabezado=2)
+    assert largo[0] == {"Departamento": "Antioquia", "columna": "2018", "subcolumna": "Total", "valor": 15.3}
+    assert largo[3] == {"Departamento": "Antioquia", "columna": "2019", "subcolumna": "Cabeceras", "valor": 10.2}
+    ancho = tablas.tabla(filas, fila_encabezado=1, filas_encabezado=2)
+    assert ancho[0]["2019 Total"] == 15.7

@@ -57,31 +57,75 @@ def filas_crudas(contenido: bytes, nombre: str, hoja: str | None) -> tuple[list[
     return filas, hojas
 
 
+def _arriba(fila: tuple[Any, ...], ancho: int) -> list[str]:
+    """La fila superior de un encabezado de dos, rellena hacia la derecha (un año combinado sobre
+    sus 3 o 12 columnas)."""
+    salida, previo = [], ""
+    for i in range(ancho):
+        actual = _texto(fila[i]) if i < len(fila) else ""
+        previo = actual or previo
+        salida.append(previo)
+    return salida
+
+
 def tabla(filas: list[tuple[Any, ...]], fila_encabezado: int = 1, rellenar: int = 0,
-          largo_desde: int | None = None) -> list[dict[str, Any]]:
+          largo_desde: int | None = None, filas_encabezado: int = 1) -> list[dict[str, Any]]:
     """Las filas como diccionarios, con las primeras `rellenar` columnas rellenas hacia abajo y, si
-    `largo_desde`, en formato largo (columnas desde esa posición, 1-indexada → `columna`, `valor`)."""
-    if fila_encabezado < 1 or fila_encabezado > len(filas):
-        raise ValueError(f"fila_encabezado fuera del archivo (tiene {len(filas)} filas)")
-    nombres = _encabezados(filas[fila_encabezado - 1])
+    `largo_desde`, en formato largo (columnas desde esa posición, 1-indexada → `columna`, `valor`).
+
+    Con `filas_encabezado=2` (anexos del DANE: el año arriba, combinado, y debajo Total/Cabeceras o
+    los meses), cada columna se llama «arriba abajo» y en formato largo sale `columna` (arriba) y
+    `subcolumna` (abajo)."""
+    nombres, partes, ultima = _encabezado(filas, fila_encabezado, filas_encabezado)
     previos: list[Any] = [None] * rellenar
     salida: list[dict[str, Any]] = []
-    for fila in filas[fila_encabezado:]:
+    for fila in filas[ultima:]:
         valores = list(fila) + [None] * (len(nombres) - len(fila))
-        if all(v is None or _texto(v) == "" for v in valores):
+        if all(_vacio(v) for v in valores):
             continue
         for i in range(rellenar):
-            if valores[i] is None or _texto(valores[i]) == "":
+            if _vacio(valores[i]):
                 valores[i] = previos[i]
             previos[i] = valores[i]
         registro = dict(zip(nombres, valores, strict=False))
-        if largo_desde is None:
-            salida.append(registro)
+        salida.extend([registro] if largo_desde is None else _a_largo(registro, nombres, largo_desde, partes))
+    return salida
+
+
+def _vacio(valor: Any) -> bool:
+    return valor is None or _texto(valor) == ""
+
+
+def _encabezado(filas: list[tuple[Any, ...]], fila_encabezado: int,
+                filas_encabezado: int) -> tuple[list[str], dict[str, tuple[str, str]], int]:
+    """(nombres, partes «arriba/abajo» de cada nombre, última fila del encabezado)."""
+    if filas_encabezado not in (1, 2):
+        raise ValueError("filas_encabezado es 1 o 2")
+    ultima = fila_encabezado + filas_encabezado - 1
+    if fila_encabezado < 1 or ultima > len(filas):
+        raise ValueError(f"el encabezado queda fuera del archivo (tiene {len(filas)} filas)")
+    primera, abajo = filas[fila_encabezado - 1], filas[ultima - 1]
+    ancho = max(len(abajo), len(primera))
+    if filas_encabezado == 1:
+        return _encabezados(tuple(primera) + (None,) * (ancho - len(primera))), {}, ultima
+    arriba = _arriba(primera, ancho)
+    bajos = [_texto(abajo[i]) if i < len(abajo) else "" for i in range(ancho)]
+    juntos = tuple(" ".join(p for p in (a, b) if p) or None for a, b in zip(arriba, bajos, strict=True))
+    nombres = _encabezados(juntos)
+    return nombres, dict(zip(nombres, zip(arriba, bajos, strict=True), strict=True)), ultima
+
+
+def _a_largo(registro: dict[str, Any], nombres: list[str], largo_desde: int,
+             partes: dict[str, tuple[str, str]]) -> list[dict[str, Any]]:
+    ids = {n: registro[n] for n in nombres[: largo_desde - 1]}
+    salida = []
+    for n in nombres[largo_desde - 1:]:
+        if _vacio(registro.get(n)):
             continue
-        ids = {n: registro[n] for n in nombres[: largo_desde - 1]}
-        for n in nombres[largo_desde - 1:]:
-            if registro.get(n) is not None and _texto(registro[n]) != "":
-                salida.append({**ids, "columna": n, "valor": registro[n]})
+        if n in partes:
+            salida.append({**ids, "columna": partes[n][0], "subcolumna": partes[n][1], "valor": registro[n]})
+        else:
+            salida.append({**ids, "columna": n, "valor": registro[n]})
     return salida
 
 
