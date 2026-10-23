@@ -277,3 +277,9 @@ def test_la_consulta_de_la_url_no_se_pierde_con_params(monkeypatch) -> None:
     pedidas = [v for v in vistos if not v[0].endswith("/robots.txt")]
     assert pedidas == [("https://relatoria.colombiacompra.gov.co/norma.php", {"i": "56882"}),
                        ("https://relatoria.colombiacompra.gov.co/buscar", {"find": "FindNext", "query": "ley 1712"})]
+
+
+def test_el_texto_no_empieza_con_la_marca_de_orden_de_bytes() -> None:
+    from web_mcp import paginas
+
+    assert paginas.leer("﻿<html><body><p>Ley 1712 de 2014</p></body></html>", "https://x.gov.co/")[1] == "Ley 1712 de 2014"
