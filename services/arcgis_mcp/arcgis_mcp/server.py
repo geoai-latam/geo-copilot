@@ -40,17 +40,18 @@ from geo_mcp_kit import (
     geo_result,
     herramientas_en_hilo,
     respond_json,
+    table,
 )
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ToolAnnotations
 
-from arcgis_mcp import hub, rest
+from arcgis_mcp import estadisticas, hub, rest
 from arcgis_mcp.red import UrlNoPermitida, ip_validada
 
 logger = logging.getLogger("arcgis_mcp")
 SCOPES = {"arcgis_search_items": "arcgis:read", "arcgis_describe_service": "arcgis:read",
-          "arcgis_query_features": "arcgis:read"}
+          "arcgis_query_features": "arcgis:read", "arcgis_estadisticas": "arcgis:read"}
 MAX_EN_LINEA = 5000          # hasta aquí, capa en la respuesta; más, GeoJSON por referencia
 MAX_BYTES_EN_LINEA = 8_000_000  # y que pese hasta esto (polígonos detallados: pocos y enormes)
 TTL_RESULTADOS_S = 3600
@@ -151,6 +152,25 @@ def arcgis_query_features(url: str, where: str | None = None, bbox: list[float] 
                                        feature_count=len(fc["features"]))], facts=hechos)
 
     return compact_result(runner.run(_consultar))
+
+
+@mcp.tool(
+    description=("Estadísticas por grupo de una capa o tabla ArcGIS, calculadas EN el servicio: `agrupar` (campos) "
+                 "y `medidas` [{tipo: count|sum|min|max|avg|stddev|var, campo, nombre}], con `where` y `orden`. "
+                 "P. ej. hectáreas por rango de precio en un municipio, sin traer los polígonos. Los hechos dicen "
+                 "cuántas filas resume y si vinieron todos los grupos."),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    meta=geo_meta(inputs={}, outputs=["table"], cost="low"),
+)
+def arcgis_estadisticas(url: str, agrupar: list[str], medidas: list[dict], where: str | None = None,
+                        orden: list[str] | None = None, max_grupos: int = estadisticas.MAX_GRUPOS) -> CallToolResult:
+    def _calcular() -> dict:
+        filas, hechos = estadisticas.estadisticas(_url_permitida(url), agrupar=agrupar, medidas=medidas, where=where,
+                                          orden=orden, max_grupos=max_grupos)
+        columnas = sorted({k for f in filas for k in f})
+        return geo_result([table(columnas, filas)], facts=hechos)
+
+    return compact_result(runner.run(_calcular))
 
 
 _candado_purga = threading.Lock()

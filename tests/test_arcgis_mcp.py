@@ -16,7 +16,7 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "arcgis_mcp"))
-from arcgis_mcp import hub, red, rest
+from arcgis_mcp import estadisticas, hub, red, rest
 from arcgis_mcp import server as srv
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,10 @@ def _servicio(total: int, max_record: int, *, geometria: str | None = "esriGeome
 @pytest.fixture
 def mock_http(monkeypatch):
     def instalar(handler):
-        monkeypatch.setattr(rest, "cliente", lambda url, **kw: httpx.Client(transport=httpx.MockTransport(handler)))
+        def falso(url, **kw):
+            return httpx.Client(transport=httpx.MockTransport(handler))
+        monkeypatch.setattr(rest, "cliente", falso)
+        monkeypatch.setattr(estadisticas, "cliente", falso)
         monkeypatch.setattr(srv, "_url_permitida", lambda url: url)
     return instalar
 
@@ -615,3 +618,55 @@ def test_sin_geometria_los_elementos_no_se_pierden(mock_http):
     with pytest.raises(rest.ErrorArcGIS, match="geometria") as exc:
         rest.consultar(CAPA, geometria="toda")
     assert exc.value.codigo == "parametro_invalido"
+
+
+def _estadisticas(registro: list):
+    def handler(req: httpx.Request) -> httpx.Response:
+        q = {k: v[0] for k, v in parse_qs(urlparse(str(req.url)).query).items()}
+        registro.append(q)
+        if q.get("returnCountOnly") == "true":
+            return httpx.Response(200, json={"count": 116})
+        return httpx.Response(200, json={"features": [
+            {"attributes": {"vigencia": 2016, "cod_precios": "4.1.1", "hectareas": 984.143, "zonas": 28}},
+            {"attributes": {"vigencia": 2016, "cod_precios": "5.2.3", "hectareas": 562.444, "zonas": 23}}]})
+    return handler
+
+
+def test_las_estadisticas_se_calculan_en_el_servicio(mock_http):
+    """Terranova (UPRA): hectáreas por rango de precio de Fusagasugá sin traer 116 polígonos."""
+    reg: list = []
+    mock_http(_estadisticas(reg))
+    filas, hechos = estadisticas.estadisticas(CAPA, agrupar=["vigencia", "cod_precios"], where="cod_dane_mpio = '25214'",
+                                      medidas=[{"tipo": "sum", "campo": "area_ha", "nombre": "hectareas"},
+                                               {"tipo": "count", "campo": "consecutivo", "nombre": "zonas"}],
+                                      orden=["vigencia", "cod_precios"])
+    (q,) = [q for q in reg if "outStatistics" in q]
+    assert q["groupByFieldsForStatistics"] == "vigencia,cod_precios" and q["orderByFields"] == "vigencia,cod_precios"
+    assert json.loads(q["outStatistics"])[0] == {"statisticType": "sum", "onStatisticField": "area_ha",
+                                                 "outStatisticFieldName": "hectareas"}
+    assert filas[0]["hectareas"] == 984.143 and hechos["filas_que_resume"] == 116 and hechos["completo"] is True
+
+
+@pytest.mark.parametrize(("agrupar", "medidas", "texto"), [
+    ([], [{"tipo": "sum", "campo": "a", "nombre": "b"}], "hacen falta"),
+    (["a"], [{"tipo": "median", "campo": "a", "nombre": "b"}], "tipo de medida"),
+    (["a; DROP"], [{"tipo": "sum", "campo": "a", "nombre": "b"}], "no es un nombre de campo"),
+])
+def test_estadisticas_mal_pedidas(mock_http, agrupar, medidas, texto):
+    mock_http(_estadisticas([]))
+    with pytest.raises(rest.ErrorArcGIS, match=texto):
+        estadisticas.estadisticas(CAPA, agrupar=agrupar, medidas=medidas)
+
+
+def test_la_tool_de_estadisticas_devuelve_una_tabla(mock_http):
+    mock_http(_estadisticas([]))
+    sc = srv.arcgis_estadisticas(CAPA, agrupar=["vigencia"], medidas=[{"tipo": "count", "campo": "zonas", "nombre": "n"}]).structuredContent
+    assert sc["facts"]["grupos"] == 2 and sc["artifacts"][0]["rows"][0]["cod_precios"] == "4.1.1"
+
+
+def test_toda_tool_tiene_scope():
+    """Fail-closed: una tool sin scope responde 403. Terranova lo vio con arcgis_estadisticas."""
+    import asyncio
+
+    nombres = {t.name for t in asyncio.run(srv.mcp.list_tools())}
+    assert nombres <= set(srv.SCOPES), sorted(nombres - set(srv.SCOPES))
