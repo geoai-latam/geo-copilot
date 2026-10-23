@@ -271,3 +271,11 @@ def test_la_etapa_previa_deduplica_antes_de_agregar(portal):
 def test_etapa_previa_mal_pedida_es_error_de_la_peticion(portal, argumentos, texto):
     sc = srv.datos_consultar("g8hy-gwg8", **argumentos).structuredContent
     assert texto in sc["error"] and sc["codigo"] == "parametro_invalido"
+
+
+def test_distinct_no_es_un_corte(portal):
+    """Terranova (spec 07): con `select distinct`, que lleguen menos filas que las del filtro no es un corte."""
+    sc = srv.datos_consultar("g8hy-gwg8", select="distinct nombre_ie", where="municipio = 'ENVIGADO'").structuredContent
+    q = [p for u, p in portal if u.endswith(".json") and "$select" in p and p["$select"] != "count(*)"][0]
+    assert "$order" not in q
+    assert sc["facts"]["completo"] is True and sc["facts"]["filas_que_resume"] == 70
