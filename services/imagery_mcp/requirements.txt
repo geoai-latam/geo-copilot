@@ -10,4 +10,4 @@ rio-tiler>=9,<10
 duckdb>=1.5,<2  # catálogo GeoParquet de escenas (catalogo.py)
 pyproj>=3.6,<4  # huellas de las teselas MGRS (mgrs.py)
 morecantile>=7,<8  # malla Web Mercator de las teselas del relieve (terreno.py; ya llega con rio-tiler)
-affine>=2.4,<3  # la ventana reducida del radar (radar.py; ya llega con rasterio)
+affine>=2.4,<4  # la ventana reducida del radar (radar.py; ya llega con rasterio)
