@@ -33,10 +33,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ToolAnnotations
 
-from web_mcp import fuentes
+from web_mcp import fuentes, paginas
 
 logger = logging.getLogger("web_mcp")
-SCOPES = {"web_json": "web:read", "web_sdmx": "web:read"}
+SCOPES = {"web_json": "web:read", "web_sdmx": "web:read", "web_html": "web:read"}
 runner = ToolRunner(timeout_s=170, service="web-mcp", expected_errors=(ErrorRed, UrlNoPermitida, fuentes.ErrorWeb))
 mcp = FastMCP(
     "web-mcp",
@@ -91,6 +91,46 @@ def web_sdmx(url: str, params: dict | None = None) -> CallToolResult:
         hechos = {"url": url, "params": params or {}, "filas": len(filas),
                   "completitud": completitud(len(filas), None if cortado else len(filas), truncado=cortado,
                                              motivo=f"tope de {fuentes.MAX_FILAS} observaciones" if cortado else None)}
+        return _tabla(filas, hechos)
+
+    return compact_result(runner.run(leer))
+
+
+MAX_TEXTO = 200_000
+
+
+@mcp.tool(
+    description=("Lee una página HTML pública (`url` https de un dominio permitido): su título y su texto limpio, "
+                 "sin menús ni scripts. Para una norma o una sentencia larga, `buscar` (p. ej. «ARTÍCULO 5») "
+                 "devuelve solo los fragmentos alrededor de cada aparición; `enlaces_con` (expresión regular "
+                 "sobre la URL) lista los enlaces de un índice. Los hechos dicen cuántos caracteres tiene la "
+                 "página y si el texto vino entero."),
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    meta=geo_meta(inputs={}, outputs=["table"], cost="low"),
+)
+def web_html(url: str, params: dict | None = None, buscar: str | None = None, enlaces_con: str | None = None,
+             max_caracteres: int = 20_000) -> CallToolResult:
+    def leer() -> dict:
+        r = fuentes.pedir(url, params)
+        if "html" not in r.headers.get("content-type", "html").lower():
+            raise fuentes.ErrorWeb("la respuesta no es HTML", "fuente_respuesta_invalida")
+        final = str(getattr(r, "url", "") or url)  # tras redirecciones (Función Pública redirige)
+        contenido = r.content if isinstance(getattr(r, "content", None), bytes) else r.text.encode("utf-8")
+        html = paginas.decodificar(contenido, r.headers.get("content-type", ""))
+        titulo, texto, enlaces = paginas.leer(html, final)
+        tope = max(1, min(int(max_caracteres), MAX_TEXTO))
+        hechos: dict[str, Any] = {"url": final, "titulo": titulo, "caracteres": len(texto)}
+        if buscar:
+            filas, total = paginas.fragmentos(texto, buscar)
+            hechos.update({"buscar": buscar, "apariciones": total,
+                           "completitud": completitud(len(filas), total, truncado=len(filas) < total)})
+        elif enlaces_con:
+            filas = paginas.enlaces_con(enlaces, enlaces_con)
+            hechos.update({"enlaces": len(filas), "completitud": completitud(len(filas), len(filas))})
+        else:
+            filas = [{"titulo": titulo, "texto": texto[:tope]}]
+            hechos["completitud"] = completitud(min(len(texto), tope), len(texto), truncado=len(texto) > tope,
+                                                motivo=f"max_caracteres={tope}" if len(texto) > tope else None)
         return _tabla(filas, hechos)
 
     return compact_result(runner.run(leer))
