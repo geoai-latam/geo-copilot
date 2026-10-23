@@ -9,6 +9,12 @@ COPY services/web_mcp/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY packages/geo_mcp_kit /opt/geo_mcp_kit
 RUN pip install --no-cache-dir "/opt/geo_mcp_kit[otel,red]"
+# Intermedios que algunos servidores del Estado no mandan (Función Pública manda el de Domain
+# Validation y su hoja la firmó el de Organization Validation). Se suman al paquete de certifi: la
+# cadena sigue terminando en una raíz de confianza; no se desactiva ninguna verificación.
+COPY services/web_mcp/certificados/ /opt/certificados/
+RUN cat "$(python -c 'import certifi; print(certifi.where())')" /opt/certificados/*.pem > /opt/ca.pem
+ENV SSL_CERT_FILE=/opt/ca.pem
 
 # F7 (S7.2): las herramientas de empaquetado no hacen falta para ejecutar (Trivy).
 RUN pip uninstall -y wheel setuptools pip

@@ -246,3 +246,15 @@ def test_encabezado_de_dos_filas_con_el_anio_combinado() -> None:
     assert largo[3] == {"Departamento": "Antioquia", "columna": "2019", "subcolumna": "Cabeceras", "valor": 10.2}
     ancho = tablas.tabla(filas, fila_encabezado=1, filas_encabezado=2)
     assert ancho[0]["2019 Total"] == 15.7
+
+
+def test_los_intermedios_agregados_son_los_verificados() -> None:
+    """Un intermedio en el paquete de confianza es un ancla: solo entra el verificado, con su huella."""
+    import hashlib
+    import ssl
+
+    ruta = Path(__file__).resolve().parents[1] / "services" / "web_mcp" / "certificados"
+    huellas = {p.name: hashlib.sha256(ssl.PEM_cert_to_DER_cert(p.read_text())).hexdigest().upper()
+               for p in ruta.glob("*.pem")}
+    assert huellas == {"sectigo_rsa_organization_validation.pem":
+                       "72A34AC2B424AED3F6B0B04755B88CC027DCCC806FDDB22B4CD7C47773973EC0"}
