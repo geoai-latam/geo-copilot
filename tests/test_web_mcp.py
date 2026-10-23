@@ -50,10 +50,13 @@ def _red(monkeypatch, respuestas: dict[str, Respuesta], robots: str = "User-agen
     pedidas: list[str] = []
 
     def get(url, params=None, **kw):
+        from urllib.parse import urlencode
+
         pedidas.append(url)
         if url.endswith("/robots.txt"):
             return Respuesta(robots)
-        return respuestas[url]
+        completa = f"{url}?{urlencode(params)}" if params else url  # pedir separa la consulta de la URL
+        return respuestas[completa] if completa in respuestas else respuestas[url]
 
     monkeypatch.setattr(fuentes.red, "get", get)
     return pedidas
@@ -258,3 +261,19 @@ def test_los_intermedios_agregados_son_los_verificados() -> None:
                for p in ruta.glob("*.pem")}
     assert huellas == {"sectigo_rsa_organization_validation.pem":
                        "72A34AC2B424AED3F6B0B04755B88CC027DCCC806FDDB22B4CD7C47773973EC0"}
+
+
+def test_la_consulta_de_la_url_no_se_pierde_con_params(monkeypatch) -> None:
+    """httpx con `params` reemplaza la consulta de la URL: norma.php?i=56882 llegaba sin su `i`."""
+    vistos: list = []
+
+    def get(url, params=None, **kw):
+        vistos.append((url, params))
+        return Respuesta("User-agent: *\nAllow: /\n") if url.endswith("/robots.txt") else Respuesta("<html></html>", cabeceras={"content-type": "text/html"})
+
+    monkeypatch.setattr(fuentes.red, "get", get)
+    fuentes.pedir("https://relatoria.colombiacompra.gov.co/norma.php?i=56882", None)
+    fuentes.pedir("https://relatoria.colombiacompra.gov.co/buscar?find=FindNext", {"query": "ley 1712"})
+    pedidas = [v for v in vistos if not v[0].endswith("/robots.txt")]
+    assert pedidas == [("https://relatoria.colombiacompra.gov.co/norma.php", {"i": "56882"}),
+                       ("https://relatoria.colombiacompra.gov.co/buscar", {"find": "FindNext", "query": "ley 1712"})]

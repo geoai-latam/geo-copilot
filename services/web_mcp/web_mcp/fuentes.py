@@ -14,7 +14,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
 from geo_mcp_kit import red
@@ -76,9 +76,14 @@ def pedir(url: str, params: dict[str, Any] | None) -> Any:
     if not _permitido_por_robots(url):
         raise ErrorWeb(f"el robots.txt del sitio no permite leer {url}")
     _esperar_turno(urlsplit(url).netloc.lower())
+    # httpx con `params` REEMPLAZA la consulta de la URL (norma.php?i=56882 perdía su `i` y Función
+    # Pública redirigía a su página de error): los parámetros de la URL se unen con los pedidos
+    partes = urlsplit(url)
+    unidos = {**dict(parse_qsl(partes.query, keep_blank_values=True)),
+              **{k: v for k, v in (params or {}).items() if v is not None}}
+    base = urlunsplit(partes._replace(query=""))
     try:
-        return red.get(url, {k: v for k, v in (params or {}).items() if v is not None}, dominios=dominios(),
-                       timeout=90, user_agent=USER_AGENT)
+        return red.get(base, unidos or None, dominios=dominios(), timeout=90, user_agent=USER_AGENT)
     except red.UrlNoPermitida as exc:
         raise ErrorWeb(f"dominio fuera de la lista permitida: {exc}") from exc
 
