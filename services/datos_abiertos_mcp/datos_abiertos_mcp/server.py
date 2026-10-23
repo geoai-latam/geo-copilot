@@ -134,7 +134,9 @@ def datos_describir(id: str, portal: str = "datos.gov.co") -> CallToolResult:
                  "(columnas), `where` (p. ej. «municipio = 'ENVIGADO' AND total_estudiantes::number > 500»), "
                  "`order`, y para agregados `group` y `having` (p. ej. select «departamento, count(*) AS n», "
                  "group «departamento», having «count(*) >= 10»: con datos de personas, deja fuera los grupos "
-                 "pequeños). Si tiene ubicación, sale como CAPA: `columna_geo` (una columna de ubicación) o "
+                 "pequeños). Si la fuente repite registros, `previo_select` + `previo_group` agrupan antes "
+                 "(p. ej. por estudiante) y el agregado se calcula sobre esos grupos. Si tiene ubicación, "
+                 "sale como CAPA: `columna_geo` (una columna de ubicación) o "
                  "`lat` + `lon` (columnas de latitud y longitud, aunque sean texto); si no, como TABLA. Por "
                  "zona: `bbox` [minx,miny,maxx,maxy] o `area` (una capa de la sesión: solo lo que la "
                  "interseca). Hasta `max_filas` (máx. 50000). Los hechos dicen cuántas cumplen el filtro en el "
@@ -147,7 +149,8 @@ def datos_consultar(id: str, portal: str = "datos.gov.co", select: str | None = 
                     where: str | None = None, order: str | None = None, columna_geo: str | None = None,
                     lat: str | None = None, lon: str | None = None, bbox: list[float] | None = None,
                     area: dict | None = None, max_filas: int = 5000, group: str | None = None,
-                    having: str | None = None) -> CallToolResult:
+                    having: str | None = None, previo_select: str | None = None,
+                    previo_group: str | None = None) -> CallToolResult:
     def consultar() -> dict:
         p = _portal(portal, "socrata")
         geom = areas.geometria(area) if area else None
@@ -155,8 +158,10 @@ def datos_consultar(id: str, portal: str = "datos.gov.co", select: str | None = 
         filtro = " AND ".join(f"({w})" for w in (where, zona and socrata.filtro_bbox(
             zona, columna_geo, lat, lon)) if w) or None
         datos, total = socrata.consultar(p["dominio"], id, select=select, where=filtro, order=order,
-                                         maximo=max_filas, geojson=bool(columna_geo), group=group, having=having)
-        hechos = filas.hechos(id, p, datos, total, max_filas, filtro, select=select, group=group, having=having)
+                                         maximo=max_filas, geojson=bool(columna_geo), group=group, having=having,
+                                         previo_select=previo_select, previo_group=previo_group)
+        hechos = filas.hechos(id, p, datos, total, max_filas, filtro, select=select, group=group, having=having,
+                              previo_group=previo_group)
         if not (columna_geo or (lat and lon)):
             return geo_result([table(sorted({k for f in datos for k in f}), datos)], facts=hechos)
         fc = ({"type": "FeatureCollection", "features": datos} if columna_geo

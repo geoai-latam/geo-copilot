@@ -46,6 +46,8 @@ def portal(monkeypatch, tmp_path):
             return _resp({"type": "FeatureCollection", "features": [
                 {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-75.59, 6.17]},
                  "properties": {"nombre_ie": "IE 1"}}]})
+        if "$query" in p:
+            return _resp(FILAS[:1])
         if url.endswith(".json"):
             return _resp(FILAS[: int(p["$limit"])])
         raise AssertionError(url)
@@ -241,5 +243,31 @@ def test_un_agregado_con_grupo_pasa_group_having_y_ordena_por_el_grupo(portal):
     ({"select": "count(*) AS n", "having": "count(*) > 1"}, "hace falta `group`"),
 ])
 def test_grupos_mal_pedidos_son_errores_de_la_peticion(portal, argumentos, texto):
+    sc = srv.datos_consultar("g8hy-gwg8", **argumentos).structuredContent
+    assert texto in sc["error"] and sc["codigo"] == "parametro_invalido"
+
+
+def test_la_etapa_previa_deduplica_antes_de_agregar(portal):
+    """Terranova (spec 07): el ICFES repite a cada estudiante en 20194; se agrupa por estudiante y luego
+    se cuenta y promedia. SoQL lo hace en el portal con `$query` encadenado (`… |> SELECT …`)."""
+    sc = srv.datos_consultar(
+        "g8hy-gwg8", where="municipio = '25175'",
+        previo_select="periodo, estu_consecutivo, avg(punt_global::number) AS g",
+        previo_group="periodo, estu_consecutivo",
+        select="periodo, count(*) AS estudiantes, avg(g) AS promedio", group="periodo",
+        having="count(*) >= 10").structuredContent
+    (q,) = [p for u, p in portal if "$query" in p]
+    assert q["$query"] == (
+        "SELECT periodo, estu_consecutivo, avg(punt_global::number) AS g WHERE (municipio = '25175') "
+        "GROUP BY periodo, estu_consecutivo |> SELECT periodo, count(*) AS estudiantes, avg(g) AS promedio "
+        "GROUP BY periodo HAVING count(*) >= 10 ORDER BY periodo LIMIT 5000 OFFSET 0")
+    assert sc["facts"]["consulta"]["previo_group"] == "periodo, estu_consecutivo"
+
+
+@pytest.mark.parametrize(("argumentos", "texto"), [
+    ({"previo_select": "a, count(*) AS n", "select": "count(*) AS m", "group": "a"}, "juntos"),
+    ({"previo_select": "a", "previo_group": "a", "select": "a"}, "hacen falta `select` con agregados"),
+])
+def test_etapa_previa_mal_pedida_es_error_de_la_peticion(portal, argumentos, texto):
     sc = srv.datos_consultar("g8hy-gwg8", **argumentos).structuredContent
     assert texto in sc["error"] and sc["codigo"] == "parametro_invalido"
