@@ -662,3 +662,11 @@ def test_la_tool_de_estadisticas_devuelve_una_tabla(mock_http):
     mock_http(_estadisticas([]))
     sc = srv.arcgis_estadisticas(CAPA, agrupar=["vigencia"], medidas=[{"tipo": "count", "campo": "zonas", "nombre": "n"}]).structuredContent
     assert sc["facts"]["grupos"] == 2 and sc["artifacts"][0]["rows"][0]["cod_precios"] == "4.1.1"
+
+
+def test_toda_tool_tiene_scope():
+    """Fail-closed: una tool sin scope responde 403. Terranova lo vio con arcgis_estadisticas."""
+    import asyncio
+
+    nombres = {t.name for t in asyncio.run(srv.mcp.list_tools())}
+    assert nombres <= set(srv.SCOPES), sorted(nombres - set(srv.SCOPES))

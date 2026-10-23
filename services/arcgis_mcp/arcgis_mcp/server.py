@@ -51,7 +51,7 @@ from arcgis_mcp.red import UrlNoPermitida, ip_validada
 
 logger = logging.getLogger("arcgis_mcp")
 SCOPES = {"arcgis_search_items": "arcgis:read", "arcgis_describe_service": "arcgis:read",
-          "arcgis_query_features": "arcgis:read"}
+          "arcgis_query_features": "arcgis:read", "arcgis_estadisticas": "arcgis:read"}
 MAX_EN_LINEA = 5000          # hasta aquí, capa en la respuesta; más, GeoJSON por referencia
 MAX_BYTES_EN_LINEA = 8_000_000  # y que pese hasta esto (polígonos detallados: pocos y enormes)
 TTL_RESULTADOS_S = 3600
