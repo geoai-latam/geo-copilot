@@ -133,13 +133,22 @@ def filtro_bbox(bbox: list[float], columna_geo: str | None, lat: str | None, lon
 
 def consultar(dominio: str, ident: str, *, select: str | None, where: str | None, order: str | None,
               maximo: int, geojson: bool, group: str | None = None,
-              having: str | None = None) -> tuple[list[dict], int | None]:
+              having: str | None = None, previo_select: str | None = None,
+              previo_group: str | None = None) -> tuple[list[dict], int | None]:
     """(filas o features, total que cumple el filtro). Paginado; SoQL lo ejecuta el portal.
 
     `group`/`having` (Terranova F5, G1): agrupar exige un `select` con agregados; sin `order`, se
     ordena por las columnas del grupo para que las páginas sean estables.
+
+    `previo_select`/`previo_group` (Terranova, spec 07): una etapa antes del agregado, para fuentes
+    que repiten registros. El ICFES trae dos veces a cada estudiante en algunos periodos: se agrupa
+    primero por estudiante y luego se cuenta y promedia sobre esos grupos (`… |> SELECT …`).
     """
     ident = _id_valido(ident)
+    if previo_select or previo_group:
+        return _consultar_en_dos_etapas(dominio, ident, select=select, where=where, order=order,
+                                        maximo=maximo, group=group, having=having,
+                                        previo_select=previo_select, previo_group=previo_group)
     if (group or having) and not filas.es_agregado(select):
         raise ErrorSocrata("`group` y `having` necesitan un `select` con agregados (count, sum, avg…)")
     if having and not group:
@@ -158,5 +167,29 @@ def consultar(dominio: str, ident: str, *, select: str | None, where: str | None
         pagina = datos.get("features", []) if geojson else datos
         salida += pagina
         if len(pagina) < params["$limit"]:
+            break
+    return salida[:maximo], _contar(dominio, ident, where)
+
+
+def _consultar_en_dos_etapas(dominio: str, ident: str, *, select: str | None, where: str | None,
+                             order: str | None, maximo: int, group: str | None, having: str | None,
+                             previo_select: str | None,
+                             previo_group: str | None) -> tuple[list[dict], int | None]:
+    """`$query` encadenado: la etapa previa agrupa (deduplica) y la segunda agrega sobre sus grupos."""
+    if not (previo_select and previo_group):
+        raise ErrorSocrata("la etapa previa necesita `previo_select` y `previo_group` juntos")
+    if not (group and filas.es_agregado(select)):
+        raise ErrorSocrata("tras la etapa previa va un agregado: hacen falta `select` con agregados y `group`")
+    previa = f"SELECT {previo_select}" + (f" WHERE {where}" if where else "") + f" GROUP BY {previo_group}"
+    final = f"SELECT {select} GROUP BY {group}" + (f" HAVING {having}" if having else "")
+    final += f" ORDER BY {order or group}"
+    maximo = max(1, min(int(maximo), MAX_FILAS))
+    salida: list[dict] = []
+    while len(salida) < maximo:
+        limite = min(PAGINA, maximo - len(salida))
+        consulta = f"{previa} |> {final} LIMIT {limite} OFFSET {len(salida)}"
+        pagina = _get(f"https://{dominio}/resource/{ident}.json", {"$query": consulta}).json()
+        salida += pagina
+        if len(pagina) < limite:
             break
     return salida[:maximo], _contar(dominio, ident, where)
