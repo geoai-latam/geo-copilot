@@ -220,3 +220,16 @@ def test_web_tabla_descubre_el_archivo_vigente_y_filtra(monkeypatch) -> None:
     assert sc["artifacts"][0]["rows"][0]["Nombre"] == "AEROCIVIL"
     mal = srv.web_tabla(url=archivo, filtros={"NO_ESTA": "x"}).structuredContent
     assert "no hay columnas" in mal["error"]
+
+
+def test_los_enlaces_se_arman_sobre_la_url_pedida_no_sobre_la_ip(monkeypatch) -> None:
+    """El kit fija la IP validada y `r.url` sale con ella: un enlace relativo sobre esa base salía del
+    dominio permitido («dominio no permitido: 190.83.78.1» con la DIAN)."""
+    pagina = "https://relatoria.colombiacompra.gov.co/indice.html"
+
+    class ConIp(Respuesta):
+        url = "https://190.83.78.1/indice.html"
+
+    _red(monkeypatch, {pagina: ConIp('<a href="/docs/resolucion_creg_1_2026.htm">R1</a>', cabeceras={"content-type": "text/html"})})
+    sc = srv.web_html(pagina, enlaces_con="resolucion_creg").structuredContent
+    assert sc["artifacts"][0]["rows"][0]["url"] == "https://relatoria.colombiacompra.gov.co/docs/resolucion_creg_1_2026.htm"

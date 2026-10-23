@@ -114,7 +114,9 @@ def web_html(url: str, params: dict | None = None, buscar: str | None = None, en
         r = fuentes.pedir(url, params)
         if "html" not in r.headers.get("content-type", "html").lower():
             raise fuentes.ErrorWeb("la respuesta no es HTML", "fuente_respuesta_invalida")
-        final = str(getattr(r, "url", "") or url)  # tras redirecciones (Función Pública redirige)
+        # la base de los enlaces es la URL pedida, no `r.url`: el cliente del kit fija la IP validada y
+        # `r.url` sale con la IP; un enlace relativo armado sobre ella ya no es del dominio permitido
+        final = url
         contenido = r.content if isinstance(getattr(r, "content", None), bytes) else r.text.encode("utf-8")
         html = paginas.decodificar(contenido, r.headers.get("content-type", ""))
         titulo, texto, enlaces = paginas.leer(html, final)
@@ -155,7 +157,7 @@ def web_tabla(url: str | None = None, pagina: str | None = None, enlace_con: str
             if not (pagina and enlace_con):
                 raise fuentes.ErrorWeb("hace falta `url`, o `pagina` y `enlace_con`")
             indice = fuentes.pedir(pagina, None)
-            final = str(getattr(indice, "url", "") or pagina)
+            final = pagina  # no `indice.url`: trae la IP fijada por el kit (ver web_html)
             _, _, enlaces = paginas.leer(paginas.decodificar(indice.content, indice.headers.get("content-type", "")), final)
             encontrados = paginas.enlaces_con(enlaces, enlace_con)
             if not encontrados:
