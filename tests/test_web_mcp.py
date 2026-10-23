@@ -257,8 +257,11 @@ def test_los_intermedios_agregados_son_los_verificados() -> None:
     import ssl
 
     ruta = Path(__file__).resolve().parents[1] / "services" / "web_mcp" / "certificados"
-    huellas = {p.name: hashlib.sha256(ssl.PEM_cert_to_DER_cert(p.read_text())).hexdigest().upper()
-               for p in ruta.glob("*.pem")}
+    pems = list(ruta.glob("*.pem"))
+    # la excepción del .gitignore deja entrar *.pem aquí: que nunca sea una clave
+    assert all(p.read_text().count("-----BEGIN CERTIFICATE-----") == 1 and "PRIVATE" not in p.read_text()
+               for p in pems)
+    huellas = {p.name: hashlib.sha256(ssl.PEM_cert_to_DER_cert(p.read_text())).hexdigest().upper() for p in pems}
     assert huellas == {"sectigo_rsa_organization_validation.pem":
                        "72A34AC2B424AED3F6B0B04755B88CC027DCCC806FDDB22B4CD7C47773973EC0"}
 

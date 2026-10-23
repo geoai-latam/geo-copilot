@@ -185,6 +185,8 @@ test_results/
 # secrets
 secrets/
 *.pem
+# certificados intermedios PÚBLICOS de web-mcp (nunca claves): ver services/web_mcp/certificados/LEEME.md
+!services/web_mcp/certificados/*.pem
 *.key
 *.crt
 
