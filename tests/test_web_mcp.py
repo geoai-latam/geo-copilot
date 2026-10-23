@@ -102,5 +102,69 @@ def test_un_sitio_a_la_vez(monkeypatch) -> None:
     assert dormido and dormido[0] > 0.9  # la segunda petición espera su turno
 
 
-def test_las_tools_tienen_scope() -> None:
-    assert set(srv.SCOPES) == {"web_json", "web_sdmx"}
+NORMA = """<html><head><title>Ley 1712 de 2014 - Gestor Normativo</title><script>var x = 1;</script></head>
+<body><nav>Inicio | Normas</nav><div id="contenido"><h1>LEY 1712 DE 2014</h1>
+<p>Por medio de la cual se crea la Ley de Transparencia.</p>
+<p><b>ARTÍCULO 1.</b> Objeto. El objeto de la presente ley es regular el derecho de acceso.</p>
+<p><b>ARTÍCULO 2.</b> Principio de máxima publicidad.</p>
+<a href="docs/resolucion_creg_101_2026.htm">Resolución 101 de 2026</a> <a href="/otra.html">otra</a>
+</div><footer>© Función Pública</footer></body></html>"""
+URL_NORMA = "https://relatoria.colombiacompra.gov.co/eva/norma.php?i=56882"
+
+
+def test_html_saca_titulo_y_texto_sin_menus_ni_scripts(monkeypatch) -> None:
+    """Terranova (G4 parte 2): normas del Gestor Normativo y sentencias de la Corte en HTML estático."""
+    _red(monkeypatch, {URL_NORMA: Respuesta(NORMA, cabeceras={"content-type": "text/html; charset=utf-8"})})
+    sc = srv.web_html(URL_NORMA).structuredContent
+    fila = sc["artifacts"][0]["rows"][0]
+    assert fila["titulo"] == "Ley 1712 de 2014 - Gestor Normativo"
+    assert "ARTÍCULO 1. Objeto." in fila["texto"] and "var x" not in fila["texto"]
+    assert "Inicio | Normas" not in fila["texto"] and "Función Pública" not in fila["texto"]
+    assert sc["facts"]["completitud"]["truncado"] is False
+
+
+def test_html_busca_fragmentos_y_corta_con_aviso(monkeypatch) -> None:
+    _red(monkeypatch, {URL_NORMA: Respuesta(NORMA, cabeceras={"content-type": "text/html"})})
+    sc = srv.web_html(URL_NORMA, buscar="artículo 2").structuredContent
+    assert sc["facts"]["apariciones"] == 1 and "máxima publicidad" in sc["artifacts"][0]["rows"][0]["texto"]
+    corto = srv.web_html(URL_NORMA, max_caracteres=20).structuredContent
+    assert corto["facts"]["completitud"]["truncado"] is True and len(corto["artifacts"][0]["rows"][0]["texto"]) == 20
+
+
+def test_html_lista_enlaces_de_un_indice(monkeypatch) -> None:
+    _red(monkeypatch, {URL_NORMA: Respuesta(NORMA, cabeceras={"content-type": "text/html"})})
+    sc = srv.web_html(URL_NORMA, enlaces_con=r"resolucion_creg_\d+").structuredContent
+    assert sc["artifacts"][0]["rows"] == [{"texto": "Resolución 101 de 2026",
+                                           "url": "https://relatoria.colombiacompra.gov.co/eva/docs/resolucion_creg_101_2026.htm"}]
+
+
+def test_html_rechaza_lo_que_no_es_html(monkeypatch) -> None:
+    _red(monkeypatch, {URL_NORMA: Respuesta("%PDF-1.7", cabeceras={"content-type": "application/pdf"})})
+    sc = srv.web_html(URL_NORMA).structuredContent
+    assert "no es HTML" in sc["error"]
+
+
+def test_toda_tool_tiene_scope() -> None:
+    """Fail-closed: una tool registrada sin scope respondería 403."""
+    import asyncio
+
+    nombres = {t.name for t in asyncio.run(srv.mcp.list_tools())}
+    assert nombres <= set(srv.SCOPES), sorted(nombres - set(srv.SCOPES))
+
+
+def test_html_no_se_come_la_pagina_con_un_menu_sin_cerrar() -> None:
+    """La CREG envuelve la página en un <header> sin cerrar: sin la salvaguarda, 0 de 125 enlaces."""
+    from web_mcp import paginas
+
+    html = "<html><body><header>Menú<div><a href='docs/resolucion_creg_1_2026.htm'>Res 1</a> texto largo de la norma</div></body></html>"
+    _, texto, enlaces = paginas.leer(html, "https://gestornormativo.creg.gov.co/gestor/entorno/x.html")
+    assert "texto largo de la norma" in texto and len(enlaces) == 1
+    form = "<form><p>ARTÍCULO 1. Objeto.</p></form>"
+    assert "ARTÍCULO 1" in paginas.leer(form, "https://x.gov.co/")[1]
+
+
+def test_html_respeta_el_charset_del_meta() -> None:
+    from web_mcp import paginas
+
+    crudo = '<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"></head><body>identificación</body></html>'.encode("cp1252")
+    assert "identificación" in paginas.decodificar(crudo, "text/html")
