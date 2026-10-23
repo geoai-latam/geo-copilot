@@ -50,10 +50,13 @@ def _red(monkeypatch, respuestas: dict[str, Respuesta], robots: str = "User-agen
     pedidas: list[str] = []
 
     def get(url, params=None, **kw):
+        from urllib.parse import urlencode
+
         pedidas.append(url)
         if url.endswith("/robots.txt"):
             return Respuesta(robots)
-        return respuestas[url]
+        completa = f"{url}?{urlencode(params)}" if params else url  # pedir separa la consulta de la URL
+        return respuestas[completa] if completa in respuestas else respuestas[url]
 
     monkeypatch.setattr(fuentes.red, "get", get)
     return pedidas
@@ -246,3 +249,40 @@ def test_encabezado_de_dos_filas_con_el_anio_combinado() -> None:
     assert largo[3] == {"Departamento": "Antioquia", "columna": "2019", "subcolumna": "Cabeceras", "valor": 10.2}
     ancho = tablas.tabla(filas, fila_encabezado=1, filas_encabezado=2)
     assert ancho[0]["2019 Total"] == 15.7
+
+
+def test_los_intermedios_agregados_son_los_verificados() -> None:
+    """Un intermedio en el paquete de confianza es un ancla: solo entra el verificado, con su huella."""
+    import hashlib
+    import ssl
+
+    ruta = Path(__file__).resolve().parents[1] / "services" / "web_mcp" / "certificados"
+    pems = list(ruta.glob("*.pem"))
+    # la excepción del .gitignore deja entrar *.pem aquí: que nunca sea una clave
+    assert all(p.read_text().count("-----BEGIN CERTIFICATE-----") == 1 and "PRIVATE" not in p.read_text()
+               for p in pems)
+    huellas = {p.name: hashlib.sha256(ssl.PEM_cert_to_DER_cert(p.read_text())).hexdigest().upper() for p in pems}
+    assert huellas == {"sectigo_rsa_organization_validation.pem":
+                       "72A34AC2B424AED3F6B0B04755B88CC027DCCC806FDDB22B4CD7C47773973EC0"}
+
+
+def test_la_consulta_de_la_url_no_se_pierde_con_params(monkeypatch) -> None:
+    """httpx con `params` reemplaza la consulta de la URL: norma.php?i=56882 llegaba sin su `i`."""
+    vistos: list = []
+
+    def get(url, params=None, **kw):
+        vistos.append((url, params))
+        return Respuesta("User-agent: *\nAllow: /\n") if url.endswith("/robots.txt") else Respuesta("<html></html>", cabeceras={"content-type": "text/html"})
+
+    monkeypatch.setattr(fuentes.red, "get", get)
+    fuentes.pedir("https://relatoria.colombiacompra.gov.co/norma.php?i=56882", None)
+    fuentes.pedir("https://relatoria.colombiacompra.gov.co/buscar?find=FindNext", {"query": "ley 1712"})
+    pedidas = [v for v in vistos if not v[0].endswith("/robots.txt")]
+    assert pedidas == [("https://relatoria.colombiacompra.gov.co/norma.php", {"i": "56882"}),
+                       ("https://relatoria.colombiacompra.gov.co/buscar", {"find": "FindNext", "query": "ley 1712"})]
+
+
+def test_el_texto_no_empieza_con_la_marca_de_orden_de_bytes() -> None:
+    from web_mcp import paginas
+
+    assert paginas.leer("\ufeff<html><body><p>Ley 1712 de 2014</p></body></html>", "https://x.gov.co/")[1] == "Ley 1712 de 2014"
