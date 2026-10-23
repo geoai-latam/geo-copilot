@@ -81,7 +81,7 @@ def _leer_con(html: str, base: str, excluidos: set[str]) -> tuple[str, str, list
     lector.feed(html)
     lector.close()
     # sin la marca de orden de bytes (U+FEFF) que algunos sitios dejan al comienzo del texto
-    crudo = "".join(lector.partes).replace("﻿", "")
+    crudo = "".join(lector.partes).replace("\ufeff", "")
     lineas = (" ".join(linea.split()) for linea in crudo.splitlines())
     texto = "\n".join(linea for linea in lineas if linea)
     return " ".join(lector.titulo.split()), texto, lector.enlaces
