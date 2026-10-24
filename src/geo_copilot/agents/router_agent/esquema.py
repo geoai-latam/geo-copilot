@@ -59,6 +59,16 @@ _ESQUEMA_ROUTE: dict = {
             "'CAPAS EN EL MAPA' que el usuario nombró; null si "
             "no nombró ninguna o es ambiguo.",
         },
+        # Plan de fiabilidad F1: lo decide el LLM, no una lista de palabras. Con `direct_response`, si
+        # contestar exige datos o hechos del mundo, el turno va al bucle (que consulta y pasa el juez)
+        # en vez de que el router escriba la respuesta de memoria.
+        "requiere_fuente": {
+            "type": "boolean",
+            "description": "true si responder exige datos o hechos del mundo (cifras, lugares, "
+            "normas, licencias, fechas, estados de algo) que deben salir de una herramienta o "
+            "fuente y no de tu memoria. false para saludos, agradecimientos, qué puede hacer el "
+            "copiloto o conceptos generales (qué es un buffer).",
+        },
         "is_multi_step": {"type": "boolean"},
         "additional_operations": {
             "type": "array", "items": {"type": "string"},

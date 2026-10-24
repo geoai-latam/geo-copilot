@@ -58,6 +58,13 @@ class RutasMixin:
         if intent == "clarify" and state.get("final_response") and hybrid:
             logger.info("[Router] clarify - hybrid → agent_loop (puede pedir en el mapa)")
             return "agent_loop"
+        # Plan de fiabilidad F1: una respuesta directa que afirma hechos del mundo (el LLM del router
+        # lo declara en `requiere_fuente`) no se entrega de memoria: va al bucle, que consulta y la
+        # pasa por el juez. Sin esto, «¿cuánto llovió en Bogotá?» o «¿puedo usar Open-Meteo
+        # comercialmente?» se respondían sin herramienta (y la segunda, falsa).
+        if intent == "direct_response" and hybrid and RutasMixin._router_pide_fuente(state):
+            logger.info("[Router] direct_response con requiere_fuente - hybrid → agent_loop")
+            return "agent_loop"
         if state.get("final_response") and intent in ("direct_response", "clarify"):
             logger.info(f"[Router] {intent} - going to responder")
             return "responder"
@@ -74,6 +81,13 @@ class RutasMixin:
             logger.info("[Router] map_control - going to agent_loop (ReAct)")
             return "agent_loop"
         return None
+
+    @staticmethod
+    def _router_pide_fuente(state: GraphState) -> bool:
+        """El router (su LLM) declaró que contestar exige datos de una fuente."""
+        messages = state.get("messages", [])
+        ultimo: Any = messages[-1] if messages else {}
+        return bool(ultimo.get("agent") == "router" and (ultimo.get("data") or {}).get("requiere_fuente"))
 
     @staticmethod
     def _ruta_de_planificacion(state: GraphState, settings: Any, hybrid: bool) -> str | None:

@@ -48,6 +48,7 @@ El campo `intent` indica QUÉ DEBE HACER el sistema; referencia de campos:
     "selected_service_number": null o número del servicio (1..N) si intent=select_service,
     "external_url": "URL externa si el usuario proporcionó una (intent=load_external)",
     "target_layer_id": null o el [id] de la capa OBJETIVO si el usuario NOMBRÓ una capa específica de "CAPAS EN EL MAPA",
+    "requiere_fuente": true/false (true si contestar exige datos o hechos del mundo que deben salir de una herramienta o fuente; false para saludos, capacidades o conceptos generales),
     "is_multi_step": true/false,
     "additional_operations": ["lista de operaciones adicionales detectadas en la consulta"]
 }}
