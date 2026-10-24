@@ -52,8 +52,25 @@ async def run(graph: GeoAgentGraph, state: GraphState) -> dict:
     # escapaba el nodo (no se capturaba aquí). Ahora la ausencia de intent
     # cae al fallback de error como cualquier otra respuesta inválida.
     if response.success and response.data and response.data.get("intent"):
+        await _verificar_respuesta_directa(graph, state, response.data)
         return _decision(state, response.data)
     return _fallo(response)
+
+
+async def _verificar_respuesta_directa(graph: GeoAgentGraph, state: GraphState, data: dict) -> None:
+    """Plan de fiabilidad F1: si el router piensa contestar de memoria algo que afirma hechos, se
+    marca `requiere_fuente` y la ruta lo manda al bucle (que consulta y pasa el juez). Solo con la
+    política híbrida, que es la que tiene bucle al que mandarlo."""
+    if data.get("intent") != "direct_response" or data.get("requiere_fuente"):
+        return
+    from geo_copilot.orchestrator import graph as grafo
+
+    if grafo._resolve_react_policy(grafo.get_settings()) != "hybrid":
+        return
+    from geo_copilot.core.verificador_hechos import afirma_hechos
+
+    if await afirma_hechos(getattr(graph, "llm", None), state["query"], str(data.get("direct_response") or "")):
+        data["requiere_fuente"] = True
 
 
 def _contexto(state: GraphState, schema_info: str) -> dict:

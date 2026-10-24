@@ -227,6 +227,7 @@ class RouterAgent(BaseAgent):
         target_layer_id = result.get("target_layer_id")  # FRT-04: capa nombrada
         is_multi_step = bool(result.get("is_multi_step", False))
         additional_operations = result.get("additional_operations", [])
+        requiere_fuente = bool(result.get("requiere_fuente", False))
 
         # Si hay operaciones adicionales, garantizamos multi-step.
         if additional_operations:
@@ -246,6 +247,10 @@ class RouterAgent(BaseAgent):
             if error_msg:
                 intent = "direct_response"
                 direct_response = error_msg
+                # Sin tarjetas que elegir, el usuario no estaba eligiendo una: que lo resuelva el
+                # bucle con sus herramientas en vez de este texto fijo (plan de fiabilidad, F1).
+                if not context.get("found_services"):
+                    requiere_fuente = True
             else:
                 external_url = resolved_url
 
@@ -266,6 +271,7 @@ class RouterAgent(BaseAgent):
                 "target_layer_id": target_layer_id,  # FRT-04
                 "is_complex_query": is_multi_step,
                 "additional_operations": additional_operations,
+                "requiere_fuente": requiere_fuente,
             }
         )
 

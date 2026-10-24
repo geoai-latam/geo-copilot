@@ -156,8 +156,9 @@ class TestDirectResponseFlow:
         # API forwards to the user).
         assert "Hola, soy GEO_COPILOT" in (result.get("message") or "")
         assert result.get("success") is True
-        # Exactly one LLM call: the router. No agent dispatched.
-        assert mock_llm.chat.await_count == 1
+        # Two LLM calls: the router and its fact verifier (plan de fiabilidad F1: a direct answer is
+        # checked for factual claims before it is delivered). No agent dispatched.
+        assert mock_llm.chat.await_count == 2
 
     @pytest.mark.asyncio
     async def test_direct_response_terminates_without_db(self) -> None:

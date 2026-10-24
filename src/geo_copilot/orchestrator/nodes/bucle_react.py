@@ -79,6 +79,12 @@ async def _prompt_del_sistema(graph: Any, state: Mapping[str, Any], metrics: Any
     return system_content
 
 
+def _pide_fuente(state: Mapping[str, Any]) -> bool:
+    from geo_copilot.orchestrator.grafo_rutas import RutasMixin
+
+    return state.get("intent") == "direct_response" and RutasMixin._router_pide_fuente(state)  # type: ignore[arg-type]
+
+
 def _pedido(state: Mapping[str, Any], query: str) -> str:
     """El mensaje del usuario con lo que otros pasos de este turno ya leyeron (V5 FH.4, FH.9, FH.14)."""
     pedido = query
@@ -89,6 +95,11 @@ def _pedido(state: Mapping[str, Any], query: str) -> str:
                   f"preguntar: «{state['final_response']}». Decide tú: si con lo que hay en el mapa ya no es "
                   "ambigua, resuélvela; si lo que falta es DÓNDE o SOBRE QUÉ del mapa, pídeselo con "
                   "request_map_input; si falta otra cosa, pregúntalo con answer.)")
+    elif _pide_fuente(state):
+        # Plan de fiabilidad F1: el router juzgó que contestar exige datos de una fuente y no lo dejó
+        # responder de memoria; ese juicio llega como hecho. Qué consultar lo decide el bucle.
+        pedido = (f"{query}\n\n(Un paso anterior de este turno juzgó que responder esto exige datos o hechos "
+                  "que deben salir de una herramienta o de la ficha de una fuente, no de la memoria.)")
     elif state.get("interpretacion_previa"):
         # V5 FH.4: si otro agente de este turno (el seguimiento) ya leyó la conversación y el mapa y
         # juzgó que hay que calcular algo, esa lectura llega como hecho, con su fuente.
