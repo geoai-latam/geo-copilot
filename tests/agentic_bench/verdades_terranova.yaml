@@ -80,7 +80,7 @@
   expected:
     success: true
     tool_regex: "igac_predio_en_punto|ficha_lugar|igac_gestor"
-    answer_regex: "(?i)uaecd|fuera de cobertura|no cubre|catastro (de )?bogot|catastro distrital|no hay dato"
+    answer_regex: "(?i)uaecd|fuera[ _]de[ _]cobertura|no cubre|catastro (de )?bogot|catastro distrital|no hay dato"
     answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
 
 - id: tn-geo-cobertura

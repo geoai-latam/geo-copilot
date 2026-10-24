@@ -50,6 +50,30 @@ _ACCEPT = AnswerVerdict(addressed=True, confidence=1.0, reason="aceptada (sin ev
 _PROMPT = cargar_prompt("juez_composicion")
 
 
+def cliente_del_juez(llm_client):
+    """El cliente con el que juzga: el del agente, o el modelo de `llm_judge_model` si se configuró
+    (mismo proveedor). Con gpt-4.1-mini/gpt-5.4-mini el juez rechazaba 0/4 respuestas falsas; con
+    gpt-4o/gpt-5.4, 4/4 (F3_MODELOS): el juez puede ir con un modelo más capaz que el bucle."""
+    from geo_copilot.core.config import get_settings
+
+    modelo = str(getattr(get_settings(), "llm_judge_model", "") or "").strip()
+    if not modelo or modelo == getattr(llm_client, "model", None) or not hasattr(llm_client, "provider"):
+        return llm_client
+    if _JUECES.get(modelo) is None:
+        from geo_copilot.core.llm_client import LLMClient
+
+        _JUECES[modelo] = LLMClient(
+            provider=llm_client.provider, api_key=llm_client.api_key, model=modelo,
+            endpoint=getattr(llm_client, "endpoint", "") or "",
+            api_version=getattr(llm_client, "api_version", "") or "2024-12-01-preview",
+            base_url=getattr(llm_client, "base_url", "") or "",
+        )
+    return _JUECES[modelo]
+
+
+_JUECES: dict[str, object] = {}
+
+
 async def judge_answer(
     *, query: str, answer: str, tools_used: list[str], llm_client,
     observaciones: list[str] | None = None,
@@ -68,7 +92,7 @@ async def judge_answer(
         hechos="\n".join(f"- {o}" for o in (observaciones or [])[-10:]) or "(sin datos)",
     )
     try:
-        response = await llm_client.chat([LLMMessage(role="user", content=prompt)])
+        response = await cliente_del_juez(llm_client).chat([LLMMessage(role="user", content=prompt)])
     except Exception as exc:  # noqa: BLE001 — fallo de LLM no genera re-trabajo
         logger.warning(f"[CompositionJudge] LLM falló ({exc}) — respuesta aceptada")
         return _ACCEPT

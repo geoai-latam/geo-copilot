@@ -59,6 +59,11 @@ class Settings(ConfigAutonomia, ConfigPresentacion, BaseSettings):
     azure_openai_endpoint: str = Field(default="", description="Azure OpenAI Endpoint")
     openai_api_version: str = Field(default="2024-12-01-preview", description="Azure OpenAI API Version")
     llm_model: str = Field(default="gpt-5.4", description="Modelo LLM a usar (en Azure: el deployment)")
+    llm_judge_model: str = Field(
+        default="",
+        description="Modelo del juez de composición (mismo proveedor); vacío = el de LLM_MODEL. Plan de "
+        "fiabilidad F2: el juez puede ir con un modelo más capaz que el bucle.",
+    )
     # Servidores compatibles con la API de OpenAI (vLLM, Ollama, LM Studio, gateway corporativo).
     llm_base_url: str = Field(default="", description="URL base de un servidor compatible con OpenAI")
     llm_api_key: SecretStr = Field(default=SecretStr(""), description="Clave del servidor compatible (si la pide)")
