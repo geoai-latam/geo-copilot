@@ -20,16 +20,18 @@ _PROMPT = cargar_prompt("verificador_hechos")
 _ESQUEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
+        "pide_dato": {"type": "boolean"},
         "afirma_hechos": {"type": "boolean"},
         "motivo": {"type": "string", "description": "Una frase: qué hecho afirma, o por qué no afirma ninguno."},
     },
-    "required": ["afirma_hechos", "motivo"],
+    "required": ["pide_dato", "afirma_hechos", "motivo"],
     "additionalProperties": False,
 }
 
 
 async def afirma_hechos(llm: Any, query: str, respuesta: str) -> bool:
-    """True si el borrador afirma hechos que deberían salir de una fuente.
+    """True si la pregunta pide un dato del mundo o el borrador afirma hechos que deberían salir de una
+    fuente.
 
     Ante un fallo del LLM devuelve False: se conserva el camino de siempre (la respuesta directa) en vez
     de inventar un juicio."""
@@ -49,5 +51,8 @@ async def afirma_hechos(llm: Any, query: str, respuesta: str) -> bool:
     except Exception as exc:  # noqa: BLE001 — sin juicio, el camino de siempre
         logger.warning(f"[verificador_hechos] sin juicio ({type(exc).__name__}); se conserva la respuesta directa")
         return False
-    logger.info(f"[verificador_hechos] afirma_hechos={r.get('afirma_hechos')} · {str(r.get('motivo', ''))[:160]}")
-    return bool(r.get("afirma_hechos"))
+    logger.info(f"[verificador_hechos] pide_dato={r.get('pide_dato')} afirma_hechos={r.get('afirma_hechos')} · "
+                f"{str(r.get('motivo', ''))[:160]}")
+    # Dos preguntas simples rinden más que una compuesta: con «Puedo ayudarte con capas» ante «¿cuánto
+    # llovió?» el modelo no veía que esquivaba el dato (0/5); la pregunta sí lo pide.
+    return bool(r.get("pide_dato") or r.get("afirma_hechos"))
