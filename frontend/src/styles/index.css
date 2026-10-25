@@ -2955,7 +2955,10 @@ input, textarea { font: inherit; color: inherit; }
 
 /* Trazabilidad del turno: lo que el agente hizo, paso a paso (TrazaTurno) */
 .traza { margin-top: 8px; font-size: 12px; }
-.traza > summary { cursor: pointer; color: var(--text-mute); list-style: none; }
+.traza > summary { cursor: pointer; color: var(--accent); list-style: none; font-weight: 500;
+  display: inline-flex; align-items: center; border-radius: 6px; padding: 2px 7px; margin-left: -7px;
+  transition: background 0.12s ease; }
+.traza > summary:hover { background: var(--accent-soft); }
 .traza > summary::-webkit-details-marker { display: none; }
 .traza > summary::before { content: '▸ '; }
 .traza[open] > summary::before { content: '▾ '; }
