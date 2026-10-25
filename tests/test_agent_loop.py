@@ -534,3 +534,53 @@ async def test_la_tabla_que_acompana_a_un_grafico_llega_al_modelo_y_al_usuario()
                                 target_layer_id=None, row_count=1)
     tablas = [a for a in arts if a.kind == "table"]
     assert any("area_total_m2" in (t.preview[0] if t.preview else {}) for t in tablas)
+
+
+# ---------------------------------------------------------------------------
+# Honestidad de estado: una fuente degradada (lenta/caída) NO se re-despacha
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_fuente_lenta_no_se_redespacha():
+    """Una tool que respondió `fuente_lenta` no se vuelve a despachar en el turno: repagar la fuente
+    lenta (ReadTimeout de ~73 s) agotaría el reloj global y el turno moriría con un «Error» genérico.
+    El bucle avanza por el breaker y cierra honesto."""
+    from geo_copilot.platform.capabilities import ToolOutcome
+
+    tool = "tn_territorio__igac_capacidad_uso_en_punto"
+    graph = _graph([
+        tool_call_response(tool, {"lon": -74.0, "lat": 4.8}),
+        tool_call_response(tool, {"lon": -74.0, "lat": 4.8}, call_id="c2"),  # el bucle la cortocircuita
+        final_response("La fuente de agrología del IGAC está lenta ahora mismo; intenta más tarde."),
+    ])
+    dispatch = AsyncMock(return_value=ToolOutcome(
+        observation=f"[tn_territorio] {tool}: el servicio no respondió a tiempo (codigo=fuente_lenta)",
+        success=False, degraded_code="fuente_lenta"))
+
+    with patch.object(agent_loop, "dispatch_tool", new=dispatch), \
+         patch.object(agent_loop, "get_settings", return_value=_settings()):
+        result = await agent_loop.run(graph, {"query": "capacidad de uso en el punto", "session_id": "s"})
+
+    assert dispatch.call_count == 1  # la 2ª llamada se cortocircuitó (no se repagó la fuente lenta)
+    assert "lenta" in result["final_response"].lower()
+
+
+@pytest.mark.asyncio
+async def test_tool_sana_se_redespacha_normal():
+    """Una tool que NO está degradada se despacha cada vez: el cortocircuito es solo para fuentes
+    lentas/caídas, no para una tool sana que el modelo llama dos veces."""
+    from geo_copilot.platform.capabilities import ToolOutcome
+
+    tool = "tn_contratacion__secop_contratos_buscar"
+    graph = _graph([
+        tool_call_response(tool, {"texto": "a"}),
+        tool_call_response(tool, {"texto": "b"}, call_id="c2"),
+        final_response("Dos búsquedas hechas."),
+    ])
+    dispatch = AsyncMock(return_value=ToolOutcome(
+        observation="Resultado de «tn_contratacion» (datos externos): {...}", success=True))
+
+    with patch.object(agent_loop, "dispatch_tool", new=dispatch), \
+         patch.object(agent_loop, "get_settings", return_value=_settings()):
+        await agent_loop.run(graph, {"query": "busca contratos", "session_id": "s"})
+
+    assert dispatch.call_count == 2  # tool sana: ambas llamadas se ejecutan

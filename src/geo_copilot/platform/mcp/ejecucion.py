@@ -18,6 +18,17 @@ from geo_copilot.platform.mcp.referencias import _limitar, _resolver_geo
 if TYPE_CHECKING:
     from geo_copilot.platform.mcp.hub import EstadoTool, McpHub
 
+#: Códigos de estado `rt/1` que NO mejoran reintentando la misma tool en el turno (la fuente
+#: está lenta o caída). El bucle los usa para cortocircuitar el re-despacho: repagar una fuente
+#: lenta (p. ej. agrología IGAC, ~73 s por ReadTimeout) agota el reloj global del turno y éste
+#: muere con un «Error» genérico en vez de decir, honesto, que la fuente está lenta.
+_CODIGOS_DEGRADADOS = ("fuente_no_disponible", "fuente_lenta")
+
+
+def _codigo_degradado(texto: str) -> str | None:
+    """El código de fuente degradada presente en `texto`, o None."""
+    return next((c for c in _CODIGOS_DEGRADADOS if c in texto), None)
+
 
 async def ejecutar_tool(hub: McpHub, cfg: ServerConfig, tool: str, est: EstadoTool,
                         working: dict, args: dict, *, graph: Any = None) -> ToolOutcome:
@@ -132,14 +143,18 @@ async def _llamar(hub: McpHub, con: McpConnection, cfg: ServerConfig, tool: str,
             # por haber supuesto el nombre de la tabla; el hecho va donde aplica: aquí.
             pista = (" [Núcleo:] el servicio sigue disponible: si el error es por una tabla o columna, "
                      "mira las REALES con su herramienta de listar tablas y reintenta aquí.")
-        return ToolOutcome(_limitar(f"[{cfg.id}] error: " + " ".join(textos) + pista), success=False)
+        obs = f"[{cfg.id}] error: " + " ".join(textos) + pista
+        return ToolOutcome(_limitar(obs), success=False, degraded_code=_codigo_degradado(obs))
 
     sc = _desanidar_geo_result(res.structuredContent)
     if isinstance(sc, dict) and sc.get("geo_result") == "1":
         return await _materializar(cfg, tool, sc, working, args, titulo=titulo)
     # error de la tool: `{"error"}` o, con el kit nuevo, `{"error", "codigo"[, "reintentar_en_s"]}`
     if isinstance(sc, dict) and "error" in sc and set(sc) <= {"error", "codigo", "reintentar_en_s"}:
-        return ToolOutcome(_limitar(f"[{cfg.id}] {sc['error']}"), success=False)
+        codigo = sc["codigo"] if isinstance(sc.get("codigo"), str) else None
+        marca = f" (codigo={codigo})" if codigo else ""
+        return ToolOutcome(_limitar(f"[{cfg.id}] {sc['error']}{marca}"), success=False,
+                           degraded_code=codigo if codigo in _CODIGOS_DEGRADADOS else None)
 
     if getattr(cfg, "adapter", None) == "tabular_geo":
         from geo_copilot.platform.mcp.adaptadores import AdaptacionFallida, adaptar_tabular

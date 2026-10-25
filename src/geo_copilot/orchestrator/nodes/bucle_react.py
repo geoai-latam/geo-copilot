@@ -187,6 +187,7 @@ class BucleReAct:
     tools_used: list[str] = field(default_factory=list)       # F5: herramientas usadas (para el juez)
     observaciones: list[str] = field(default_factory=list)    # lo que reportó cada una (hechos para el juez)
     fallidas: dict[str, int] = field(default_factory=dict)    # llamada exacta que falló → paso
+    fuentes_degradadas: dict[str, str] = field(default_factory=dict)  # tool → codigo (fuente_lenta/no_disponible)
     reflections: int = 0                                      # F5: re-trabajos por validación composicional
 
     @classmethod
@@ -327,6 +328,23 @@ class BucleReAct:
                         omitidas: list[str]) -> bool:
         """Ejecuta la herramienta. Un fallo del nodo NO tumba el bucle: es una observación de error que
         el LLM ve, y el breaker sigue contando para llegar al cierre honesto (revisión F4.4)."""
+        # Honestidad de estado: si esta tool ya respondió con una fuente degradada (lenta o caída) en
+        # este turno, NO la re-despaches. Repagar una fuente lenta (ReadTimeout de ~73 s, p. ej.
+        # agrología IGAC) agotaría el reloj global del turno y éste moriría con un «Error» genérico en
+        # vez de decir, honesto, que la fuente está lenta. El breaker avanza igual (cada intento cuenta),
+        # así el bucle termina por su límite en un cierre honesto, no por el timeout de pared.
+        codigo_prev = self.fuentes_degradadas.get(name)
+        if codigo_prev:
+            self.breaker.record_tool_call()
+            self.trace.record_tool_call(self.step, name, args)
+            estado = "lenta" if codigo_prev == "fuente_lenta" else "no disponible"
+            obs = (f"{name}: la fuente ya respondió «{codigo_prev}» antes en este turno; no la reintentes "
+                   f"(volver a llamarla solo gastaría el tiempo del turno). Responde honestamente que la "
+                   f"fuente está {estado} ahora mismo, o usa otra herramienta.")
+            self.trace.record_result(self.step, name, success=False, result=obs)
+            self.observaciones.append(obs)
+            self._responder_al_modelo(response, call, call_id, name, obs, omitidas)
+            return True
         self.trace.record_tool_call(self.step, name, args)
         # Qué decidió el modelo en cada paso: sin esto, un turno que se desvía (V5 F4: llamó a NDVI por
         # feature cuando se pidió colorear por área) solo se reconstruía adivinando desde los logs.
@@ -395,6 +413,9 @@ class BucleReAct:
                     "responde con lo que sabes."))
             else:
                 self.fallidas[firma] = self.step
+        # Fuente degradada (lenta/caída): se recuerda para NO re-despachar esta tool en el turno.
+        if getattr(outcome, "degraded_code", None):
+            self.fuentes_degradadas[name] = outcome.degraded_code
         # El resultado (éxito o el fallo capturado) queda en la traza.
         self.trace.record_result(self.step, name, success=outcome.success, result=outcome.observation)
         self.observaciones.append(f"{name}: {hechos_para_el_juez(outcome.observation, OBS_JUEZ)}")
