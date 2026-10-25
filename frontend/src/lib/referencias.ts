@@ -24,20 +24,30 @@ export type Trozo = { texto: string; ref?: undefined } | { texto: string; ref: R
 
 const PATRON = /\[\[layer:([^\]|#?]+)(?:#([^\]|]+)|\?([^\]|=]+)=([^\]|]*))?(?:\|([^\]]*))?\]\]/g
 
+// Un marcador [[layer:…]] que el PATRON estricto NO reconoció (el LLM lo malformó: un `?campo` sin
+// `=valor`, un espacio de más…) quedaría como texto CRUDO en la respuesta. Se limpia del texto suelto:
+// con etiqueta `|texto` → la etiqueta; sin etiqueta → fuera. Los bien formados ya los consumió el
+// PATRON antes de llegar aquí, así que esto nunca desactiva un enlace real.
+const RESIDUO_CON_ETIQUETA = /\[\[layer:[^\]]*?\|([^\]]*)\]\]/g
+const RESIDUO_SIN_ETIQUETA = /\[\[layer:[^\]]*?\]\]/g
+function limpiarResiduos(t: string): string {
+  return t.replace(RESIDUO_CON_ETIQUETA, '$1').replace(RESIDUO_SIN_ETIQUETA, '')
+}
+
 /** El texto de la respuesta en trozos: texto normal y enlaces. */
 export function trocear(texto: string): Trozo[] {
   const trozos: Trozo[] = []
   let desde = 0
   for (const m of texto.matchAll(PATRON)) {
     const i = m.index ?? 0
-    if (i > desde) trozos.push({ texto: texto.slice(desde, i) })
+    if (i > desde) trozos.push({ texto: limpiarResiduos(texto.slice(desde, i)) })
     const [, capa, id, campo, valor, etiqueta] = m
     const ref: Referencia = { capa: capa.trim(), ...(id ? { id: id.trim() } : {}),
                               ...(campo ? { campo: campo.trim(), valor: (valor ?? '').trim() } : {}) }
     trozos.push({ texto: (etiqueta ?? '').trim() || ref.valor || ref.id || ref.capa, ref })
     desde = i + m[0].length
   }
-  if (desde < texto.length) trozos.push({ texto: texto.slice(desde) })
+  if (desde < texto.length) trozos.push({ texto: limpiarResiduos(texto.slice(desde)) })
   return trozos
 }
 

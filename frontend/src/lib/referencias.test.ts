@@ -27,6 +27,17 @@ describe('FH.7 — enlaces al mapa en la respuesta', () => {
     expect(trocear('3 lotes [de 27]')).toEqual([{ texto: '3 lotes [de 27]' }])
   })
 
+  it('un marcador malformado (que el LLM no cerró bien) no se muestra crudo: queda su etiqueta', () => {
+    // El `?...` sin `=valor` no casa el PATRON estricto; sin limpiar saldría «[[layer:…]]» literal.
+    const t = trocear('El contrato [[layer:activa? CO1.PCCNTR.2514090|CO1.PCCNTR.2514090]] tiene 1 rubro.')
+    expect(t).toEqual([{ texto: 'El contrato CO1.PCCNTR.2514090 tiene 1 rubro.' }])
+    expect(t.some((x) => x.texto.includes('[[layer:'))).toBe(false)
+  })
+
+  it('un marcador malformado sin etiqueta se quita (no deja texto crudo)', () => {
+    expect(trocear('fin [[layer:activa?x]] .')).toEqual([{ texto: 'fin  .' }])
+  })
+
   it('resuelve la capa: `activa` = la que dejó ese turno; ds_ por dataset; id; nombre', () => {
     const capas = [lotes, teselas]
     expect(resolverCapa({ capa: 'activa' }, capas, ['layer-1'])?.id).toBe('layer-1')
