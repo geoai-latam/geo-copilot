@@ -121,10 +121,42 @@ def _pedido(state: Mapping[str, Any], query: str) -> str:
     return pedido
 
 
+def nota_del_verificador(gap: str) -> str:
+    """La crítica del juez como nota interna: el usuario no la escribió ni la ve."""
+    return (f"NOTA INTERNA DEL VERIFICADOR (el usuario no la escribió ni la ve): la respuesta que ibas a dar "
+            f"aún no cubre esto: {gap}. Usa las herramientas para completarla; si de verdad no se puede, dilo "
+            "con `answer`. Responde al usuario directamente, sin mencionar esta nota, sin disculparte por "
+            "ella y sin decir que te corrigieron; no retires un dato que esté en lo que reportaron las "
+            "herramientas.")
+
+
 # Lo que el juez ve de cada resultado. Con 400 caracteres, el sobre rt/1 de Terranova (metadatos
 # antes de `datos`) quedaba cortado antes del dato: el juez creyó que «30 artículos» no tenía
 # respaldo y el agente se retractó de una cifra correcta (Terranova F6, 2026-10-23).
 OBS_JUEZ = 2000
+# Lo que más informa de un resultado, primero: así el recorte no deja el dato detrás de los
+# metadatos (rt/1 pone solicitud, entrada y huella antes de `datos`; la procedencia es larga).
+_PRIMERO = ("estado", "datos", "avisos", "errores", "hechos", "facts", "message", "error")
+
+
+def hechos_para_el_juez(observacion: str, limite: int) -> str:
+    """El resultado de una herramienta tal como lo lee el juez: si trae un objeto JSON, con lo que
+    informa (estado, datos, avisos, errores) por delante y el resto después; si no, el texto."""
+    import json
+    import re
+
+    texto = " ".join(str(observacion).split())
+    m = re.search(r"\{.*\}", texto)
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+        except ValueError:
+            obj = None
+        if isinstance(obj, dict):
+            orden = {k: obj[k] for k in _PRIMERO if k in obj}
+            orden |= {k: v for k, v in obj.items() if k not in orden}
+            texto = texto[: m.start()] + json.dumps(orden, ensure_ascii=False, default=str)
+    return texto if len(texto) <= limite else texto[: limite - 1] + "…"
 
 
 @dataclass
@@ -180,11 +212,10 @@ class BucleReAct:
         gap = verdict.missing or verdict.reason
         self.trace.record_reflection(self.step, f"falta (prosa): {gap}" if en_prosa else f"falta: {gap}")
         self.messages.append(LLMMessage(role="assistant", content=f"Iba a responder: {_al()._short(candidate, 120)}"))
-        self.messages.append(LLMMessage(role="user", content=(
-            f"Esa respuesta aún no cubre: {gap}. Usa las herramientas disponibles para completarla; si de "
-            "verdad no se puede, dilo honestamente con `answer`." if en_prosa else
-            f"Esa respuesta aún no cubre: {gap}. Usa más herramientas para completarla; si de verdad no se "
-            "puede, dilo honestamente con `answer`.")))
+        # Plan de fiabilidad F2: la crítica es una NOTA INTERNA, no un mensaje del usuario. Con rol
+        # `user` el modelo creía que el usuario lo corregía y respondía «Tienes razón…», a veces
+        # retractándose de una cifra correcta (diagnóstico con Terranova, 2026-10-23).
+        self.messages.append(LLMMessage(role="system", content=nota_del_verificador(gap)))
         self.step += 1
         return True
 
@@ -345,7 +376,7 @@ class BucleReAct:
                 self.fallidas[firma] = self.step
         # El resultado (éxito o el fallo capturado) queda en la traza.
         self.trace.record_result(self.step, name, success=outcome.success, result=outcome.observation)
-        self.observaciones.append(f"{name}: {_al()._short(outcome.observation, OBS_JUEZ)}")
+        self.observaciones.append(f"{name}: {hechos_para_el_juez(outcome.observation, OBS_JUEZ)}")
         logger.info(f"[agent_loop] paso {self.step} ← {'ok' if outcome.success else 'FALLO'}: "
                     f"{_al()._short(outcome.observation, 300)}")
         if self.metrics is not None:  # F6: fiabilidad por herramienta
