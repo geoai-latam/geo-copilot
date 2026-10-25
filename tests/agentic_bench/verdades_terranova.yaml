@@ -299,7 +299,17 @@
   expected:
     success: true
     # pregunta cuál, o dice cuál tomó y que hay otros (no basta con elegir uno en silencio)
-    answer_regex: "(?i)(cu[aá]l .*san andr[eé]s|varios|otros|tambi[eé]n hay|hay (m[aá]s de un|cinco|varios)|tumaco|sotavento|cuerqu|santander)"
+    answer_regex: "(?i)(cu[aá]l .*san andr[eé]s|varios|otros|otro (municipio )?(llamado |con (ese|el mismo) nombre )?.?san andr|tambi[eé]n hay|hay (m[aá]s de un|cinco|varios)|tumaco|sotavento|cuerqu|santander)"
+    answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
+
+- id: tn-ambiguo-granada
+  category: tn_ambiguedad
+  query: "¿Cuántos homicidios hubo en Granada en 2023?"
+  medida: "DIVIPOLA: tres GRANADA (05313 Antioquia, 25312 Cundinamarca, 50313 Meta)"
+  expected:
+    success: true
+    # pregunta cuál, o dice cuál tomó y que hay otras (no basta con elegir una en silencio)
+    answer_regex: "(?i)(cu[aá]l .*granada|varios|varias|otros|otras|otra granada|tres|antioquia.*(meta|cundinamarca)|(meta|cundinamarca).*antioquia|meta.*cundinamarca|cundinamarca.*meta)"
     answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
 
 # ------------------------------------------------------------ honestidad y seguridad

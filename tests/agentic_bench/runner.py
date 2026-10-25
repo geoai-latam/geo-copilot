@@ -174,7 +174,7 @@ async def _run_task(graph, task: dict, timeout: float, session_id: str = "") -> 
     latency = round(time.monotonic() - t0, 1)
     result = result if isinstance(result, dict) else {}
     verdict = evaluate(task, result, latency_s=latency)
-    verdict.answer = str(result.get("message") or "")[:600] or None
+    verdict.answer = str(result.get("message") or "")[:2000] or None
     verdict.intent = result.get("intent")
     verdict.sql = (result.get("sql") or None) and str(result["sql"])[:600]
     verdict.herramientas = _herramientas(result)
