@@ -60,6 +60,12 @@ class ToolOutcome:
     is_final: bool = False          # True solo para la herramienta ``answer``
     final_text: str | None = None   # respuesta al usuario (si is_final)
     facts: dict | None = None       # hechos estructurados (para una UI que no pasa por el LLM)
+    #: Código de estado de la fuente cuando la tool falló por una fuente degradada
+    #: (``fuente_lenta`` / ``fuente_no_disponible``). El bucle lo usa para NO volver a
+    #: despachar esa tool en el turno (repagar una fuente lenta agota el reloj global y
+    #: el turno muere con un «Error» genérico en vez de decir, honesto, que la fuente
+    #: está lenta). None si no aplica.
+    degraded_code: str | None = None
 
 
 #: `executor(graph, estado_de_trabajo, args) -> ToolOutcome`
