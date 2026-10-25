@@ -78,6 +78,28 @@ class TestTasksYaml:
             assert t.get("expected"), f"{t['id']} sin expected"
 
 
+def _load_verdades_terranova() -> list[dict]:
+    return yaml.safe_load((_BENCH / "verdades_terranova.yaml").read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# verdades_terranova.yaml es válido (se corre contra la puerta con LLM real;
+# aquí solo se valida el ESQUEMA, que sí entra en el CI normal).
+# ---------------------------------------------------------------------------
+class TestVerdadesTerranova:
+    def test_ids_unicos_y_query_presente(self):
+        tareas = _load_verdades_terranova()
+        ids = [t["id"] for t in tareas]
+        assert len(ids) == len(set(ids)), "ids duplicados en verdades_terranova.yaml"
+        assert all(t.get("query") for t in tareas)
+
+    def test_todo_check_conocido_y_presente(self):
+        for t in _load_verdades_terranova():
+            assert t.get("expected"), f"{t['id']} sin expected"
+            unknown = set(t["expected"]) - _KNOWN_EXPECTED_KEYS
+            assert not unknown, f"{t['id']}: checks desconocidos {unknown}"
+
+
 # ---------------------------------------------------------------------------
 # capas sintéticas deterministas
 # ---------------------------------------------------------------------------
