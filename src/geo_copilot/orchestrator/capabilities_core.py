@@ -206,6 +206,22 @@ def _muchas_tools_mcp(graph: Any) -> bool:
     return hay_demasiadas(graph, get_settings().mcp_tools_umbral)
 
 
+async def _calcular(graph: Any, working: dict, args: dict) -> ToolOutcome:
+    import json
+
+    from geo_copilot.core.calculadora import ErrorDeCalculo, calcular, en_formato_colombiano
+
+    expresion = str(args.get("expresion") or "")
+    try:
+        valor = calcular(expresion)
+    except ErrorDeCalculo as exc:
+        return ToolOutcome(f"No se pudo calcular «{expresion[:200]}»: {exc}", success=False)
+    return ToolOutcome(json.dumps({
+        "expresion": expresion, "resultado": format(valor.normalize(), "f"),
+        "resultado_en_formato_colombiano": en_formato_colombiano(valor),
+    }, ensure_ascii=False), success=True)
+
+
 async def _find_tools(graph: Any, working: dict, args: dict) -> ToolOutcome:
     from geo_copilot.platform.mcp.busqueda import ejecutar_find_tools
 
@@ -232,6 +248,23 @@ CORE: tuple[Capability, ...] = (
         blurb="activar herramientas de los servicios conectados (por nombre del catálogo o buscando).",
         available=_muchas_tools_mcp,
         step=("agent_loop", "Buscando herramientas de los servicios conectados"),
+    ),
+    Capability(
+        # Plan de fiabilidad F6: el modelo sumaba de cabeza y a veces mal (3.403,828 por 3.383,039).
+        id="core.calcular", tool_name="calcular",
+        description=(
+            "Hace una cuenta exacta (+ − × ÷, paréntesis, round, sum, min, max) con números que ya "
+            "tienes, p. ej. los que devolvió una herramienta. Úsala para sumar, restar, sacar "
+            "porcentajes o promedios en vez de hacer la cuenta de memoria. No trae datos."
+        ),
+        parameters=_params({
+            "expresion": {"type": "string", "description": "La cuenta, con punto decimal y sin "
+                          "separador de miles: «984.143 + 562.444 + 1413.931», «round(31 / 74 * 100, 1)»."},
+        }, ["expresion"]),
+        executor=_calcular,
+        blurb="hacer una cuenta exacta con números que ya tienes (sumas, porcentajes, promedios).",
+        risk="compute",
+        step=("agent_loop", "Haciendo la cuenta"),
     ),
     Capability(
         id="core.query_database", tool_name="query_database",
