@@ -84,7 +84,18 @@ def cliente(url: str, *, dominios: list[str] | None = None, timeout: float = 20.
 
 
 class ErrorRed(Exception):
-    """El servicio externo no respondió o respondió un error HTTP (mensaje honesto para el LLM)."""
+    """El servicio externo no respondió o respondió un error HTTP (mensaje honesto para el LLM).
+
+    `codigo` es el código rt/1 que el ToolRunner propaga. None deja el defecto del runner
+    (`parametro_invalido`), para los errores de configuración o de parámetro. Una caída, un timeout
+    o un 5xx son `fuente_no_disponible` (reintentar sirve); un 4xx o una respuesta inválida,
+    `fuente_respuesta_invalida`. Sin esto, la caída de una fuente salía como `error_interno` —como si
+    la puerta se hubiera roto— (auditoría de fuentes 2026-10-25: el SDMX de BanRep en HTTP 500).
+    """
+
+    def __init__(self, mensaje: str, codigo: str | None = None) -> None:
+        super().__init__(mensaje)
+        self.codigo = codigo
 
 
 class RespuestaGrande(ErrorRed):
@@ -117,10 +128,22 @@ def _pedir(metodo: str, url: str, kw: dict[str, Any], dominios: list[str] | None
             break
         except httpx.TransportError as exc:
             if intento == reintentos:
-                raise ErrorRed(f"el servicio no respondió ({type(exc).__name__})") from exc
+                raise ErrorRed(
+                    f"el servicio no respondió ({type(exc).__name__})", "fuente_no_disponible"
+                ) from exc
             time.sleep(2.0)
     if r.status_code != 200:
-        raise ErrorRed(f"el servicio respondió HTTP {r.status_code}: {r.text[:200]}")
+        # un 4xx (salvo 429) es la fuente rechazando la consulta; un 5xx/429/caída, la fuente no
+        # disponible (reintentar sirve). Nunca `error_interno`: la puerta no se rompió.
+        codigo = (
+            "fuente_respuesta_invalida"
+            if 400 <= r.status_code < 500 and r.status_code != 429
+            else "fuente_no_disponible"
+        )
+        raise ErrorRed(f"el servicio respondió HTTP {r.status_code}: {r.text[:200]}", codigo)
     if len(r.content) > max_bytes:
-        raise RespuestaGrande(f"la respuesta del servicio pasa de {max_bytes // 1_000_000} MB")
+        raise RespuestaGrande(
+            f"la respuesta del servicio pasa de {max_bytes // 1_000_000} MB",
+            "fuente_respuesta_invalida",
+        )
     return r

@@ -76,7 +76,10 @@ def consultar_censo(nivel: str, where: str, campos_salida: list[str]) -> list[di
             "resultOffset": len(filas), "resultRecordCount": 2000}, dominios=DOMINIOS, timeout=150,
             user_agent=USER_AGENT).json()
         if "error" in r:
-            raise red.ErrorRed(f"el DANE rechazó la consulta: {r['error'].get('message')}")
+            raise red.ErrorRed(
+                f"el DANE rechazó la consulta: {r['error'].get('message')}",
+                "fuente_respuesta_invalida",
+            )
         pagina = [{k: reparar(v) for k, v in f["attributes"].items()} for f in r.get("features") or []]
         filas += pagina
         if not r.get("exceededTransferLimit") or not pagina:
