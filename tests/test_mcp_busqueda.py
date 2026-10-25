@@ -120,7 +120,10 @@ async def test_el_bucle_ofrece_lo_activado_en_el_paso_siguiente(sesenta):
     assert any(n.endswith("__isocrona") for n in nombres[1])
     # el prompt lista los NOMBRES de las 60 (qué existe), no sus esquemas ni descripciones
     prompt = llm.calls[0]["messages"][0].content
-    assert "srv5__clima" in prompt and "Pronóstico de lluvia" not in prompt
+    # F5: por servidor, sin su prefijo y las iguales (mismo nombre y descripción) una sola vez
+    linea = next(x for x in prompt.splitlines() if x.strip().startswith("- srv0:"))
+    assert "clima" in linea and "srv0__" not in linea and "- srv5:" not in prompt
+    assert "Pronóstico de lluvia" not in prompt
 
 
 @pytest.mark.asyncio
@@ -137,6 +140,37 @@ def test_el_catalogo_tiene_tope_y_dice_cuantas_faltan(sesenta, monkeypatch):
 
     assert busqueda.catalogo(None, [], umbral=100) == ""  # por debajo del umbral se ven todas
     completo = busqueda.catalogo(None, [], umbral=25)
-    assert "srv0: srv0__aire" in completo and "más" not in completo
-    monkeypatch.setattr(busqueda, "CATALOGO_MAX", 300)
+    assert "srv0: aire, catastro" in completo and "(+" not in completo
+    monkeypatch.setattr(busqueda, "CATALOGO_MAX", 40)
     assert "(+" in busqueda.catalogo(None, [], umbral=25)
+
+
+def test_la_preseleccion_trae_las_afines_sin_repetir_equivalentes(sesenta):
+    """F5 (RAG-MCP): al empezar el turno ya quedan activas las más afines a la consulta."""
+    from geo_copilot.platform.mcp.busqueda import preseleccion
+
+    assert preseleccion(None, "pronóstico de lluvia", umbral=100) == []  # bajo el umbral se ven todas
+    assert preseleccion(None, "   ", umbral=25) == []
+    pre = preseleccion(None, "pronóstico de lluvia en un punto", umbral=25, k=3)
+    assert 0 < len(pre) <= 3 and pre[0].endswith("__clima")
+
+
+def test_la_preseleccion_cuenta_una_vez_las_iguales(monkeypatch):
+    from geo_copilot.platform.mcp import busqueda
+
+    caps = [Capability(id=f"mcp.s{i}.divipola", tool_name=f"s{i}__divipola", description="Código DIVIPOLA de un municipio.",
+                       executor=None, blurb="Código DIVIPOLA de un municipio.",
+                       parameters={"type": "object", "properties": {}}, provider=f"mcp:s{i}") for i in range(7)]
+    monkeypatch.setattr(busqueda, "hay_demasiadas", lambda g, u: True)
+    monkeypatch.setattr(busqueda, "registry", lambda: SimpleNamespace(available=lambda g: caps))
+    assert busqueda.preseleccion(None, "código divipola del municipio", umbral=1) == ["s0__divipola"]
+
+
+@pytest.mark.asyncio
+async def test_find_tools_acepta_el_nombre_corto_y_busca_el_que_no_existe(sesenta):
+    out = await ejecutar_find_tools(None, {}, {"names": ["isocrona"]})
+    assert out.delta[ACTIVADAS] and out.delta[ACTIVADAS][0].endswith("__isocrona")
+    # un nombre inventado no cierra el paso: se activan las más parecidas por sus palabras
+    out = await ejecutar_find_tools(None, {}, {"names": ["srv9__calidad_aire"]})
+    assert out.success and any(n.endswith("__aire") for n in out.delta[ACTIVADAS])
+    assert "se activaron las más parecidas" in out.observation

@@ -103,21 +103,52 @@ def catalogo(graph: Any, activadas: Iterable[str], umbral: int) -> str:
         return ""
     activas = set(activadas)
     por_servidor: dict[str, list[str]] = {}
-    for c in caps:
-        if es_mcp(c) and c.tool_name not in activas:
-            por_servidor.setdefault(c.provider.removeprefix("mcp:"), []).append(c.tool_name)
+    vistas: set[tuple[str, str]] = set()
+    for c in sorted((c for c in caps if es_mcp(c)), key=lambda c: c.tool_name):
+        srv = c.provider.removeprefix("mcp:")
+        corto = c.tool_name.removeprefix(f"{srv}__")
+        # Plan de fiabilidad F5: la misma herramienta en varios servidores (p. ej. el DIVIPOLA en los 7
+        # perfiles de Terranova) va una sola vez. Con los nombres repetidos y el prefijo del servidor en
+        # cada uno, el catálogo pasaba del tope y servidores enteros (normativa, territorio) quedaban
+        # fuera: el agente no veía `igac_manzana_en_punto` ni `suin_norma`.
+        if c.tool_name in activas or (corto, c.blurb) in vistas:
+            continue
+        vistas.add((corto, c.blurb))
+        por_servidor.setdefault(srv, []).append(corto)
     lineas: list[str] = []
     usado = faltan = 0
     for srv, nombres in sorted(por_servidor.items()):
-        linea = f"  - {srv}: {', '.join(sorted(nombres))}"
+        linea = f"  - {srv}: {', '.join(nombres)}"
         if usado + len(linea) > CATALOGO_MAX:
             faltan += len(nombres)
             continue
         lineas.append(linea)
         usado += len(linea)
     extra = f"\n  (+{faltan} más: búscalas con find_tools `query`)" if faltan else ""
-    return ("CATÁLOGO DE LOS SERVICIOS CONECTADOS (aún no activas: actívalas con find_tools `names` o "
-            "búscalas con `query`):\n" + "\n".join(lineas) + extra)
+    return ("CATÁLOGO DE LOS SERVICIOS CONECTADOS (aún no activas; el nombre completo es "
+            "`<servicio>__<herramienta>`: actívalas con find_tools `names` o búscalas con `query`):\n"
+            + "\n".join(lineas) + extra)
+
+
+def preseleccion(graph: Any, consulta: str, umbral: int, *, k: int = 8) -> list[str]:
+    """Plan de fiabilidad F5 (patrón RAG-MCP): al empezar el turno, las `k` herramientas MCP que mejor
+    casan con la consulta, por su nombre y su descripción, quedan activas con su esquema. Así el agente
+    no depende de adivinar nombres de un catálogo largo. Las equivalentes (misma descripción en varios
+    servidores) cuentan una vez. Hasta el umbral no hace falta: el LLM ya las ve todas."""
+    if not consulta.strip() or not hay_demasiadas(graph, umbral):
+        return []
+    mcp = [c for c in registry().available(graph) if es_mcp(c)]
+    elegidas: list[str] = []
+    vistas: set[str] = set()
+    for c in buscar(consulta, mcp, limite=k * 3):
+        clave = " ".join(c.blurb.split()).lower()
+        if clave in vistas:
+            continue
+        vistas.add(clave)
+        elegidas.append(c.tool_name)
+        if len(elegidas) == k:
+            break
+    return elegidas
 
 
 async def ejecutar_find_tools(graph: Any, working: dict, args: dict) -> ToolOutcome:
@@ -129,10 +160,19 @@ async def ejecutar_find_tools(graph: Any, working: dict, args: dict) -> ToolOutc
     limite = max(1, min(int(args.get("limit") or 6), 10))
     mcp = [c for c in registry().available(graph) if es_mcp(c)]
     por_nombre = {c.tool_name: c for c in mcp}
-    halladas = [por_nombre[n] for n in nombres if n in por_nombre]
-    desconocidas = [n for n in nombres if n not in por_nombre]
+    por_corto: dict[str, Capability] = {}
+    for c in mcp:
+        por_corto.setdefault(c.tool_name.split("__", 1)[-1], c)
+    halladas = [por_nombre.get(n) or por_corto[n] for n in nombres if n in por_nombre or n in por_corto]
+    desconocidas = [n for n in nombres if n not in por_nombre and n not in por_corto]
     if consulta:
         halladas += [c for c in buscar(consulta, mcp, limite=limite) if c not in halladas]
+    if desconocidas:
+        # Plan de fiabilidad F5: un nombre que no existe (el de un servidor, uno mal escrito) se busca por
+        # sus palabras en vez de rendirse: «No pude activar el servicio por su nombre exacto» cerraba la
+        # respuesta sin consultar nada.
+        parecidas = buscar(" ".join(desconocidas).replace("__", " "), mcp, limite=limite)
+        halladas += [c for c in parecidas if c not in halladas]
     if not halladas:
         return ToolOutcome(f"Ninguna herramienta de los servicios conectados casa con «{consulta or nombres}». "
                            "Prueba con otras palabras o responde con lo que tienes.", success=True)
@@ -140,7 +180,7 @@ async def ejecutar_find_tools(graph: Any, working: dict, args: dict) -> ToolOutc
     nuevas = ya + [c.tool_name for c in halladas if c.tool_name not in ya]
     lineas = "\n".join(f"- {c.tool_name}: {c.blurb}" for c in halladas)
     if desconocidas:
-        lineas += f"\n(no existen: {', '.join(desconocidas)})"
+        lineas += f"\n(no existen: {', '.join(desconocidas)}; se activaron las más parecidas por sus palabras)"
     # Hecho: servidores que se solapan. Con 6 servidores con la misma «clima», el LLM llamaba a las
     # 6 con la misma pregunta (test_llm_mcp_escala) y agotaba el presupuesto del turno.
     iguales: dict[str, list[str]] = {}

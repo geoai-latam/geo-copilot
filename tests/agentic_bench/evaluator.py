@@ -132,7 +132,9 @@ def _lecturas(token: str) -> set[float]:
 
 def cifras(texto: str) -> set[float]:
     """Todas las lecturas de todas las cifras de un texto."""
-    return set().union(*(_lecturas(m) for m in _NUMERO.findall(texto or ""))) if texto else set()
+    # «25 973» con espacio fino o duro de miles (la norma RAE/SI) es una sola cifra
+    texto = re.sub(r"(?<=\d)[\u202f\u00a0\u2009](?=\d{3}(?!\d))", "", texto or "")
+    return set().union(*(_lecturas(m) for m in _NUMERO.findall(texto))) if texto else set()
 
 
 def _coincide(valores: set[float], verdad) -> bool:
