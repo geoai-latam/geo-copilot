@@ -209,7 +209,8 @@ class BucleReAct:
 
         umbral = getattr(settings, "mcp_tools_umbral", 0)
         if isinstance(umbral, int) and (pre := preseleccion(graph, query, umbral)):
-            ya = list(working.get(ACTIVADAS) or [])
+            previas = working.get(ACTIVADAS)
+            ya = [str(n) for n in previas] if isinstance(previas, list) else []
             working[ACTIVADAS] = ya + [n for n in pre if n not in ya]
             messages.insert(1, LLMMessage(role="system", content=_nota_de_preseleccion(graph, pre)))
         return cls(graph=graph, state=state, settings=settings, llm=getattr(graph, "llm", None), query=query,
