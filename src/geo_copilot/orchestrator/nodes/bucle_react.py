@@ -121,6 +121,16 @@ def _pedido(state: Mapping[str, Any], query: str) -> str:
     return pedido
 
 
+def _nota_de_preseleccion(graph: Any, nombres: list[str]) -> str:
+    """Hecho para el modelo: qué herramientas de los servicios ya quedaron activas en este turno."""
+    from geo_copilot.platform.capabilities import registry
+
+    blurbs = {c.tool_name: c.blurb for c in registry().available(graph)}
+    lineas = "\n".join(f"- {n}: {_al()._short(blurbs.get(n, ''), 160)}" for n in nombres)
+    return ("HERRAMIENTAS DE LOS SERVICIOS YA ACTIVAS EN ESTE TURNO (elegidas por parecido de palabras con la "
+            "pregunta; puede que no todas sirvan). Se llaman directamente, sin find_tools:\n" + lineas)
+
+
 def nota_del_verificador(gap: str) -> str:
     """La crítica del juez como nota interna: el usuario no la escribió ni la ve."""
     return (f"NOTA INTERNA DEL VERIFICADOR (el usuario no la escribió ni la ve): la respuesta que ibas a dar "
@@ -192,9 +202,19 @@ class BucleReAct:
         max_reflections = getattr(settings, "react_max_reflections", 0)
         if not isinstance(max_reflections, int):  # defensivo: setting ausente/no-int → off
             max_reflections = 0
+        working = dict(state)
+        # Plan de fiabilidad F5: las herramientas MCP más afines a la consulta ya activas desde el
+        # primer paso (RAG-MCP), además de las que el agente busque con find_tools.
+        from geo_copilot.platform.mcp.busqueda import ACTIVADAS, preseleccion
+
+        umbral = getattr(settings, "mcp_tools_umbral", 0)
+        if isinstance(umbral, int) and (pre := preseleccion(graph, query, umbral)):
+            ya = list(working.get(ACTIVADAS) or [])
+            working[ACTIVADAS] = ya + [n for n in pre if n not in ya]
+            messages.insert(1, LLMMessage(role="system", content=_nota_de_preseleccion(graph, pre)))
         return cls(graph=graph, state=state, settings=settings, llm=getattr(graph, "llm", None), query=query,
                    breaker=CircuitBreaker.from_settings(settings), metrics=metrics, messages=messages,
-                   max_reflections=max_reflections, working=dict(state))
+                   max_reflections=max_reflections, working=working)
 
     # ------------------------------------------------------------------ el juez (F5, R4.10)
     async def _falta_algo(self, candidate: str, *, en_prosa: bool) -> bool:

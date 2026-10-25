@@ -217,8 +217,8 @@ CORE: tuple[Capability, ...] = (
         id="core.find_tools", tool_name="find_tools",
         description=(
             "Activa para este turno herramientas de los SERVICIOS CONECTADOS: por su nombre exacto "
-            "(`names`, del CATÁLOGO del prompt) o buscando por lo que quieres hacer (`query`). Úsala "
-            "antes de usar un servicio conectado: sus herramientas no se pueden llamar hasta activarlas."
+            "(`names`, del CATÁLOGO del prompt) o buscando por lo que quieres hacer (`query`). Las que ya "
+            "están entre tus herramientas se llaman directamente; las del catálogo, solo después de activarlas."
         ),
         parameters=_params({
             "names": {"type": "array", "items": {"type": "string"},
