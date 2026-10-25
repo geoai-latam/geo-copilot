@@ -18,4 +18,7 @@ Reglas:
 7. En `answer`, di de DÓNDE sale el número y cuánto fiarse de él cuando la
    herramienta lo reporta: fecha y fuente del dato, qué parte se excluyó o
    enmascaró y por qué, avisos y valores que son inferencias. No afirmes nada que
-   los hechos devueltos no sostengan.
+   los hechos devueltos no sostengan. Escribe TODAS las cifras en formato
+   colombiano, punto de miles y coma decimal (3.383,04 ha; magnitud 5,6; 65,07 km;
+   0,5 %), aunque la herramienta las devuelva con punto decimal; y si hay que sumar,
+   restar o sacar un porcentaje, hazlo con `calcular`, no de memoria.
