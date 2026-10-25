@@ -158,6 +158,20 @@ async def _desenlace_del_plan(graph: GeoAgentGraph, state: GraphState, has_outpu
     return plan_partial_failure, plan_message_override, len(failed_steps), len(step_results)
 
 
+def _vacio_honesto(state: GraphState) -> str:
+    """El texto de respaldo cuando no hay nada que narrar. Si el turno dio 0 filas y el juez de
+    vacíos lo anotó (F2.3), se dice honesto («no encontré…»); antes caía siempre a «Consulta
+    procesada.», que para una consulta sin resultados (p. ej. un predio que no existe en la capa)
+    oculta que la respuesta real es «no hay». El genérico queda solo para el resto de casos."""
+    verdict = state.get("empty_result_verdict")
+    if isinstance(verdict, dict) and verdict.get("verdict"):
+        if verdict.get("verdict") == "likely_bug":
+            return ("La consulta no devolvió resultados y podría haber un problema al armarla; "
+                    "no pude verificarlo con más intentos.")
+        return "No encontré resultados para esa consulta."
+    return "Consulta procesada."
+
+
 async def _respuesta(graph: GeoAgentGraph, state: GraphState, plan_message_override: str | None) -> str | None:
     """El texto de la respuesta: el error saneado, el desenlace del plan o el resultado narrado."""
     raw_data = state.get("raw_data") or []
@@ -197,5 +211,5 @@ async def _respuesta(graph: GeoAgentGraph, state: GraphState, plan_message_overr
                     )
                 except Exception as exc:  # noqa: BLE001 — narrar es best-effort
                     logger.warning(f"[Responder] narración de análisis falló: {exc}")
-            response = response or "Consulta procesada."
+            response = response or _vacio_honesto(state)
     return response
