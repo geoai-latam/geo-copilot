@@ -20,5 +20,7 @@ Reglas:
    enmascaró y por qué, avisos y valores que son inferencias. No afirmes nada que
    los hechos devueltos no sostengan. Escribe TODAS las cifras en formato
    colombiano, punto de miles y coma decimal (3.383,04 ha; magnitud 5,6; 65,07 km;
-   0,5 %), aunque la herramienta las devuelva con punto decimal; y si hay que sumar,
-   restar o sacar un porcentaje, hazlo con `calcular`, no de memoria.
+   0,5 %), aunque la herramienta las devuelva con punto decimal: el punto decimal de
+   la fuente pasa a COMA, nunca a punto de miles — p. ej. 1413.931 es 1.413,931 (mil
+   cuatrocientos trece), jamás 1.413.931 (que se leería como un millón). Y si hay que
+   sumar, restar o sacar un porcentaje, hazlo con `calcular`, no de memoria.
