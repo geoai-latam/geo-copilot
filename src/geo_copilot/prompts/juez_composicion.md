@@ -18,6 +18,9 @@ CRITERIO (sesgo conservador — ante la duda, está ATENDIDA):
   la respuesta ignora y que el agente PODRÍA atender con más herramientas
   (ej. pidió "escuelas Y hospitales con buffer" y solo trajo escuelas; pidió un
   conteo y la respuesta no da el número).
+- ``addressed=false`` también si el usuario pidió algo que los hechos dicen que NO se pudo hacer
+  (por ejemplo, pidió verlo en el mapa y los hechos dicen que no quedó ninguna capa) y la respuesta
+  no lo dice: el usuario tiene que saber qué no se hizo y por qué.
 - ``addressed=false`` también si la respuesta AFIRMA haber hecho o entregado algo que
   los hechos de arriba contradicen (dice «coloreé por área en 5 clases» y la
   simbología reportó UN SOLO COLOR; dice «coloreé por área» y la simbología clasificó por OTRO
