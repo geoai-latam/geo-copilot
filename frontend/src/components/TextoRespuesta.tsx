@@ -15,6 +15,11 @@ function Enlace({ refe, texto, delTurno }: { refe: Referencia; texto: string; de
   const capa = resolverCapa(refe, capas, delTurno, texto)
   const el = capa ? elementos(refe, capa) : 'vacio'
   if (!capa || el === 'vacio') {
+    // Si el turno de ESTA respuesta no pintó ninguna capa, el enlace nunca tuvo destino en el mapa
+    // (respuesta sin geometría: una cifra del CNMH, una ficha de SECOP…): es texto normal, no un
+    // enlace roto. El tachado se reserva para un enlace que SÍ apuntó a una capa y se rompió al
+    // limpiar el mapa o filtrar la capa; tacharlo todo hacía leer como «mal» un texto correcto.
+    if (!delTurno.length) return <>{texto}</>
     const motivo = !capa ? 'Esa capa ya no está en el mapa' : 'Ese elemento no está en la capa (¿filtrado o quitado?)'
     return <span className="ref-mapa ref-rota" title={motivo} data-testid="ref-rota">{texto}</span>
   }
