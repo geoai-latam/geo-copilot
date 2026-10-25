@@ -171,6 +171,47 @@
     answer_numbers: [2602628368]
     answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
 
+# --------- enrutamiento: hermanas confundibles (diagnóstico 2026-10-25, PR terranova #82).
+# El agente elegía la herramienta vecina por palabras clave solapadas; `tool_regex` exige la correcta.
+- id: tn-ruta-ubicacion-vs-ejecucion
+  category: tn_enrutamiento
+  query: "¿Dónde se ejecuta el contrato de SECOP II CO1.PCCNTR.3795896?"
+  medida: "gra4-pcp2, id_contrato=CO1.PCCNTR.3795896: localización Cali, Valle del Cauca (ubicaciones, NO el avance de ejecución)"
+  expected:
+    success: true
+    tool_regex: "secop_ubicaciones_contrato"
+    answer_regex: "(?i)cali"
+    answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
+
+- id: tn-ruta-municipio-vs-buscar
+  category: tn_enrutamiento
+  query: "¿Cuántos contratos ha firmado el Estado en Chía, Cundinamarca y por cuánto?"
+  medida: "jbjy-vk9h, ciudad=Chía dpto=Cundinamarca: >=12.149 contratos, $>=1,28 billones (conteo por municipio, NO búsqueda de texto del objeto)"
+  expected:
+    success: true
+    tool_regex: "secop_contratos_municipio"
+    answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
+
+- id: tn-ruta-compromisos-vs-bpin
+  category: tn_enrutamiento
+  query: "¿Qué compromisos presupuestales respaldan el contrato de SECOP II CO1.PCCNTR.100201?"
+  medida: "skc9-met7, id_contrato=CO1.PCCNTR.100201: id_compromiso CO1.SIIFC.100004 (compromisos/RP, NO el proyecto BPIN)"
+  expected:
+    success: true
+    tool_regex: "secop_compromisos_contrato"
+    answer_regex: "CO1\\.SIIFC\\.100004"
+    answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
+
+- id: tn-ruta-perimetro-vs-manzana
+  category: tn_enrutamiento
+  query: "¿El punto -74.0587, 4.8633 está dentro de un perímetro urbano del catastro IGAC? ¿Cuál?"
+  medida: "ArcGIS IGAC U_PERIMETRO, punto en el casco urbano de Chía: centro poblado CHIA (perímetro, NO la manzana)"
+  expected:
+    success: true
+    tool_regex: "igac_perimetro_urbano_en_punto"
+    answer_regex: "(?i)ch[ií]a"
+    answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
+
 - id: tn-dato-ecopetrol-ciiu
   category: tn_datos
   query: "¿Cuál es la actividad económica principal de Ecopetrol según el RUES?"
