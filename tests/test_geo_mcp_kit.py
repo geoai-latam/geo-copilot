@@ -268,3 +268,64 @@ def test_herramientas_en_hilo_no_bloquean_el_bucle():
     duracion, resultados = asyncio.run(correr())
     assert duracion < 1.5, f"en serie: {duracion:.1f} s"  # 4 × 0,5 s en paralelo, no 2 s
     assert len(resultados) == 5
+
+
+class _RespFalsa:
+    def __init__(self, status: int) -> None:
+        self.status_code = status
+        self.text = "cuerpo de error"
+        self.content = b"{}"
+
+
+class _ClienteFalso:
+    def __init__(self, status: int) -> None:
+        self._status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def request(self, metodo, url, **kw):
+        return _RespFalsa(self._status)
+
+
+@pytest.mark.parametrize(
+    ("status", "codigo"),
+    [
+        (500, "fuente_no_disponible"),
+        (503, "fuente_no_disponible"),
+        (429, "fuente_no_disponible"),
+        (404, "fuente_respuesta_invalida"),
+        (400, "fuente_respuesta_invalida"),
+    ],
+)
+def test_un_http_de_error_dice_si_es_caida_o_rechazo(monkeypatch, status, codigo) -> None:
+    """Honestidad de estado (auditoría 2026-10-25): un 5xx/429 de la fuente es `fuente_no_disponible`
+    y un 4xx `fuente_respuesta_invalida`; nunca `error_interno`, que diría que la puerta se rompió."""
+    from geo_mcp_kit import red
+
+    monkeypatch.setattr(red, "cliente", lambda *a, **k: _ClienteFalso(status))
+    with pytest.raises(red.ErrorRed) as exc:
+        red.get("https://example.test/x", dominios=["example.test"])
+    assert exc.value.codigo == codigo
+
+
+def test_una_caida_de_red_es_fuente_no_disponible(monkeypatch) -> None:
+    from geo_mcp_kit import red
+
+    class _Cae:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, *a, **k):
+            raise httpx.ConnectError("sin ruta")
+
+    monkeypatch.setattr(red, "cliente", lambda *a, **k: _Cae())
+    with pytest.raises(red.ErrorRed) as exc:
+        red.get("https://example.test/x", dominios=["example.test"], reintentos=0)
+    assert exc.value.codigo == "fuente_no_disponible"
