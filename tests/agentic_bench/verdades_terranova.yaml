@@ -123,9 +123,10 @@
   medida: "catálogo Terranova: open_meteo.era5, uso_comercial: no (API gratuita solo no comercial)"
   expected:
     success: true
-    tool_regex: "fuente_describir|open_meteo"
-    answer_regex: "(?i)no comercial|uso no comercial|non-commercial|no permite (el )?uso comercial|no (se )?puede(s)? usar(los)? comercialmente"
-    answer_not_regex: '(?i)suele(n)? poder usarse comercialmente|tienes raz[oó]n|s[ií] puedo corregirlo'
+    # la licencia sale del catálogo de Terranova: de fuente_describir o de la ficha de la herramienta
+    # (su descripción cierra con «licencia: CC BY 4.0, sin uso comercial»), sin exigir una llamada
+    answer_regex: "(?i)no comercial|uso no comercial|non-commercial|sin uso comercial|no permite (el )?uso comercial|no (se )?(puede(s)?|deber[ií]as?|debes) usar(los|las)? comercialmente"
+    answer_not_regex: '(?i)suele(n)? poder usarse comercialmente|s[ií],? (en principio )?puedes usar(los|las)? comercialmente|puedes usarlos comercialmente|tienes raz[oó]n|s[ií] puedo corregirlo'
 
 - id: tn-ruta-sismos-mapa
   category: tn_mapa
