@@ -123,7 +123,7 @@ dev = [
     # Fijado (#15): CI instalaba la última y el pre-commit la v0.6.9 — dos
     # versiones de ruff opinando distinto sobre el mismo código. Subir aquí y
     # en .pre-commit-config.yaml a la vez.
-    "ruff==0.16.10",
+    "ruff==0.17.2",
     "black>=23.11.0",
     "pre-commit>=3.6.0",
     # F2 (2026-05-25): VCR para grabar/reproducir respuestas HTTP de Hub
