@@ -150,7 +150,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_ambiente
     url: https://terrnova.com/mcp/ambiente
@@ -160,7 +160,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_estadisticas
     url: https://terrnova.com/mcp/estadisticas
@@ -170,7 +170,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_justicia
     url: https://terrnova.com/mcp/justicia
@@ -180,7 +180,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_contratacion
     url: https://terrnova.com/mcp/contratacion
@@ -190,7 +190,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_empresas
     url: https://terrnova.com/mcp/empresas
@@ -200,7 +200,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_normativa
     url: https://terrnova.com/mcp/normativa
@@ -210,7 +210,7 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_meta
     url: https://terrnova.com/mcp/meta
@@ -220,4 +220,4 @@ servers:
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }

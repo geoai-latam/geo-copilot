@@ -24,7 +24,7 @@ código con él y se conecta solo por MCP con su llave. Las entradas `tn_*` de
     trust: trusted
     tools: { allow: ["*"] }
     argumentos_por_defecto: { geometria: true }   # solo llega a las tools que lo declaran
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
 ```
 
 - **Sin `TERRANOVA_LLAVE`** esas entradas quedan no disponibles y lo demás funciona igual.

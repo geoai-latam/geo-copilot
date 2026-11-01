@@ -94,6 +94,9 @@ class Policy(_Estricto):
     hitl: HitlPolicy = Field(default_factory=HitlPolicy)
     timeout_s: float = Field(default=60, gt=0, le=900)
     max_result_mb: float = Field(default=20, gt=0, le=200)
+    #: Tope para descubrir las tools. En la red interna más de 20 s es un servidor colgado; uno
+    #: remoto con un catálogo grande necesita más (300 KB de esquemas tardan unos 12 s).
+    listar_timeout_s: float = Field(default=20, gt=0, le=120)
 
 
 class TilesConfig(_Estricto):

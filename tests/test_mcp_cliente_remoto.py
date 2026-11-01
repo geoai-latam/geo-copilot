@@ -98,3 +98,4 @@ def test_las_entradas_de_terrnova_del_repo_son_validas_y_sin_secretos():
         assert cfg.url.startswith("https://terrnova.com/mcp/")
         assert cfg.auth.secret_ref == "env:TERRANOVA_LLAVE"
         assert cfg.policy.default_risk == "read"
+        assert cfg.policy.listar_timeout_s > 20  # su catálogo no se lista en el tope de la red interna
