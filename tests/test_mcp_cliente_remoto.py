@@ -8,7 +8,7 @@ import yaml
 
 from geo_copilot.platform.mcp.config import McpConfig, ServerConfig
 from geo_copilot.platform.mcp.connection import McpConnection, ServidorNoDisponible
-from geo_copilot.platform.mcp.ejecucion import _con_defectos, _llamar
+from geo_copilot.platform.mcp.ejecucion import _con_fijos, _llamar
 from geo_copilot.platform.mcp.hub import McpHub
 
 
@@ -22,22 +22,23 @@ def _est(props):
     return SimpleNamespace(esquema={"type": "object", "properties": props})
 
 
-def test_el_defecto_solo_llega_a_la_tool_que_lo_declara():
-    cfg = _cfg(argumentos_por_defecto={"geometria": True})
-    assert _con_defectos(cfg, _est({"bbox": {}, "geometria": {}}), {"bbox": [1, 2, 3, 4]}) == {
+def test_el_fijo_solo_llega_a_la_tool_que_lo_declara():
+    cfg = _cfg(argumentos_fijos={"geometria": True})
+    assert _con_fijos(cfg, _est({"bbox": {}, "geometria": {}}), {"bbox": [1, 2, 3, 4]}) == {
         "bbox": [1, 2, 3, 4], "geometria": True}
     # una tool sin `geometria` la rechazaría
-    assert _con_defectos(cfg, _est({"bbox": {}}), {"bbox": [1, 2, 3, 4]}) == {"bbox": [1, 2, 3, 4]}
+    assert _con_fijos(cfg, _est({"bbox": {}}), {"bbox": [1, 2, 3, 4]}) == {"bbox": [1, 2, 3, 4]}
 
 
-def test_lo_que_pidio_el_llm_gana_al_defecto():
-    cfg = _cfg(argumentos_por_defecto={"geometria": True})
-    assert _con_defectos(cfg, _est({"geometria": {}}), {"geometria": False}) == {"geometria": False}
+def test_el_fijo_gana_al_valor_que_copio_el_llm_del_esquema():
+    """V5: el LLM mandó `geometria: false` en «muéstrame en el mapa» y la capa salió sin forma."""
+    cfg = _cfg(argumentos_fijos={"geometria": True})
+    assert _con_fijos(cfg, _est({"geometria": {}}), {"geometria": False}) == {"geometria": True}
 
 
-def test_sin_defectos_los_argumentos_no_cambian():
+def test_sin_fijos_los_argumentos_no_cambian():
     args = {"bbox": [1, 2, 3, 4]}
-    assert _con_defectos(_cfg(), _est({"bbox": {}}), args) is args
+    assert _con_fijos(_cfg(), _est({"bbox": {}}), args) is args
 
 
 def _con_error(texto, estructurado):
@@ -99,3 +100,5 @@ def test_las_entradas_de_terrnova_del_repo_son_validas_y_sin_secretos():
         assert cfg.auth.secret_ref == "env:TERRANOVA_LLAVE"
         assert cfg.policy.default_risk == "read"
         assert cfg.policy.listar_timeout_s > 20  # su catálogo no se lista en el tope de la red interna
+        assert cfg.policy.timeout_s < 120  # una llamada colgada no se come el turno entero
+        assert cfg.argumentos_fijos == {"geometria": True}

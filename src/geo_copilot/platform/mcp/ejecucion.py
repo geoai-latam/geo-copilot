@@ -57,7 +57,7 @@ async def ejecutar_tool(hub: McpHub, cfg: ServerConfig, tool: str, est: EstadoTo
     desconocidos = _argumentos_desconocidos(est, args)
     if desconocidos:
         return ToolOutcome(desconocidos, success=False)
-    args = _con_defectos(cfg, est, args)
+    args = _con_fijos(cfg, est, args)
     out = await _llamar(hub, con, cfg, tool, est, working, args, decl=decl, titulo=titulo)
     if out.success and (zonas := _zonas_usadas(est, pedidos, working)):
         out.observation += " [Núcleo] zona usada: " + "; ".join(zonas)
@@ -103,17 +103,17 @@ _ESQUEMA_TITULO = {"type": "string", "maxLength": 80,
                                   "(p. ej. «Sedes rurales de Zipaquirá»). Opcional."}
 
 
-def _con_defectos(cfg: ServerConfig, est: EstadoTool, args: dict) -> dict:
-    """`args` más los `argumentos_por_defecto` del servidor que la tool declara.
+def _con_fijos(cfg: ServerConfig, est: EstadoTool, args: dict) -> dict:
+    """`args` con los `argumentos_fijos` del servidor que la tool declara; la configuración manda.
 
-    Va después de validar: el defecto es de la configuración, no del LLM, y lo que el LLM pidió
-    manda. Una tool que no declara el argumento no lo recibe (la rechazaría).
+    Va después de validar: no son del LLM. Una tool que no declara el argumento no lo recibe (la
+    rechazaría).
     """
-    defectos = getattr(cfg, "argumentos_por_defecto", None) or {}
+    fijos = getattr(cfg, "argumentos_fijos", None) or {}
     props = (est.esquema or {}).get("properties")
-    if not defectos or not isinstance(props, dict):
+    if not fijos or not isinstance(props, dict):
         return args
-    return {**{k: v for k, v in defectos.items() if k in props}, **args}
+    return {**args, **{k: v for k, v in fijos.items() if k in props}}
 
 
 def _argumentos_desconocidos(est: EstadoTool, args: dict) -> str | None:

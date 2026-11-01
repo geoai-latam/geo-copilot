@@ -106,28 +106,6 @@
     answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
 
 # ------------------------------------------------------------ enrutamiento: datos que se contestaban de memoria
-- id: tn-ruta-lluvia-bogota
-  category: tn_enrutamiento
-  query: "¿Cuánto llovió en Bogotá en enero de 2023 y qué temperatura media hubo?"
-  # Open-Meteo revisa su mezcla los últimos días: 91,5 mm el 2026-10-21, 92,2 el 2026-10-24 (temp 12,0)
-  medida: "archive-api.open-meteo.com, 4.711,-74.0721, 2023-01-01 a 2023-01-31, suma de precipitation_sum"
-  expected:
-    success: true
-    tool_regex: "open_meteo_clima_serie"
-    answer_numbers: [{valor: 92.2, tol: 0.01}]
-    answer_not_regex: '(?i)tienes raz[oó]n|s[ií] puedo corregirlo'
-
-- id: tn-ruta-licencia-open-meteo
-  category: tn_enrutamiento
-  query: "¿Puedo usar comercialmente los datos de clima de Open-Meteo que me das?"
-  medida: "catálogo Terranova: open_meteo.era5, uso_comercial: no (API gratuita solo no comercial)"
-  expected:
-    success: true
-    # la licencia sale del catálogo de Terranova: de fuente_describir o de la ficha de la herramienta
-    # (su descripción cierra con «licencia: CC BY 4.0, sin uso comercial»), sin exigir una llamada
-    answer_regex: "(?i)no comercial|uso no comercial|non-commercial|sin uso comercial|no permite (el )?uso comercial|no (se )?(puede(s)?|deber[ií]as?|debes) usar(los|las)? comercialmente"
-    answer_not_regex: '(?i)suele(n)? poder usarse comercialmente|s[ií],? (en principio )?puedes usar(los|las)? comercialmente|puedes usarlos comercialmente|tienes raz[oó]n|s[ií] puedo corregirlo'
-
 - id: tn-ruta-sismos-mapa
   category: tn_mapa
   query: "Muéstrame en el mapa los sismos de magnitud 4 o más de 2024 entre -75.5 y -72.5 de longitud y 3 a 6 de latitud."

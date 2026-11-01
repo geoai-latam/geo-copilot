@@ -23,13 +23,16 @@ código con él y se conecta solo por MCP con su llave. Las entradas `tn_*` de
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }   # solo llega a las tools que lo declaran
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }   # solo llega a las tools que lo declaran
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 ```
 
 - **Sin `TERRANOVA_LLAVE`** esas entradas quedan no disponibles y lo demás funciona igual.
-- **`argumentos_por_defecto`** completa lo que el LLM no dio. Terrnova resume la geometría salvo que
-  se pida `geometria: true`, y sin forma una capa no se puede pintar.
+- **`argumentos_fijos`** los pone la configuración, digan lo que digan los del LLM. Terrnova resume
+  la geometría salvo que se pida `geometria: true`, y el LLM tiende a copiar el `false` del esquema:
+  la capa salía sin forma.
+- **`timeout_s` menor que el tope del turno** (120 s): una llamada colgada llega al agente como error
+  y no se lleva el turno entero. Un catálogo grande necesita además `listar_timeout_s`.
 - **El catálogo crece.** Una tool nueva queda pendiente, y una con la descripción cambiada se
   deshabilita, hasta aprobarla: `python -m geo_copilot.platform.mcp.aprobar --pendientes --por <quien> --si`.
 - Los errores de `rt/1` llegan con `isError` y `codigo` en `structuredContent`; el núcleo lee ese

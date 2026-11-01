@@ -7,7 +7,7 @@
 #
 # Campos: id · url · auth{type,secret_ref} · conformance G0|G1|G2 · trust (untrusted por defecto) ·
 # tools{allow,deny,agent} (allowlist obligatoria; `agent`: cuáles ve el LLM, por defecto todas) · policy{default_risk, hitl, timeout_s,
-# max_result_mb} · tiles{prefixes} · description · argumentos_por_defecto · enabled.
+# max_result_mb} · tiles{prefixes} · description · argumentos_fijos · enabled.
 
 servers:
   # Imagery satelital Sentinel-2/Landsat (servicio imagery-mcp del compose): índices
@@ -149,8 +149,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_ambiente
     url: https://terrnova.com/mcp/ambiente
@@ -159,8 +159,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_estadisticas
     url: https://terrnova.com/mcp/estadisticas
@@ -169,8 +169,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_justicia
     url: https://terrnova.com/mcp/justicia
@@ -179,8 +179,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_contratacion
     url: https://terrnova.com/mcp/contratacion
@@ -189,8 +189,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_empresas
     url: https://terrnova.com/mcp/empresas
@@ -199,8 +199,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_normativa
     url: https://terrnova.com/mcp/normativa
@@ -209,8 +209,8 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
 
   - id: tn_meta
     url: https://terrnova.com/mcp/meta
@@ -219,5 +219,5 @@ servers:
     conformance: G2
     trust: trusted
     tools: { allow: ["*"] }
-    argumentos_por_defecto: { geometria: true }
-    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50, listar_timeout_s: 60 }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
