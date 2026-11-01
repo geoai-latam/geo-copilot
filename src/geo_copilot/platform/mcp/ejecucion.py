@@ -57,6 +57,7 @@ async def ejecutar_tool(hub: McpHub, cfg: ServerConfig, tool: str, est: EstadoTo
     desconocidos = _argumentos_desconocidos(est, args)
     if desconocidos:
         return ToolOutcome(desconocidos, success=False)
+    args = _con_defectos(cfg, est, args)
     out = await _llamar(hub, con, cfg, tool, est, working, args, decl=decl, titulo=titulo)
     if out.success and (zonas := _zonas_usadas(est, pedidos, working)):
         out.observation += " [Núcleo] zona usada: " + "; ".join(zonas)
@@ -102,6 +103,19 @@ _ESQUEMA_TITULO = {"type": "string", "maxLength": 80,
                                   "(p. ej. «Sedes rurales de Zipaquirá»). Opcional."}
 
 
+def _con_defectos(cfg: ServerConfig, est: EstadoTool, args: dict) -> dict:
+    """`args` más los `argumentos_por_defecto` del servidor que la tool declara.
+
+    Va después de validar: el defecto es de la configuración, no del LLM, y lo que el LLM pidió
+    manda. Una tool que no declara el argumento no lo recibe (la rechazaría).
+    """
+    defectos = getattr(cfg, "argumentos_por_defecto", None) or {}
+    props = (est.esquema or {}).get("properties")
+    if not defectos or not isinstance(props, dict):
+        return args
+    return {**{k: v for k, v in defectos.items() if k in props}, **args}
+
+
 def _argumentos_desconocidos(est: EstadoTool, args: dict) -> str | None:
     """Motivo si el LLM pasó argumentos que la tool NO declara; None si todos existen.
 
@@ -143,7 +157,11 @@ async def _llamar(hub: McpHub, con: McpConnection, cfg: ServerConfig, tool: str,
             # por haber supuesto el nombre de la tabla; el hecho va donde aplica: aquí.
             pista = (" [Núcleo:] el servicio sigue disponible: si el error es por una tabla o columna, "
                      "mira las REALES con su herramienta de listar tablas y reintenta aquí.")
-        obs = f"[{cfg.id}] error: " + " ".join(textos) + pista
+        # un error estructurado trae su código aunque el texto no lo repita
+        sc_error = res.structuredContent if isinstance(res.structuredContent, dict) else {}
+        codigo = sc_error.get("codigo") if isinstance(sc_error.get("codigo"), str) else ""
+        marca = f" (codigo={codigo})" if codigo and codigo not in " ".join(textos) else ""
+        obs = f"[{cfg.id}] error: " + " ".join(textos) + marca + pista
         return ToolOutcome(_limitar(obs), success=False, degraded_code=_codigo_degradado(obs))
 
     sc = _desanidar_geo_result(res.structuredContent)

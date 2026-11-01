@@ -84,6 +84,8 @@ services:
       PYTHONPATH: ""
       # detrás de nginx: la IP del cliente viene en X-Forwarded-For (rate limit por usuario real)
       TRUST_PROXY_HEADERS: "true"
+      # llave de Terrnova (servicio externo, env:TERRANOVA_LLAVE); opcional: sin ella, tn_* no disponibles
+      TERRANOVA_LLAVE: ${TERRANOVA_LLAVE:-}
       # credencial del arcgis-mcp a la que apunta config/mcp_servers.yaml (env:ARCGIS_MCP_APP_KEY)
       ARCGIS_MCP_APP_KEY: ${ARCGIS_MCP_APP_KEY:?define ARCGIS_MCP_APP_KEY}
       # credencial del lugares-mcp (geocodificación; env:LUGARES_MCP_APP_KEY)

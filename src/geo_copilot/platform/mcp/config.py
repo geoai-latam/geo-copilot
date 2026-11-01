@@ -127,6 +127,9 @@ class ServerConfig(_Estricto):
     adapter: Literal["tabular_geo"] | None = None
     #: `geometry`: declaración por defecto ({column, encoding, crs, lat_column}) si el LLM no da una.
     adapter_options: dict[str, Any] = Field(default_factory=dict)
+    #: Argumentos que se envían si el LLM no los dio y la tool los declara (p. ej. un servidor que
+    #: resume la geometría salvo que se pida `geometria: true`). Una tool sin ese argumento no lo recibe.
+    argumentos_por_defecto: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     #: F6 (S6.2): conexión dada de alta por una ORGANIZACIÓN (no por la plataforma): solo va a
     #: destinos públicos por https y a la IP validada (platform/conexiones/red.py).

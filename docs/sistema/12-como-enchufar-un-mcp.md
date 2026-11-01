@@ -10,6 +10,31 @@ geográfico que pinta capas y teselas).
 
 ---
 
+## 0. Un servidor remoto: el caso de Terrnova
+
+Terrnova es un servicio externo de datos oficiales. GEO Copilot es un cliente más: no comparte
+código con él y se conecta solo por MCP con su llave. Las entradas `tn_*` de
+`config/mcp_servers.yaml` son el ejemplo real, una por familia:
+
+```yaml
+  - id: tn_territorio
+    url: https://terrnova.com/mcp/territorio
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_por_defecto: { geometria: true }   # solo llega a las tools que lo declaran
+    policy: { default_risk: read, timeout_s: 120, max_result_mb: 50 }
+```
+
+- **Sin `TERRANOVA_LLAVE`** esas entradas quedan no disponibles y lo demás funciona igual.
+- **`argumentos_por_defecto`** completa lo que el LLM no dio. Terrnova resume la geometría salvo que
+  se pida `geometria: true`, y sin forma una capa no se puede pintar.
+- **El catálogo crece.** Una tool nueva queda pendiente, y una con la descripción cambiada se
+  deshabilita, hasta aprobarla: `python -m geo_copilot.platform.mcp.aprobar --pendientes --por <quien> --si`.
+- Los errores de `rt/1` llegan con `isError` y `codigo` en `structuredContent`; el núcleo lee ese
+  código, y `fuente_lenta` o `fuente_no_disponible` cortan los reintentos del turno.
+
 ## 1. Lo mínimo: registrarlo en el YAML
 
 Los servidores viven en `config/mcp_servers.yaml` (o el fichero que diga

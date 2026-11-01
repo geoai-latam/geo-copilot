@@ -362,6 +362,8 @@ class McpHub:
                     if e.servidor == sid and e.habilitada and con.cfg.tools.para_agente(e.tool))
             if not n and con.cfg.tools.agent == []:
                 continue  # lo usa solo el núcleo: el agente no tiene nada que llamar ahí
+            if not n and con.cfg.auth.type == "bearer" and not con.cfg.auth.resolver():
+                continue  # sin credencial no está conectado: un servicio opcional no entra al prompt
             est = {"disponible": "disponible", "no_disponible": "NO disponible ahora",
                    "desconocido": "sin verificar"}[con.estado]
             # Las `instructions` las escribe el servidor: de uno no confiable NO entran al prompt
