@@ -155,6 +155,31 @@ def test_la_preseleccion_trae_las_afines_sin_repetir_equivalentes(sesenta):
     assert 0 < len(pre) <= 3 and pre[0].endswith("__clima")
 
 
+def test_la_hermana_que_nombra_la_descripcion_queda_activa(monkeypatch):
+    """Por encima del umbral, activar `lugares_buscar` (que dice «pide su límite con
+    `lugares_limite(ref)`») activa también `lugares_limite`; no una de otro servidor ni una no nombrada."""
+    from geo_copilot.platform.mcp import busqueda
+
+    def cap(srv: str, corto: str, desc: str) -> Capability:
+        return Capability(id=f"mcp.{srv}.{corto}", tool_name=f"{srv}__{corto}", description=desc,
+                          executor=None, blurb=desc, parameters={"type": "object", "properties": {}},
+                          provider=f"mcp:{srv}")
+
+    caps = [
+        cap("lugares", "lugares_buscar", "Busca un lugar; pide su límite con `lugares_limite(ref)`."),
+        cap("lugares", "lugares_limite", "El polígono del candidato elegido."),
+        cap("lugares", "lugares_otra", "Otra herramienta que nadie nombra."),
+        cap("tn_x", "lugares_limite", "Homónima en otro servidor."),
+    ]
+    monkeypatch.setattr(busqueda, "registry", lambda: SimpleNamespace(available=lambda g: caps))
+    vistas = {c.tool_name for c in busqueda.seleccion(None, ["lugares__lugares_buscar"], umbral=1)}
+    assert {"lugares__lugares_buscar", "lugares__lugares_limite"} <= vistas
+    assert "lugares__lugares_otra" not in vistas and "tn_x__lugares_limite" not in vistas
+    linea = next(x for x in busqueda.catalogo(None, ["lugares__lugares_buscar"], umbral=1).splitlines()
+                 if x.startswith("  - lugares:"))
+    assert linea == "  - lugares: lugares_otra"  # la activada no se repite en el catálogo
+
+
 def test_la_preseleccion_cuenta_una_vez_las_iguales(monkeypatch):
     from geo_copilot.platform.mcp import busqueda
 
