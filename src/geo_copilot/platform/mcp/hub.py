@@ -69,6 +69,7 @@ from geo_copilot.platform.mcp.referencias import (  # noqa: F401
     _max_obs,
     _referencias_validas,
     _resolver_geo,
+    geo_inferido,
 )
 
 #: Pin que marca que el servidor ya se sincronizó una vez (su alta = el consentimiento inicial).
@@ -227,7 +228,7 @@ class McpHub:
             logger.warning("[mcp] tool %s cambió (rug pull?) → deshabilitada", clave)
         esquema = tool.inputSchema if isinstance(tool.inputSchema, dict) else {}
         return EstadoTool(cfg.id, tool.name, nombre_llm(cfg.id, tool.name), habilitada, motivo,
-                          riesgo_de(tool, cfg), h, meta_geo(tool),
+                          riesgo_de(tool, cfg), h, meta_geo(tool) or geo_inferido(tool.inputSchema),
                           descripcion=(tool.description or "").strip(), esquema=esquema)
 
     async def aprobar(self, servidor: str, tool: str, *, por: str = "") -> bool:

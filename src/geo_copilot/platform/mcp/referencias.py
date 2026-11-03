@@ -64,6 +64,62 @@ def _admite_geometria(prop: Any) -> bool:
     return bool(tipos & {"object", "array", "string", None}) and not tipos <= {"number", "integer", "null"}
 
 
+_TIPOS_GEOJSON = ("Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon")
+
+
+def _tipos_de_geometria(prop: Any) -> list[str] | None:
+    """Los tipos GeoJSON que pide un argumento cuyo ESQUEMA es una geometría, o None si no lo es.
+
+    Un objeto con `type` y `coordinates` es una geometría GeoJSON por definición del estándar,
+    lo diga o no el servidor en `_meta.geo`.
+    """
+    if not isinstance(prop, dict) or prop.get("type") not in ("object", None):
+        return None
+    props = prop.get("properties") or {}
+    if not isinstance(props, dict) or "coordinates" not in props or "type" not in props:
+        return None
+    t = props.get("type") or {}
+    pedidos = [t["const"]] if "const" in t else list(t.get("enum") or [])
+    tipos = [x for x in pedidos if x in _TIPOS_GEOJSON]
+    return tipos or list(_TIPOS_GEOJSON)
+
+
+def geo_inferido(esquema: Any) -> dict:
+    """`_meta.geo` deducido del esquema cuando el servidor no lo declara.
+
+    Navegador 2026-11-02: un servicio remoto pedía `poligono` (GeoJSON) sin `_meta.geo` y el LLM
+    escribía el polígono a mano: un punto repetido 4 veces o un rectángulo a ojo; «áreas protegidas
+    a 5 km» dio 0 donde había 2. Con esto el LLM pasa una referencia y el núcleo pone la geometría.
+    """
+    props = (esquema or {}).get("properties") if isinstance(esquema, dict) else None
+    entradas = {}
+    for nombre, prop in (props or {}).items():
+        if (tipos := _tipos_de_geometria(prop)) is not None:
+            entradas[nombre] = {"accepts": ["geojson_geometry"], "types": tipos}
+    return {"inputs": entradas} if entradas else {}
+
+
+def _una_geometria(fc: dict, tipos: list[str]) -> tuple[dict | None, str | None]:
+    """La capa como UNA geometría GeoJSON de los tipos que acepta el servicio (o el motivo de no)."""
+    from shapely.geometry import mapping, shape
+    from shapely.ops import unary_union
+
+    geoms = [shape(f["geometry"]) for f in fc.get("features", []) if f.get("geometry")]
+    if not geoms:
+        return None, "no tiene geometrías"
+    unida = unary_union([g if g.is_valid else g.buffer(0) for g in geoms])
+    if unida.geom_type in tipos:
+        return dict(mapping(unida)), None
+    simple = {"MultiPolygon": "Polygon", "MultiLineString": "LineString", "MultiPoint": "Point"}
+    multi = {v: k for k, v in simple.items()}
+    if multi.get(unida.geom_type) in tipos:
+        return {"type": multi[unida.geom_type], "coordinates": [mapping(unida)["coordinates"]]}, None
+    if simple.get(unida.geom_type) in tipos and len(getattr(unida, "geoms", [])) > 1:
+        return None, (f"es un {unida.geom_type} de {len(unida.geoms)} partes separadas y el servicio solo "
+                      f"acepta {', '.join(tipos)}: pásale una parte (`seleccion`) o di al usuario que no se puede de una vez")
+    return None, f"es {unida.geom_type} y el servicio solo acepta {', '.join(tipos)}"
+
+
 def _esquema_con_referencias(esquema: dict, geo_in: dict) -> dict:
     """El esquema que ve el LLM: los argumentos geo se piden como referencia.
 
@@ -276,6 +332,21 @@ def _pista_de_lugar(valor: str) -> str:
             "la capa que deja (su id `ds_…` o su nombre). ")
 
 
+def _valor_de_capa(fc: dict, acepta: set, spec: Any) -> tuple[Any, str | None]:
+    """Lo que recibe el servicio por una capa: una geometría, la capa entera o su bbox."""
+    if "geojson_geometry" in acepta:
+        return _una_geometria(fc, list((spec or {}).get("types") or _TIPOS_GEOJSON))
+    if "geometry" in acepta:
+        return fc, None
+    if "bbox" in acepta:
+        from shapely.geometry import shape
+
+        xs = [shape(f["geometry"]).bounds for f in fc.get("features", []) if f.get("geometry")]
+        if xs:
+            return [min(b[0] for b in xs), min(b[1] for b in xs), max(b[2] for b in xs), max(b[3] for b in xs)], None
+    return None, None
+
+
 async def _resolver_geo(est: EstadoTool, working: dict, args: dict) -> tuple[dict, str | None]:
     """Sustituye referencias de capa por su geometría/bbox en los argumentos geo declarados."""
     entradas = (est.geo.get("inputs") or {}) if est.geo else {}
@@ -303,18 +374,13 @@ async def _resolver_geo(est: EstadoTool, working: dict, args: dict) -> tuple[dic
                               "parte y el resultado no sería de toda la capa. No se ejecutó. Acótala "
                               "(`seleccion`, un filtro, `viewport`) o dilo al usuario.")
         if fc is None:
-            if acepta & {"geometry", "bbox", "layer_ref"}:
+            if acepta & {"geometry", "bbox", "layer_ref", "geojson_geometry"}:
                 return args, (f"`{valor}` no es una capa de esta sesión para el argumento `{nombre}`. "
                               f"{_pista_de_lugar(valor)}Referencias válidas ahora: {_referencias_validas(working)}")
             continue
-        if "geometry" in acepta:
-            salida[nombre] = fc
-        elif "bbox" in acepta:
-            from shapely.geometry import shape
-
-            geoms = [shape(f["geometry"]) for f in fc.get("features", []) if f.get("geometry")]
-            if geoms:
-                xs = [g.bounds for g in geoms]
-                salida[nombre] = [min(b[0] for b in xs), min(b[1] for b in xs),
-                                  max(b[2] for b in xs), max(b[3] for b in xs)]
+        valor_geo, motivo = _valor_de_capa(fc, acepta, spec)
+        if motivo:
+            return args, f"`{valor}` no sirve para `{nombre}`: {motivo}. No se ejecutó."
+        if valor_geo is not None:
+            salida[nombre] = valor_geo
     return salida, None
