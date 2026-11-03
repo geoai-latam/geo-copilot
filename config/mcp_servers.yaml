@@ -7,7 +7,9 @@
 #
 # Campos: id · url · auth{type,secret_ref} · conformance G0|G1|G2 · trust (untrusted por defecto) ·
 # tools{allow,deny,agent} (allowlist obligatoria; `agent`: cuáles ve el LLM, por defecto todas) · policy{default_risk, hitl, timeout_s,
-# max_result_mb} · tiles{prefixes} · description · argumentos_fijos · enabled.
+# max_result_mb} · tiles{prefixes} · description · argumentos_fijos · siempre_visible · enabled.
+# `siempre_visible: true`: sus tools se ven aunque haya más que MCP_TOOLS_UMBRAL (para servidores
+# pequeños de uso general: los datos del usuario, el geocodificador); el resto se activa con find_tools.
 
 servers:
   # Imagery satelital Sentinel-2/Landsat (servicio imagery-mcp del compose): índices
@@ -76,6 +78,7 @@ servers:
 #     tools: { allow: ["list_tables", "run_query"] }
 #     policy: { default_risk: read, timeout_s: 45 }
   - id: lugares
+    siempre_visible: true
     url: http://lugares-mcp:9700/mcp
     description: Geocodificación — de un NOMBRE de lugar (municipio, ciudad, barrio, localidad, dirección) a sus candidatos y al límite (polígono) del elegido, para operar sobre ese lugar.
     auth: { type: bearer, secret_ref: env:LUGARES_MCP_APP_KEY }
@@ -164,7 +167,7 @@ servers:
 
   - id: tn_estadisticas
     url: https://terrnova.com/mcp/estadisticas
-    description: "Estadísticas oficiales: población, educación, salud, economía y comercio exterior por municipio o departamento."
+    description: "Estadísticas oficiales por municipio o departamento: población, indicadores de educación del MEN (cobertura, matrícula; no listados de sedes), salud, economía y comercio exterior."
     auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
     conformance: G2
     trust: trusted

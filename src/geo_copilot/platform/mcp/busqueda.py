@@ -88,14 +88,15 @@ def seleccion(graph: Any, activadas: Iterable[str], umbral: int) -> list[Capabil
 
 
 def con_hermanas_nombradas(caps: Iterable[Capability], activadas: Iterable[str]) -> set[str]:
-    """Las activadas más las herramientas de SU MISMO servidor que su descripción nombra.
+    """Las activadas, las de servidores `siempre_visible` y las herramientas de SU MISMO servidor que
+    la descripción de una de ellas nombra.
 
     Hecho del servidor, no regla por tema: `lugares_buscar` dice «pide su límite con
     `lugares_limite(ref)`». Por encima del umbral esa hermana quedaba sin activar y el agente,
     sin poder llamarla, repetía la búsqueda y daba el área aproximada (Chía 85,42 km² en vez de
     80,03: 0/6 con los servidores de Terrnova conectados, 6/6 sin ellos, 2026-11-02)."""
     mcp = [c for c in caps if es_mcp(c)]
-    activas = set(activadas)
+    activas = set(activadas) | {c.tool_name for c in mcp if c.siempre_visible}
     por_servidor: dict[str, list[Capability]] = {}
     for c in mcp:
         por_servidor.setdefault(c.provider, []).append(c)
@@ -158,7 +159,8 @@ def preseleccion(graph: Any, consulta: str, umbral: int, *, k: int = 8) -> list[
     servidores) cuentan una vez. Hasta el umbral no hace falta: el LLM ya las ve todas."""
     if not consulta.strip() or not hay_demasiadas(graph, umbral):
         return []
-    mcp = [c for c in registry().available(graph) if es_mcp(c)]
+    # las siempre visibles ya se ven: no ocupan los `k` cupos
+    mcp = [c for c in registry().available(graph) if es_mcp(c) and not c.siempre_visible]
     elegidas: list[str] = []
     vistas: set[str] = set()
     for c in buscar(consulta, mcp, limite=k * 3):

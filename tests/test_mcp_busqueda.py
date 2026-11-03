@@ -180,6 +180,35 @@ def test_la_hermana_que_nombra_la_descripcion_queda_activa(monkeypatch):
     assert linea == "  - lugares: lugares_otra"  # la activada no se repite en el catálogo
 
 
+def test_el_servidor_siempre_visible_se_ve_sin_activarlo_y_no_gasta_preseleccion(monkeypatch):
+    """Con un catálogo remoto grande, «sedes educativas» activaba las de salud del catálogo y el agente
+    decía no tener la base de sedes que sí estaba conectada (navegador, 2026-11-02)."""
+    from geo_copilot.platform.mcp import busqueda
+
+    def cap(srv: str, corto: str, desc: str, *, visible: bool = False) -> Capability:
+        return Capability(id=f"mcp.{srv}.{corto}", tool_name=f"{srv}__{corto}", description=desc,
+                          executor=None, blurb=desc, parameters={"type": "object", "properties": {}},
+                          provider=f"mcp:{srv}", siempre_visible=visible)
+
+    caps = [cap("sql", "sql_query", "Ejecuta un SELECT en una fuente.", visible=True),
+            cap("tn", "reps_sedes_municipio", "Sedes de prestadores de salud de un municipio."),
+            cap("tn", "men_educacion_municipio", "Indicadores de educación de un municipio.")]
+    monkeypatch.setattr(busqueda, "hay_demasiadas", lambda g, u: True)
+    monkeypatch.setattr(busqueda, "registry", lambda: SimpleNamespace(available=lambda g: caps))
+    vistas = {c.tool_name for c in busqueda.seleccion(None, [], umbral=1)}
+    assert "sql__sql_query" in vistas and "tn__reps_sedes_municipio" not in vistas
+    assert "sql__sql_query" not in busqueda.preseleccion(None, "ejecuta un select de sedes", umbral=1)
+    assert "sql_query" not in busqueda.catalogo(None, [], umbral=1)
+
+
+def test_la_configuracion_acepta_siempre_visible():
+    from geo_copilot.platform.mcp.config import ServerConfig
+
+    cfg = ServerConfig(id="sql", url="http://sql:9300/mcp", tools={"allow": ["*"]}, siempre_visible=True)
+    assert cfg.siempre_visible is True
+    assert ServerConfig(id="x", url="http://x/mcp", tools={"allow": ["*"]}).siempre_visible is False
+
+
 def test_la_preseleccion_cuenta_una_vez_las_iguales(monkeypatch):
     from geo_copilot.platform.mcp import busqueda
 

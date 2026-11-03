@@ -134,6 +134,11 @@ class ServerConfig(_Estricto):
     #: LLM. Son del cliente, no de la pregunta: un mapa necesita la geometría aunque el esquema de un
     #: servidor la deje en `false` (el LLM copiaba ese valor y la capa salía sin forma).
     argumentos_fijos: dict[str, Any] = Field(default_factory=dict)
+    #: Por encima del umbral de herramientas, el agente solo ve las que activa. Un servidor con pocas
+    #: herramientas y de uso general (los datos propios del usuario, el geocodificador) puede quedar
+    #: siempre a la vista: con un catálogo remoto grande conectado, «sedes educativas» activaba las de
+    #: salud del catálogo y el agente decía no tener la fuente que sí tenía (navegador, 2026-11-02).
+    siempre_visible: bool = False
     enabled: bool = True
     #: F6 (S6.2): conexión dada de alta por una ORGANIZACIÓN (no por la plataforma): solo va a
     #: destinos públicos por https y a la IP validada (platform/conexiones/red.py).
