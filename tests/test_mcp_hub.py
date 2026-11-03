@@ -615,3 +615,63 @@ async def test_un_error_con_codigo_del_kit_es_un_fallo():
                        esquema={"type": "object", "properties": {}})
     out = await h.ejecutar_tool(hub, cfg, "q", est, {"session_id": "s"}, {})
     assert out.success is False and "HTTP 503" in out.observation
+
+
+_POLIGONO_GEOJSON = {"type": "object", "required": ["type", "coordinates"],
+                     "properties": {"type": {"const": "Polygon"}, "coordinates": {"type": "array"}}}
+
+
+def test_un_argumento_geojson_sin_meta_geo_se_pide_como_referencia():
+    """Navegador 2026-11-02: un servicio remoto pedía `poligono` GeoJSON sin `_meta.geo` y el LLM lo
+    escribía a mano (un punto repetido, un rectángulo a ojo): «áreas protegidas a 5 km» dio 0 de 2."""
+    from geo_copilot.platform.mcp.hub import _esquema_con_referencias, geo_inferido
+
+    esquema = {"type": "object", "properties": {"poligono": _POLIGONO_GEOJSON, "pagina": {"type": "integer"}}}
+    geo = geo_inferido(esquema)
+    assert geo == {"inputs": {"poligono": {"accepts": ["geojson_geometry"], "types": ["Polygon"]}}}
+    visto = _esquema_con_referencias(esquema, geo["inputs"])
+    assert visto["properties"]["poligono"]["type"] == "string"
+    assert visto["properties"]["pagina"] == {"type": "integer"}
+    # sin un objeto con type+coordinates no se infiere nada
+    assert geo_inferido({"type": "object", "properties": {"zona": {"type": "object"}}}) == {}
+
+
+@pytest.mark.asyncio
+async def test_la_capa_llega_como_una_geometria_del_tipo_que_pide_el_servicio():
+    est = SimpleNamespace(geo={"inputs": {"poligono": {"accepts": ["geojson_geometry"], "types": ["Polygon"]}}})
+    cuadro = lambda x: [[[x, 0], [x + 1, 0], [x + 1, 1], [x, 1], [x, 0]]]  # noqa: E731
+    capa = lambda *partes: {"data": {"type": "FeatureCollection", "features": [  # noqa: E731
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Polygon", "coordinates": p}} for p in partes]}}
+    working = {"map_layers": {"buffer": capa(cuadro(0)), "dos": capa(cuadro(0), cuadro(5))}}
+    args, problema = await _resolver_geo(est, working, {"poligono": "buffer"})
+    assert problema is None and args["poligono"]["type"] == "Polygon"
+    assert len(args["poligono"]["coordinates"][0]) == 5  # el anillo real, no un punto repetido
+    # dos partes separadas no caben en un Polygon: se dice, no se inventa una envolvente
+    _, problema = await _resolver_geo(est, working, {"poligono": "dos"})
+    assert problema and "2 partes" in problema
+    # si el servicio acepta MultiPolygon, un polígono suelto se envuelve
+    est.geo["inputs"]["poligono"]["types"] = ["MultiPolygon"]
+    args, _ = await _resolver_geo(est, working, {"poligono": "buffer"})
+    assert args["poligono"]["type"] == "MultiPolygon"
+
+
+def test_el_eco_de_la_geometria_que_puso_el_nucleo_no_llena_la_observacion():
+    """Navegador 2026-11-02: `entrada.poligono` traía el buffer entero y el agente no veía las áreas."""
+    from geo_copilot.platform.mcp.ejecucion import _sin_eco_geo
+
+    anillo = [[x / 100, 0] for x in range(200)]
+    sc = {"entrada": {"poligono": {"type": "Polygon", "coordinates": [anillo]}, "pagina": 1},
+          "zona_usada": {"valor": {"type": "Polygon", "coordinates": [[[round(x, 3), y] for x, y in anillo]]}},
+          "datos": [{"nombre": "El Sauce", "geometry": {"type": "Polygon", "coordinates": [anillo[:5]]}}]}
+    limpio = _sin_eco_geo(sc, {("Polygon", 200)})
+    assert limpio["entrada"]["poligono"] == "[geometría Polygon de 200 vértices que puso el núcleo]"
+    assert limpio["zona_usada"]["valor"] == limpio["entrada"]["poligono"]  # el eco redondeado también
+    assert limpio["entrada"]["pagina"] == 1 and limpio["datos"] == sc["datos"]  # lo hallado, intacto
+    assert _sin_eco_geo(sc, set()) is sc
+    # lo que se envió viene de shapely (tuplas): su firma es la misma que la del eco en JSON
+    from shapely.geometry import Polygon, mapping
+
+    from geo_copilot.platform.mcp.ejecucion import _firma
+
+    enviado = mapping(Polygon([(x / 100, 0) for x in range(199)] + [(1, 1)]))
+    assert isinstance(enviado["coordinates"], tuple) and _firma(enviado) == ("Polygon", 201)  # el LLM no pasó referencias: la respuesta va tal cual

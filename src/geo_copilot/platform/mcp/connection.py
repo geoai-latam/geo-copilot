@@ -25,8 +25,6 @@ from geo_copilot.platform.mcp.config import ServerConfig
 
 logger = get_logger(__name__)
 
-#: Descubrir las tools de un servidor no es una tarea larga: más de esto es un servidor colgado.
-LISTAR_TIMEOUT_S = 20.0
 LISTAR_MAX_PAGINAS = 50
 
 Estado = Literal["desconocido", "disponible", "no_disponible"]
@@ -175,7 +173,7 @@ class McpConnection:
             # su organización, que lo dispara). Paginación: un servidor con muchas tools las entrega
             # por páginas (`nextCursor`); antes solo se leía la primera.
             tools: list[Any] = []
-            with anyio.fail_after(min(self.cfg.policy.timeout_s, LISTAR_TIMEOUT_S)):
+            with anyio.fail_after(min(self.cfg.policy.timeout_s, self.cfg.policy.listar_timeout_s)):
                 async with self._sesion() as s:
                     cursor = None
                     for _ in range(LISTAR_MAX_PAGINAS):

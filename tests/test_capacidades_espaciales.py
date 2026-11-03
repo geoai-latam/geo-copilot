@@ -21,7 +21,7 @@ from geo_copilot.platform.workspace import WorkspaceError, ops
 from geo_copilot.platform.workspace import context as wsctx
 
 WS_TOOLS = {
-    "ws_measure", "ws_buffer", "ws_overlay", "ws_spatial_join",
+    "ws_measure", "ws_buffer", "ws_simplify", "ws_overlay", "ws_spatial_join",
     "ws_aggregate_by_zone", "ws_spatial_autocorrelation",
 }
 

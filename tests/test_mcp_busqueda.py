@@ -155,6 +155,60 @@ def test_la_preseleccion_trae_las_afines_sin_repetir_equivalentes(sesenta):
     assert 0 < len(pre) <= 3 and pre[0].endswith("__clima")
 
 
+def test_la_hermana_que_nombra_la_descripcion_queda_activa(monkeypatch):
+    """Por encima del umbral, activar `lugares_buscar` (que dice «pide su límite con
+    `lugares_limite(ref)`») activa también `lugares_limite`; no una de otro servidor ni una no nombrada."""
+    from geo_copilot.platform.mcp import busqueda
+
+    def cap(srv: str, corto: str, desc: str) -> Capability:
+        return Capability(id=f"mcp.{srv}.{corto}", tool_name=f"{srv}__{corto}", description=desc,
+                          executor=None, blurb=desc, parameters={"type": "object", "properties": {}},
+                          provider=f"mcp:{srv}")
+
+    caps = [
+        cap("lugares", "lugares_buscar", "Busca un lugar; pide su límite con `lugares_limite(ref)`."),
+        cap("lugares", "lugares_limite", "El polígono del candidato elegido."),
+        cap("lugares", "lugares_otra", "Otra herramienta que nadie nombra."),
+        cap("tn_x", "lugares_limite", "Homónima en otro servidor."),
+    ]
+    monkeypatch.setattr(busqueda, "registry", lambda: SimpleNamespace(available=lambda g: caps))
+    vistas = {c.tool_name for c in busqueda.seleccion(None, ["lugares__lugares_buscar"], umbral=1)}
+    assert {"lugares__lugares_buscar", "lugares__lugares_limite"} <= vistas
+    assert "lugares__lugares_otra" not in vistas and "tn_x__lugares_limite" not in vistas
+    linea = next(x for x in busqueda.catalogo(None, ["lugares__lugares_buscar"], umbral=1).splitlines()
+                 if x.startswith("  - lugares:"))
+    assert linea == "  - lugares: lugares_otra"  # la activada no se repite en el catálogo
+
+
+def test_el_servidor_siempre_visible_se_ve_sin_activarlo_y_no_gasta_preseleccion(monkeypatch):
+    """Con un catálogo remoto grande, «sedes educativas» activaba las de salud del catálogo y el agente
+    decía no tener la base de sedes que sí estaba conectada (navegador, 2026-11-02)."""
+    from geo_copilot.platform.mcp import busqueda
+
+    def cap(srv: str, corto: str, desc: str, *, visible: bool = False) -> Capability:
+        return Capability(id=f"mcp.{srv}.{corto}", tool_name=f"{srv}__{corto}", description=desc,
+                          executor=None, blurb=desc, parameters={"type": "object", "properties": {}},
+                          provider=f"mcp:{srv}", siempre_visible=visible)
+
+    caps = [cap("sql", "sql_query", "Ejecuta un SELECT en una fuente.", visible=True),
+            cap("tn", "reps_sedes_municipio", "Sedes de prestadores de salud de un municipio."),
+            cap("tn", "men_educacion_municipio", "Indicadores de educación de un municipio.")]
+    monkeypatch.setattr(busqueda, "hay_demasiadas", lambda g, u: True)
+    monkeypatch.setattr(busqueda, "registry", lambda: SimpleNamespace(available=lambda g: caps))
+    vistas = {c.tool_name for c in busqueda.seleccion(None, [], umbral=1)}
+    assert "sql__sql_query" in vistas and "tn__reps_sedes_municipio" not in vistas
+    assert "sql__sql_query" not in busqueda.preseleccion(None, "ejecuta un select de sedes", umbral=1)
+    assert "sql_query" not in busqueda.catalogo(None, [], umbral=1)
+
+
+def test_la_configuracion_acepta_siempre_visible():
+    from geo_copilot.platform.mcp.config import ServerConfig
+
+    cfg = ServerConfig(id="sql", url="http://sql:9300/mcp", tools={"allow": ["*"]}, siempre_visible=True)
+    assert cfg.siempre_visible is True
+    assert ServerConfig(id="x", url="http://x/mcp", tools={"allow": ["*"]}).siempre_visible is False
+
+
 def test_la_preseleccion_cuenta_una_vez_las_iguales(monkeypatch):
     from geo_copilot.platform.mcp import busqueda
 

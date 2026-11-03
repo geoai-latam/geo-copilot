@@ -26,6 +26,7 @@ from geo_copilot.orchestrator.capacidades_operaciones import (
     _join,
     _medir,
     _overlay,
+    _simplificar,
 )
 from geo_copilot.orchestrator.layer_resolution import capa_de_dataset, copia_de_capa_actualizada
 from geo_copilot.platform.capabilities import Capability, ToolOutcome
@@ -315,6 +316,22 @@ ESPACIALES: tuple[Capability, ...] = (
         executor=_buffer, available=_hay_workspace, geo_inputs={"dataset": _CAPA},
         blurb="buffer de N metros exacto sobre un dataset (+ área total).",
         risk="compute", step=("agent_loop", "Buffer métrico en el workspace"),
+    ),
+    Capability(
+        id="core.simplify", tool_name="ws_simplify",
+        description=(
+            "Simplifica un dataset del workspace lo MENOS posible para que quepa en `max_vertices` "
+            "vértices (p. ej. cuando un servicio rechaza una geometría por tener demasiados). Crea un "
+            "dataset nuevo y devuelve la tolerancia usada (m), los vértices antes/después y cuánto "
+            "cambió el área: si lo usas, dilo en la respuesta."
+        ),
+        parameters=_params({
+            "dataset": _DATASET,
+            "max_vertices": {"type": "integer", "description": "Tope de vértices de toda la capa (≥ 4)."},
+        }, ["dataset", "max_vertices"]),
+        executor=_simplificar, available=_hay_workspace, geo_inputs={"dataset": _CON_TAMANO},
+        blurb="simplifica una capa lo mínimo para caber en N vértices (+ tolerancia y cambio de área).",
+        risk="compute", step=("agent_loop", "Simplificando la geometría"),
     ),
     Capability(
         id="core.overlay", tool_name="ws_overlay",

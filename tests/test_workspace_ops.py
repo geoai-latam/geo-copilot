@@ -292,3 +292,19 @@ async def test_una_sesion_no_opera_sobre_los_datasets_de_otra(workspace_pool):
         await ops.buffer(store, ws_b, ref.id, 10)
     with pytest.raises(WorkspaceError, match="no existe en esta sesión"):
         await ops.medir(store, ws_b, ref.id)
+
+
+async def test_simplificar_cabe_en_el_tope_con_la_menor_tolerancia(workspace_pool):
+    """Navegador 2026-11-02: un servicio rechazaba el límite de La Calera (3834 vértices; tope 500)."""
+    store, ws = DatasetStore(workspace_pool), _ws()
+    circulo = Point(X0, Y0).buffer(3000, quad_segs=500)  # ~2000 vértices
+    ref = await _cargar(store, ws, "Municipio", [(circulo, {"nombre": "X"})])
+    res = await ops.simplificar(store, ws, ref.id, 500)
+    h = res.hechos
+    assert h["vertices_antes"] > 1500 and h["vertices_despues"] <= 500
+    fc = await store.to_geojson(ws, res.ref.id)
+    assert len(shape(fc["features"][0]["geometry"]).exterior.coords) == h["vertices_despues"]
+    assert abs(h["cambio_de_area_pct"]) < 1  # se cambia la forma lo mínimo, y se dice cuánto
+    assert h["tolerancia_m"] <= 5 and [f.name for f in res.ref.fields] == ["nombre"]
+    with pytest.raises(WorkspaceError):
+        await ops.simplificar(store, ws, ref.id, 2)

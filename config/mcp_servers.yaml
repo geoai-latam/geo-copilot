@@ -7,7 +7,9 @@
 #
 # Campos: id · url · auth{type,secret_ref} · conformance G0|G1|G2 · trust (untrusted por defecto) ·
 # tools{allow,deny,agent} (allowlist obligatoria; `agent`: cuáles ve el LLM, por defecto todas) · policy{default_risk, hitl, timeout_s,
-# max_result_mb} · tiles{prefixes} · description · enabled.
+# max_result_mb} · tiles{prefixes} · description · argumentos_fijos · siempre_visible · enabled.
+# `siempre_visible: true`: sus tools se ven aunque haya más que MCP_TOOLS_UMBRAL (para servidores
+# pequeños de uso general: los datos del usuario, el geocodificador); el resto se activa con find_tools.
 
 servers:
   # Imagery satelital Sentinel-2/Landsat (servicio imagery-mcp del compose): índices
@@ -76,6 +78,7 @@ servers:
 #     tools: { allow: ["list_tables", "run_query"] }
 #     policy: { default_risk: read, timeout_s: 45 }
   - id: lugares
+    siempre_visible: true
     url: http://lugares-mcp:9700/mcp
     description: Geocodificación — de un NOMBRE de lugar (municipio, ciudad, barrio, localidad, dirección) a sus candidatos y al límite (polígono) del elegido, para operar sobre ese lugar.
     auth: { type: bearer, secret_ref: env:LUGARES_MCP_APP_KEY }
@@ -138,3 +141,86 @@ servers:
     trust: trusted
     tools: { allow: ["amenazas_*", "clima_*"] }
     policy: { default_risk: read, timeout_s: 180, max_result_mb: 50 }
+
+  # Terrnova, la puerta de datos oficiales: un servicio EXTERNO, con contrato `rt/1` (procedencia,
+  # licencia, completitud). Una entrada por familia, como recomienda su guía de clientes. Sin
+  # TERRANOVA_LLAVE estas entradas quedan no disponibles y el resto de la app funciona igual.
+  - id: tn_territorio
+    url: https://terrnova.com/mcp/territorio
+    description: "Fuentes oficiales de territorio: catastro, predios, veredas, áreas protegidas, resguardos, vías y restricciones."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_ambiente
+    url: https://terrnova.com/mcp/ambiente
+    description: "Fuentes oficiales de ambiente: sismos, alertas e hidrología del IDEAM, cobertura y licencias ambientales."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_estadisticas
+    url: https://terrnova.com/mcp/estadisticas
+    description: "Estadísticas oficiales por municipio o departamento: población, indicadores de educación del MEN (cobertura, matrícula; no listados de sedes), salud, economía y comercio exterior."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_justicia
+    url: https://terrnova.com/mcp/justicia
+    description: "Datos oficiales de justicia y seguridad: delitos, conflicto y sanciones, por municipio."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_contratacion
+    url: https://terrnova.com/mcp/contratacion
+    description: "Contratación pública oficial (SECOP): procesos, contratos, adiciones y pagos."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_empresas
+    url: https://terrnova.com/mcp/empresas
+    description: "Registros oficiales de empresas y entidades vigiladas."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_normativa
+    url: https://terrnova.com/mcp/normativa
+    description: "Normas y jurisprudencia oficiales: leyes, decretos y sentencias."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }
+
+  - id: tn_meta
+    url: https://terrnova.com/mcp/meta
+    description: "Catálogo de fuentes oficiales: buscar y describir una fuente, su licencia y su vigencia."
+    auth: { type: bearer, secret_ref: env:TERRANOVA_LLAVE }
+    conformance: G2
+    trust: trusted
+    tools: { allow: ["*"] }
+    argumentos_fijos: { geometria: true }
+    policy: { default_risk: read, timeout_s: 75, max_result_mb: 50, listar_timeout_s: 60 }

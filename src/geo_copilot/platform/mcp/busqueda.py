@@ -83,8 +83,30 @@ def seleccion(graph: Any, activadas: Iterable[str], umbral: int) -> list[Capabil
     caps = registry().available(graph)
     if sum(1 for c in caps if es_mcp(c)) <= umbral:
         return [c for c in caps if c.tool_name != "find_tools"]
-    activas = set(activadas)
+    activas = con_hermanas_nombradas(caps, activadas)
     return [c for c in caps if not es_mcp(c) or c.tool_name in activas]
+
+
+def con_hermanas_nombradas(caps: Iterable[Capability], activadas: Iterable[str]) -> set[str]:
+    """Las activadas, las de servidores `siempre_visible` y las herramientas de SU MISMO servidor que
+    la descripción de una de ellas nombra.
+
+    Hecho del servidor, no regla por tema: `lugares_buscar` dice «pide su límite con
+    `lugares_limite(ref)`». Por encima del umbral esa hermana quedaba sin activar y el agente,
+    sin poder llamarla, repetía la búsqueda y daba el área aproximada (Chía 85,42 km² en vez de
+    80,03: 0/6 con los servidores de Terrnova conectados, 6/6 sin ellos, 2026-11-02)."""
+    mcp = [c for c in caps if es_mcp(c)]
+    activas = set(activadas) | {c.tool_name for c in mcp if c.siempre_visible}
+    por_servidor: dict[str, list[Capability]] = {}
+    for c in mcp:
+        por_servidor.setdefault(c.provider, []).append(c)
+    for c in [c for c in mcp if c.tool_name in activas]:
+        srv = c.provider.removeprefix("mcp:")
+        for h in por_servidor[c.provider]:
+            corto = h.tool_name.removeprefix(f"{srv}__")
+            if h.tool_name not in activas and re.search(rf"\b{re.escape(corto)}\b", c.description or ""):
+                activas.add(h.tool_name)
+    return activas
 
 
 #: Tope (caracteres) del catálogo de nombres en el prompt. Nombres, no esquemas: 60 tools ≈ 900
@@ -101,7 +123,7 @@ def catalogo(graph: Any, activadas: Iterable[str], umbral: int) -> str:
     caps = registry().available(graph)
     if sum(1 for c in caps if es_mcp(c)) <= umbral:
         return ""
-    activas = set(activadas)
+    activas = con_hermanas_nombradas(caps, activadas)
     por_servidor: dict[str, list[str]] = {}
     vistas: set[tuple[str, str]] = set()
     for c in sorted((c for c in caps if es_mcp(c)), key=lambda c: c.tool_name):
@@ -137,7 +159,8 @@ def preseleccion(graph: Any, consulta: str, umbral: int, *, k: int = 8) -> list[
     servidores) cuentan una vez. Hasta el umbral no hace falta: el LLM ya las ve todas."""
     if not consulta.strip() or not hay_demasiadas(graph, umbral):
         return []
-    mcp = [c for c in registry().available(graph) if es_mcp(c)]
+    # las siempre visibles ya se ven: no ocupan los `k` cupos
+    mcp = [c for c in registry().available(graph) if es_mcp(c) and not c.siempre_visible]
     elegidas: list[str] = []
     vistas: set[str] = set()
     for c in buscar(consulta, mcp, limite=k * 3):

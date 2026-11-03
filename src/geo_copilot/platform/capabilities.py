@@ -66,6 +66,9 @@ class ToolOutcome:
     #: el turno muere con un «Error» genérico en vez de decir, honesto, que la fuente
     #: está lenta). None si no aplica.
     degraded_code: str | None = None
+    #: Los argumentos tal como salieron cuando difieren de los del LLM (p. ej. los `argumentos_fijos`
+    #: del servidor): la traza muestra estos, no los pedidos. None si son los mismos.
+    args_enviados: dict | None = None
 
 
 #: `executor(graph, estado_de_trabajo, args) -> ToolOutcome`
@@ -103,6 +106,8 @@ class Capability:
     #: F6 (S6.2): de qué organización es (una conexión dada de alta por ella). None = de la
     #: plataforma, para todas. Una capacidad de la organización A no existe para B.
     org_id: str | None = None
+    #: MCP: su servidor está marcado `siempre_visible` (se ve aunque haya más tools que el umbral).
+    siempre_visible: bool = False
 
     def tool_schema(self) -> dict[str, Any]:
         return {

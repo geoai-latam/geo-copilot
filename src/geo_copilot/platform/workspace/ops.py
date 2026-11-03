@@ -168,6 +168,50 @@ async def buffer(
 
 
 # ---------------------------------------------------------------------------
+# Simplificar hasta un tope de vértices
+# ---------------------------------------------------------------------------
+
+#: Tolerancias que se prueban (m), de menor a mayor: se queda la PRIMERA que cabe en el tope.
+_TOLERANCIAS_M = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
+
+
+async def simplificar(store: DatasetStore, ws: str, dataset_id: str, max_vertices: int) -> Resultado:
+    """La capa con la MENOR simplificación que la deja en `max_vertices` vértices o menos.
+
+    Navegador 2026-11-02: un servicio rechazaba el límite real de La Calera («3834 vértices; el
+    tope es 500») y el agente acabó preguntando por el rectángulo que lo envuelve. Con esto puede
+    mandar la forma, y las cifras (tolerancia, área antes/después) le dicen cuánto cambió.
+    La tolerancia en metros se pasa a grados con 1° ≈ 111.320 m (cerca del ecuador, como Colombia).
+    """
+    if not (4 <= int(max_vertices) <= 1_000_000):
+        raise OperacionInvalida("el tope de vértices debe estar entre 4 y 1.000.000")
+    ref = await _capa(store, ws, dataset_id)
+    t = _tabla(ref)
+    antes = int((await store.hechos(ws, f"SELECT sum(ST_NPoints(geom)) AS v FROM {t} WHERE geom IS NOT NULL"))
+                .get("v") or 0)
+    for metros in _TOLERANCIAS_M:
+        simple = f"ST_SimplifyPreserveTopology(s.geom, {metros / 111_320:.10f})"
+        v = int((await store.hechos(ws, f"SELECT sum(ST_NPoints({simple})) AS v FROM {t} s "
+                                        "WHERE s.geom IS NOT NULL")).get("v") or 0)
+        if v <= max_vertices:
+            break
+    else:
+        raise OperacionInvalida(f"ni con {_TOLERANCIAS_M[-1]} m de tolerancia cabe en {max_vertices} vértices")
+    cols = ", ".join([*_props(ref, "s"), f"{simple} AS geom"])
+    nuevo = await store.crear_desde_sql(
+        ws, f"{ref.name} (simplificada a {metros} m)",
+        f"SELECT {cols} FROM {t} s WHERE s.geom IS NOT NULL ORDER BY s.fid",
+        provenance=_prov("simplify", dataset=dataset_id, tolerancia_m=metros, max_vertices=max_vertices),
+    )
+    original, nueva = await medir(store, ws, dataset_id), await medir(store, ws, nuevo.id)
+    a0, a1 = original.hechos.get("area_total_m2"), nueva.hechos.get("area_total_m2")
+    cambio = round(100 * (a1 - a0) / a0, 3) if a0 and a1 is not None else None
+    return Resultado(nuevo, {"operacion": "simplificar", "entrada": ref.name, "tolerancia_m": metros,
+                             "vertices_antes": antes, "vertices_despues": v,
+                             "cambio_de_area_pct": cambio, **nueva.hechos})
+
+
+# ---------------------------------------------------------------------------
 # Overlay
 # ---------------------------------------------------------------------------
 
