@@ -72,6 +72,17 @@ async def _buffer(graph: Any, working: dict, args: dict) -> ToolOutcome:
     ))
 
 
+async def _simplificar(graph: Any, working: dict, args: dict) -> ToolOutcome:
+    from geo_copilot.platform.workspace import ops
+
+    ds = await _ce()._resolver(args.get("dataset"), working)
+    if ds is None:
+        return _falta(str(args.get("dataset")))
+    return await _ejecutar(working, args, lambda s, ws: ops.simplificar(
+        s, ws, ds, int(args.get("max_vertices") or 0),
+    ))
+
+
 async def _overlay(graph: Any, working: dict, args: dict) -> ToolOutcome:
     from geo_copilot.platform.workspace import ops
 
