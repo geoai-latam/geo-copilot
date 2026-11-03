@@ -36,6 +36,35 @@ def test_el_fijo_gana_al_valor_que_copio_el_llm_del_esquema():
     assert _con_fijos(cfg, _est({"geometria": {}}), {"geometria": False}) == {"geometria": True}
 
 
+@pytest.mark.asyncio
+async def test_la_traza_muestra_lo_enviado_no_lo_que_pidio_el_llm(monkeypatch):
+    """«Cómo lo hice» decía `geometria: False` cuando a la fuente le llegó `True` (navegador, 2026-11-02)."""
+    from geo_copilot.platform.capabilities import ToolOutcome
+    from geo_copilot.platform.mcp import ejecucion
+
+    enviados: dict = {}
+
+    async def _llamar_falso(hub, con, cfg, tool, est, working, args, **kw):
+        enviados.update(args)
+        return ToolOutcome("ok", success=True)
+
+    async def _sin_geo(est, working, pedidos):
+        return dict(pedidos), None
+
+    monkeypatch.setattr(ejecucion, "_llamar", _llamar_falso)
+    monkeypatch.setattr(ejecucion, "_resolver_geo", _sin_geo)
+    cfg = _cfg(argumentos_fijos={"geometria": True})
+    hub = SimpleNamespace(conexiones={cfg.id: object()})
+    est = SimpleNamespace(esquema={"type": "object", "properties": {"lon": {}, "geometria": {}}},
+                          servidor=cfg.id, tool="ficha_lugar", geo=None)
+    out = await ejecucion.ejecutar_tool(hub, cfg, "ficha_lugar", est, {}, {"lon": -74.0, "geometria": False})
+    assert enviados == {"lon": -74.0, "geometria": True}
+    assert out.args_enviados == {"lon": -74.0, "geometria": True}
+    # sin cambios no hay nada que corregir en la traza
+    out = await ejecucion.ejecutar_tool(hub, cfg, "ficha_lugar", est, {}, {"lon": -74.0, "geometria": True})
+    assert out.args_enviados is None
+
+
 def test_sin_fijos_los_argumentos_no_cambian():
     args = {"bbox": [1, 2, 3, 4]}
     assert _con_fijos(_cfg(), _est({"bbox": {}}), args) is args

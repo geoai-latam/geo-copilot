@@ -57,8 +57,12 @@ async def ejecutar_tool(hub: McpHub, cfg: ServerConfig, tool: str, est: EstadoTo
     desconocidos = _argumentos_desconocidos(est, args)
     if desconocidos:
         return ToolOutcome(desconocidos, success=False)
+    sin_fijos = dict(args)
     args = _con_fijos(cfg, est, args)
     out = await _llamar(hub, con, cfg, tool, est, working, args, decl=decl, titulo=titulo)
+    if cambiados := {k: v for k, v in args.items() if sin_fijos.get(k, object()) != v}:
+        # la traza mostraba `geometria: False` (lo que pidió el LLM) cuando salió `True` (2026-11-02)
+        out.args_enviados = {**pedidos, **cambiados}
     if out.success and (zonas := _zonas_usadas(est, pedidos, working)):
         out.observation += " [Núcleo] zona usada: " + "; ".join(zonas)
     if cfg.trust == "untrusted" and out.success:
